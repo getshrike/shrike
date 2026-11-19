@@ -11,7 +11,10 @@
       "lib/impl.ts"
     ],
     "triggerKinds": {
-      "lib/impl.ts#impl": "removed-re-export"
+      "lib/impl.ts#impl": "removed-import"
+    },
+    "triggerFiles": {
+      "lib/impl.ts#impl": "app/page.tsx"
     }
   },
   "notes": ""

@@ -2,7 +2,7 @@
 
 > **Parent:** [MASTER_PROMPT.md](../MASTER_PROMPT.md) · **Tracker:** [TRACKER.md](../TRACKER.md)
 > **Status:** canonical · Authored 2026-11-20
-> **Implementation status (2026-11-20): implemented for the master-prompt contract; local acceptance is green.** `shrike evidence` discovers `.next/analyze/*.json[l]`, `.shrike/build/*.json[l]`, or `next-analyze/*.json[l]`, or reads an explicit `--build <path>`. JSONL is streamed in bounded chunks; one JSON object is also accepted. Malformed input fails closed with exit 4, and unknown record families are counted rather than guessed. The join reports coverage (`full` ≥ 0.95, `partial` ≥ 0.80, `low-coverage` < 0.80, `unsupported` below Next.js 16.1, `none` when absent), per-route membership, matched/shared/route-local bytes, missing-size counts (`bytes.unknown`, `bytes.partial`, `unknownSizes`), per-candidate `present`/`server-only`/`absent`/`unknown` verdicts, build edges from client-reference records, and a `client-boundary-leak` warning. Loader prefixes, query strings, `turbopack://` paths, module IDs, and longest-suffix matches are normalized by the host and engine. Source hashes in `fileHashes` mark stale evidence; `--run-build` records `build-failed` instead of crashing; `--require-build-evidence` turns unavailable, stale, unsupported, or low-confidence evidence into exit 4. `augment-build` seeds build-live modules and symbols and follows known static edges, so build evidence can only add liveness. `prune --build` records source, snapshot hash, version, and status in every receipt. The eleven `fixtures/build-graph/` scenarios and the corpus evidence mode run in `node scripts/run-fixtures.mjs`. A real reference-app run remains a release gate; the local fixture and unit evidence is complete.
+> **Implementation status (2026-11-20): implemented for the master-prompt contract; local acceptance is green.** `shrike evidence` discovers `.next/analyze/*.json[l]`, `.shrike/build/*.json[l]`, or `next-analyze/*.json[l]`, or reads an explicit `--build <path>`. JSONL is streamed in bounded chunks; one JSON object is also accepted. The parser understands the real Next.js 16.4 Turbopack families (`meta`, `module`, `route`, `output`, `part`, `group`) as well as the older synthetic `chunk`/`entry` shapes. Malformed input fails closed with exit 4, and unknown record families are counted rather than guessed. The join reports coverage (`full` ≥ 0.95, `partial` ≥ 0.80, `low-coverage` < 0.80, `unsupported` below Next.js 16.1, `none` when absent), per-route membership, matched/shared/route-local bytes, missing-size counts (`bytes.unknown`, `bytes.partial`, `unknownSizes`), per-candidate `present`/`server-only`/`absent`/`unknown` verdicts, build edges from client-reference records, and a `client-boundary-leak` warning. `[project]/`, `[externals]/`, `[client-fs]/`, `[output]/`, `[next]/`, and `[turbopack]/` paths, Turbopack layer annotations, proxy modules, loader prefixes, query strings, `turbopack://` paths, module IDs, and longest-suffix matches are normalized by the host and engine; framework, dependency, and emitted-asset modules are excluded from join coverage so a real app can reach `full`. Source hashes in `fileHashes` mark stale evidence; `--run-build` records `build-failed` instead of crashing; `--require-build-evidence` turns unavailable, stale, unsupported, or low-confidence evidence into exit 4. `augment-build` seeds build-live modules and symbols and follows known static edges, so build evidence can only add liveness. `prune --build` records source, snapshot hash, version, and status in every receipt. The eleven `fixtures/build-graph/` scenarios, the host Turbopack tests, and the corpus evidence mode run in `node scripts/run-fixtures.mjs`. A local real Next.js 16.4.2 reference app joins at `full` coverage (25/25 project modules, 46,956 matched bytes, 5 routes); external partner-app runs remain under the distribution gate.
 
 ---
 
@@ -37,19 +37,25 @@ Next.js 16.4 ships `next analyze export`, which writes the Turbopack module and
 chunk graph as JSON Lines. The exact record shapes are versioned; Shrike treats
 them as an external contract with additive tolerance.
 
-Expected record families:
+Expected record families (Next.js 16.4):
 
 | Record | Contains | Used for |
 |---|---|---|
-| `module` | module id, source path, layer (client/server), size | module index, byte attribution |
-| `chunk` | chunk id, route or entry, module ids, size | route membership, shared-chunk attribution |
-| `entry` | route, runtime, chunk ids | route mapping |
+| `meta` | schema version, snapshot name, route counts | provenance; no join evidence |
+| `module` | `ident`, `path`, dependency lists, layer annotation | module index, layers, module IDs |
+| `route` | route name, entry module idents/paths | route mapping |
+| `output` | route, emitted filename, module idents, coverage | route membership and client/server runtime |
+| `part` | route, emitted filename, `source_path`, `size`, `compressed_size` | byte attribution |
+| `group` | route, bootstrap group, emitted chunk filenames | understood; no source modules |
+| `chunk` / `entry` | older synthetic route/chunk shapes | route membership, shared-chunk attribution |
 | `asset` | emitted file, size | sanity check, not required |
 | `client-reference` | server→client boundary mapping | server action and client boundary analysis |
 
 The parser is streaming: one JSON object per line, no full-file load, no
 assumption about record order, and additive fields are ignored rather than
-rejected.
+rejected. Real exports include framework modules, `node_modules` dependencies,
+`[externals]` shims, and emitted assets; those are classified and excluded from
+the project-module join rather than counted as unmatched.
 
 ### 2.2 Version guard
 
@@ -94,20 +100,32 @@ Turbopack module paths may be:
 
 - absolute paths;
 - repo-relative paths;
+- `[project]/` project modules;
+- `[externals]/`, `[next]/`, `[turbopack]/`, `[client-fs]/`, and `[output]/`
+  framework, external, and emitted-asset paths;
 - `turbopack://` virtual paths;
 - loader-prefixed paths;
-- query-suffixed paths.
+- query-suffixed paths;
+- `[layer] (kind)` annotated module identifiers;
+- `__nextjs-internal-proxy.mjs` modules that name the real source in a
+  `{ server => "..." }` annotation.
 
 Normalization:
 
-1. strip a loader prefix (`next/dist/...!`);
-2. strip a query string;
-3. resolve to the repository root;
-4. convert to `/` separators;
-5. match the static file table by exact path, then by suffix (longest match);
-6. record unmatched modules.
+1. unwrap a Turbopack proxy module to its named source;
+2. strip a loader prefix (`next/dist/...!`);
+3. strip a query string and a `[layer] (kind)` annotation;
+4. strip the `[project]/` prefix; classify `[externals]/`, `[next]/`,
+   `[turbopack]/`, `[client-fs]/`, and `[output]/` as non-project;
+5. resolve to the repository root;
+6. convert to `/` separators;
+7. match the static file table by exact path, then by suffix (longest match);
+8. record unmatched **project source** modules.
 
-Unmatched modules are **unknown**, never guessed.
+Dependency modules (`node_modules/`), framework modules, generated wrappers
+(`--route-entry`, `.[json]`, `.next-internal/`), and emitted assets are not
+project candidates and are excluded from join coverage. Unmatched project
+modules are **unknown**, never guessed.
 
 ### 3.2 Module index
 
@@ -127,8 +145,14 @@ The index is built once per snapshot and cached by `(snapshotHash, nextVersion)`
 The join reports coverage:
 
 ```text
-joinCoverage = matchedModules / (matchedModules + unmatchedModules)
+joinCoverage = matchedProjectModules / (matchedProjectModules + unmatchedProjectModules)
 ```
+
+Only project source modules participate. `node_modules` dependencies,
+`[externals]` shims, framework runtime modules, generated wrappers, and emitted
+assets are classified and excluded; counting them would make every real
+application look like 2% coverage. An unmatched project module still counts as
+unknown and lowers coverage.
 
 - `≥ 0.95`: full evidence;
 - `0.80–0.95`: partial evidence, with an explicit status;
@@ -382,15 +406,21 @@ graph; `scripts/run-fixtures.mjs` analyzes it once and checks every join,
 augmentation, and host-level fallback (`missing`, `stale`, `malformed`). The
 `build-graph/next-16.4/` scenario is the full reference join; `shared-chunk/`
 proves byte arithmetic; `dynamic-edge/` and `server-action/` prove build-edge
-liveness; `client-boundary/` proves the warning diagnostic.
+liveness; `client-boundary/` proves the warning diagnostic. The host parser is
+covered separately by `packages/cli/test/build-evidence.test.mjs`, which feeds
+real Turbopack `meta`/`module`/`route`/`output`/`part`/`group` records through
+`shrike evidence` and asserts full coverage, project-only files, layers, routes,
+and byte totals.
 
 ---
 
 ## 12. Acceptance criteria
 
 - [x] `next analyze export` JSONL streams without loading the whole file.
-- [ ] Module join coverage is reported and ≥ 0.90 on the reference app
-      (release gate: requires the real app run).
+- [x] Module join coverage is reported and ≥ 0.90 on the reference app.
+      Local Next.js 16.4.2 reference app: 25/25 project modules, coverage 1.00,
+      46,956 matched bytes across 5 routes (`shrike evidence --build`). External
+      partner-app runs remain under the distribution gate.
 - [x] A module present in a client chunk suppresses deletion.
 - [x] A module absent from every chunk confirms, but never authorizes, deletion.
 - [x] Bytes are reported per route and shared, with no double counting.
@@ -411,7 +441,7 @@ liveness; `client-boundary/` proves the warning diagnostic.
 |---|---|---|
 | Q-008 | Minimum Next.js version for build-graph evidence? | PLAN-4: 16.1 partial, 16.4 full |
 | Q-014 | Is the `next analyze export` schema documented per version? | PLAN-4 |
-| Q-015 | How are Turbopack virtual modules represented? | PLAN-4 |
+| Q-015 | How are Turbopack virtual modules represented? | Resolved: `[project]/` sources, `[externals]/` shims, `[next]/`/`[turbopack]/` framework modules, `[client-fs]/`/`[output]/` assets; proxy modules name their source. Non-project modules are excluded from coverage. |
 | Q-016 | Does Shrike run `next build` itself? | PLAN-4: only with `--build` |
 | Q-027 | Is the client-reference manifest available across versions? | PLAN-4 |
 | Q-042 | How are monorepo builds with multiple Next.js apps handled? | PLAN-4 |

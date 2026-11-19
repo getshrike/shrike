@@ -13,6 +13,10 @@ inputs:
     description: "Fail when the delta exceeds this many items (0 disables)"
     required: false
     default: "0"
+  fail-on:
+    description: "Fail delta mode on any newly dead item (`newly-dead`) or only when max-items is exceeded (`never`)"
+    required: false
+    default: "never"
 outputs:
   count:
     description: "Number of newly dead items"

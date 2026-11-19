@@ -152,18 +152,25 @@ pub fn join_build(snapshot: &GraphSnapshot, evidence: &BuildEvidence) -> BuildJo
         .collect();
 
     let mut wanted: BTreeSet<String> = BTreeSet::new();
-    wanted.extend(evidence.files.iter().cloned());
-    wanted.extend(evidence.symbols.iter().cloned());
-    for route in &evidence.routes {
-        wanted.extend(route.files.iter().cloned());
-        wanted.extend(route.symbols.iter().cloned());
-    }
-    for reference in &evidence.client_references {
-        if !reference.from.is_empty() {
-            wanted.insert(reference.from.clone());
-        }
-        if !reference.to.is_empty() {
-            wanted.insert(reference.to.clone());
+    for item in evidence
+        .files
+        .iter()
+        .chain(evidence.symbols.iter())
+        .chain(
+            evidence
+                .routes
+                .iter()
+                .flat_map(|route| route.files.iter().chain(route.symbols.iter())),
+        )
+        .chain(
+            evidence
+                .client_references
+                .iter()
+                .flat_map(|reference| [&reference.from, &reference.to]),
+        )
+    {
+        if is_project_evidence_item(item) {
+            wanted.insert(item.clone());
         }
     }
 
@@ -201,6 +208,9 @@ pub fn join_build(snapshot: &GraphSnapshot, evidence: &BuildEvidence) -> BuildJo
             route.runtime.clone().unwrap_or_else(|| "both".to_string()),
         );
         for item in route.files.iter().chain(route.symbols.iter()) {
+            if !is_project_evidence_item(item) {
+                continue;
+            }
             if let Some(resolved) =
                 resolve_build_item(item, &known_files, &known_symbols, &evidence.module_ids)
             {
@@ -218,6 +228,9 @@ pub fn join_build(snapshot: &GraphSnapshot, evidence: &BuildEvidence) -> BuildJo
     // Sizes may be keyed by path, symbol, or module id.
     let mut size_by_item: BTreeMap<String, u64> = BTreeMap::new();
     for (key, size) in &evidence.sizes {
+        if !is_project_evidence_item(key) {
+            continue;
+        }
         if let Some(resolved) =
             resolve_build_item(key, &known_files, &known_symbols, &evidence.module_ids)
         {
@@ -596,7 +609,13 @@ fn normalize_build_path(input: &str) -> String {
     if let Some(index) = value.rfind('!') {
         value = value[index + 1..].to_string();
     }
-    for prefix in ["turbopack://", "file://"] {
+    // Turbopack appends `[layer] (kind)` to module identifiers.
+    if let Some(index) = value.find(" [") {
+        if value[index..].contains("] (") {
+            value.truncate(index);
+        }
+    }
+    for prefix in ["turbopack://", "file://", "[project]/"] {
         if let Some(rest) = value.strip_prefix(prefix) {
             value = rest.to_string();
         }
@@ -608,6 +627,40 @@ fn normalize_build_path(input: &str) -> String {
         value = value[2..].to_string();
     }
     value.trim_start_matches('/').to_string()
+}
+
+/// True when an evidence item can correspond to a project source module.
+///
+/// `next analyze export` includes framework, dependency, and emitted-asset
+/// modules. They are not candidates and must not lower join coverage.
+fn is_project_evidence_item(input: &str) -> bool {
+    let raw = input.replace('\\', "/");
+    for prefix in [
+        "[externals]/",
+        "[client-fs]/",
+        "[output]/",
+        "[next]/",
+        "[turbopack]/",
+    ] {
+        if raw.starts_with(prefix) {
+            return false;
+        }
+    }
+    let normalized = normalize_build_path(input);
+    if normalized.starts_with("node_modules/") || normalized.contains("/node_modules/") {
+        return false;
+    }
+    if normalized.starts_with("../") || normalized == ".." {
+        return false;
+    }
+    if normalized.contains("--route-entry.")
+        || normalized.contains(".[json].")
+        || normalized.starts_with(".next-internal/")
+        || normalized.starts_with(".next/")
+    {
+        return false;
+    }
+    true
 }
 
 fn status_for_evidence(total: usize, coverage: f64, evidence: &BuildEvidence) -> &'static str {
@@ -895,6 +948,44 @@ mod tests {
         assert_eq!(join.joined, 2);
         assert_eq!(join.total, 2);
         assert!((join.coverage - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn turbopack_prefixes_join_and_dependencies_are_excluded() {
+        let evidence = BuildEvidence {
+            version: "16.4.2".into(),
+            files: vec![
+                "[project]/app/page.tsx".into(),
+                "[project]/node_modules/next/dist/client/app.js".into(),
+                "[externals]/crypto".into(),
+                "[client-fs]/_next/static/chunks/app.js".into(),
+                "[project]/.next-internal/server/app/page/actions.js".into(),
+            ],
+            routes: vec![BuildRoute {
+                route: "/".into(),
+                files: vec![
+                    "[project]/app/page.tsx".into(),
+                    "[project]/node_modules/next/dist/client/app.js".into(),
+                ],
+                symbols: Vec::new(),
+                runtime: Some("client".into()),
+            }],
+            sizes: BTreeMap::from([
+                ("[project]/app/page.tsx".to_string(), 100),
+                (
+                    "[project]/node_modules/next/dist/client/app.js".to_string(),
+                    9_999,
+                ),
+            ]),
+            ..BuildEvidence::default()
+        };
+        let join = join_build(&snapshot(), &evidence);
+        assert_eq!(join.status, "full");
+        assert_eq!(join.joined, 1);
+        assert_eq!(join.total, 1);
+        assert_eq!(join.unmatched, Vec::<String>::new());
+        assert_eq!(join.bytes.matched, 100);
+        assert_eq!(join.routes[0].files, 1);
     }
 
     #[test]

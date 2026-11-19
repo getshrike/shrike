@@ -13,8 +13,12 @@
       "lib/b.ts"
     ],
     "triggerKinds": {
-      "lib/a.ts#a": "indirect",
-      "lib/b.ts#b": "indirect"
+      "lib/a.ts#a": "removed-import",
+      "lib/b.ts#b": "removed-import"
+    },
+    "triggerFiles": {
+      "lib/a.ts#a": "app/page.tsx",
+      "lib/b.ts#b": "app/page.tsx"
     }
   },
   "notes": ""

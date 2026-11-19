@@ -9,7 +9,7 @@ import {
   readSync,
   statSync,
 } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { extname, isAbsolute, join, relative, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { resolveInside, safeRelativePath } from "./recovery.ts";
 
@@ -115,14 +115,92 @@ function numberValue(value: unknown): number | null {
 }
 
 function normalizePath(root: string, input: string): string {
+  return modulePathInfo(root, input).path;
+}
+
+type ModuleKind = "source" | "dependency" | "external" | "asset" | "generated";
+
+interface ModulePathInfo {
+  /** Repository-relative path with Turbopack annotations removed. */
+  path: string;
+  kind: ModuleKind;
+}
+
+const SOURCE_EXTENSIONS = new Set([
+  ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts",
+]);
+
+/**
+ * Normalize one Turbopack module path and classify it.
+ *
+ * `next analyze export` addresses modules as `[project]/app/page.tsx`,
+ * `[project]/node_modules/...`, `[externals]/crypto`, `[client-fs]/...`, and
+ * `[output]/...`, and appends `[layer] (kind)` annotations to module
+ * identifiers. Only project source modules can join the static graph; counting
+ * dependencies and emitted assets as unmatched would make coverage meaningless
+ * on every real application.
+ */
+function modulePathInfo(root: string, input: string): ModulePathInfo {
   let value = input.replaceAll("\\", "/").trim();
+  // Turbopack proxy modules name the real source in `{ server => "..." }`.
+  const proxy = value.match(/\{\s*(?:server|client|edge)\s*=>\s*"([^"]+)"\s*\}/);
+  if (proxy?.[1]) value = proxy[1];
   const loader = value.lastIndexOf("!");
   if (loader >= 0) value = value.slice(loader + 1);
   value = value.replace(/^[a-z]+:\/\/+/, "").replace(/^turbopack:\/\//, "").replace(/^file:\/\//, "");
+  // `[app-rsc] (ecmascript, Next.js Server Component)` and trailing `<locals>`.
+  value = value.replace(/\s+\[[^\]]+\]\s+\([^)]*\)(?:\s+<[^>]*>)?\s*$/, "");
+  value = value.replace(/\s+<[^>]*>\s*$/, "");
   value = value.split("?")[0]!.split("#")[0]!;
+  let kind: ModuleKind = "source";
+  if (value.startsWith("[externals]/")) {
+    kind = "external";
+    value = value.slice("[externals]/".length);
+  } else if (
+    value.startsWith("[client-fs]/") ||
+    value.startsWith("[output]/") ||
+    value.startsWith("[next]/") ||
+    value.startsWith("[turbopack]/")
+  ) {
+    kind = "asset";
+    value = value.replace(/^\[[^\]]+\]\//, "");
+  } else if (value.startsWith("[project]/")) {
+    value = value.slice("[project]/".length);
+  }
   if (isAbsolute(value)) value = relative(root, value).replaceAll("\\", "/");
   value = value.replace(/^\.\//, "");
-  return value;
+  if (kind === "source") {
+    if (value.startsWith("node_modules/") || value.includes("/node_modules/")) {
+      kind = "dependency";
+    } else if (value.startsWith("../") || value === ".." || isAbsolute(value)) {
+      kind = "external";
+    } else if (
+      value.includes("--route-entry.") ||
+      value.includes(".[json].") ||
+      value.startsWith(".next-internal/") ||
+      value.startsWith(".next/") ||
+      value.endsWith("/__nextjs-internal-proxy.mjs")
+    ) {
+      kind = "generated";
+    } else if (!SOURCE_EXTENSIONS.has(extname(value).toLowerCase())) {
+      kind = "asset";
+    }
+  }
+  return { path: value, kind };
+}
+
+function layerFromIdent(ident: string): string {
+  if (ident.includes("[app-client]") || ident.includes("[middleware-client]")) return "client";
+  if (ident.includes("[app-rsc]") || ident.includes("[app-ssr]") || ident.includes("[middleware]")) return "server";
+  if (ident.includes("[edge]")) return "edge";
+  return "";
+}
+
+function runtimeFromOutput(filename: string): string {
+  const value = filename.replaceAll("\\", "/");
+  if (value.includes("/static/") || value.startsWith("[client-fs]/")) return "client";
+  if (value.includes("/server/") || value.startsWith("[output]/.next/server/")) return "server";
+  return "";
 }
 
 /** Normalize a file or `path#Symbol` evidence key without losing the symbol. */
@@ -213,7 +291,7 @@ function recordFile(record: Record<string, unknown>): string | null {
 }
 
 function recordModuleId(record: Record<string, unknown>): string | null {
-  for (const key of ["id", "moduleId", "chunkId"]) {
+  for (const key of ["id", "moduleId", "chunkId", "ident"]) {
     const value = record[key];
     if (typeof value === "string" && value.length > 0) return value;
     if (typeof value === "number" && Number.isFinite(value)) return String(value);
@@ -262,9 +340,21 @@ interface EvidenceBuilder {
 function createBuilder(root: string, sourcePath: string): EvidenceBuilder {
   const files: string[] = [];
   const symbols: string[] = [];
-  const routes: BuildRouteEvidence[] = [];
+  interface RouteAccumulator {
+    route: string;
+    files: string[];
+    clientFiles: string[];
+    serverFiles: string[];
+    symbols: string[];
+    runtime?: string;
+  }
+  const routes = new Map<string, RouteAccumulator>();
   const sizes: Record<string, number> = {};
+  const sizeClient: Record<string, number> = {};
+  const sizeServer: Record<string, number> = {};
   const layers: Record<string, string> = {};
+  const clientModules = new Set<string>();
+  const serverModules = new Set<string>();
   const moduleIds: Record<string, string> = {};
   const clientReferences: BuildClientReference[] = [];
   const fileHashes: Record<string, string> = {};
@@ -275,22 +365,44 @@ function createBuilder(root: string, sourcePath: string): EvidenceBuilder {
   let status: string | undefined;
   let clientBoundaryLeaks: boolean | undefined;
 
-  const routeFor = (route: string): BuildRouteEvidence => {
-    const existing = routes.find((item) => item.route === route);
+  const routeFor = (route: string): RouteAccumulator => {
+    const existing = routes.get(route);
     if (existing) return existing;
-    const created: BuildRouteEvidence = { route, files: [], symbols: [] };
-    routes.push(created);
+    const created: RouteAccumulator = {
+      route,
+      files: [],
+      clientFiles: [],
+      serverFiles: [],
+      symbols: [],
+    };
+    routes.set(route, created);
     return created;
   };
 
-  const addItem = (item: string): string => {
+  const addRouteFile = (target: RouteAccumulator, runtime: string, file: string): void => {
+    if (runtime === "client") addUnique(target.clientFiles, file);
+    else if (runtime === "server") addUnique(target.serverFiles, file);
+    else addUnique(target.files, file);
+  };
+
+  const addItem = (item: string): string | null => {
     // Keep a `path#Symbol` suffix: module ids address the file, not the symbol.
     const hash = item.indexOf("#");
     const filePart = hash >= 0 ? item.slice(0, hash) : item;
     const suffix = hash >= 0 ? item.slice(hash) : "";
-    const normalized = normalizePath(root, filePart);
-    const mapped = moduleIds[normalized] ?? moduleIds[filePart] ?? moduleIds[item];
-    return mapped ? `${normalizePath(root, mapped)}${suffix}` : `${normalized}${suffix}`;
+    // Resolve module ids before classifying: an id such as `m1` has no source
+    // extension, but it maps to a project source path.
+    const mapped = moduleIds[item] ?? moduleIds[filePart];
+    const info = modulePathInfo(root, mapped ?? filePart);
+    if (info.kind !== "source") return null;
+    return `${mapped ? normalizePath(root, mapped) : info.path}${suffix}`;
+  };
+
+  const addSourceFile = (file: string): string | null => {
+    const info = modulePathInfo(root, file);
+    if (info.kind !== "source") return null;
+    addUnique(files, info.path);
+    return info.path;
   };
 
   const consumePlain = (record: Record<string, unknown>): void => {
@@ -307,7 +419,7 @@ function createBuilder(root: string, sourcePath: string): EvidenceBuilder {
     if (typeof record.clientBoundaryLeaks === "boolean") {
       clientBoundaryLeaks = record.clientBoundaryLeaks;
     }
-    for (const file of stringArray(record.files)) addUnique(files, normalizePath(root, file));
+    for (const file of stringArray(record.files)) addSourceFile(file);
     for (const symbol of stringArray(record.symbols)) addUnique(symbols, symbol);
     if (isRecord(record.sizes)) {
       for (const [key, value] of Object.entries(record.sizes)) {
@@ -323,9 +435,9 @@ function createBuilder(root: string, sourcePath: string): EvidenceBuilder {
     }
     if (isRecord(record.moduleIds)) {
       for (const [key, value] of Object.entries(record.moduleIds)) {
-        if (typeof value === "string" && value.length > 0) {
-          moduleIds[key] = normalizePath(root, value);
-        }
+        if (typeof value !== "string" || value.length === 0) continue;
+        const info = modulePathInfo(root, value);
+        if (info.kind === "source") moduleIds[key] = info.path;
       }
     }
     if (isRecord(record.fileHashes)) {
@@ -341,12 +453,13 @@ function createBuilder(root: string, sourcePath: string): EvidenceBuilder {
         const route = recordRoute(item);
         if (!route) continue;
         const runtime = normalizeRuntime(item.runtime ?? item.layer);
-        routes.push({
-          route,
-          files: stringArray(item.files).map((file) => normalizePath(root, file)),
-          symbols: stringArray(item.symbols),
-          ...(runtime ? { runtime } : {}),
-        });
+        const target = routeFor(route);
+        if (runtime) target.runtime = runtime;
+        for (const file of stringArray(item.files)) {
+          const normalized = addSourceFile(file);
+          if (normalized) addUnique(target.files, normalized);
+        }
+        for (const symbol of stringArray(item.symbols)) addUnique(target.symbols, symbol);
       }
     }
     if (Array.isArray(record.clientReferences)) {
@@ -371,25 +484,35 @@ function createBuilder(root: string, sourcePath: string): EvidenceBuilder {
       consumePlain(record);
       return;
     }
+    if (type === "meta") {
+      // `next analyze export` metadata: snapshot name, schema version, counts.
+      // It adds no join evidence and is not an unknown family.
+      if (typeof record.source === "string" && record.source.length > 0) source = record.source;
+      return;
+    }
     if (type === "module") {
       const id = recordModuleId(record);
       const path = recordFile(record);
       if (!path && !id) {
         throw new BuildEvidenceError("malformed", `module record has no path or id at ${where}`);
       }
-      const normalized = path ? normalizePath(root, path) : String(id);
-      addUnique(files, normalized);
-      if (id) moduleIds[String(id)] = normalized;
-      const layer = normalizeLayer(record.layer ?? record.runtime);
-      if (layer) layers[normalized] = layer;
+      const info = modulePathInfo(root, path ?? String(id));
+      if (info.kind !== "source") return;
+      addUnique(files, info.path);
+      if (id) moduleIds[String(id)] = info.path;
+      const layer = normalizeLayer(record.layer ?? record.runtime) || layerFromIdent(String(id ?? path));
+      if (layer === "client") clientModules.add(info.path);
+      else if (layer === "server") serverModules.add(info.path);
       const size = recordSize(record);
-      if (size !== null) sizes[normalized] = size;
+      if (size !== null) sizes[info.path] = size;
       return;
     }
     if (type === "chunk") {
       const route = recordRoute(record);
       const runtime = normalizeRuntime(record.runtime ?? record.layer);
-      const chunkFiles = recordPaths(record, ["files", "modules", "moduleIds"]).map(addItem);
+      const chunkFiles = recordPaths(record, ["files", "modules", "moduleIds"])
+        .map(addItem)
+        .filter((item): item is string => item !== null);
       const chunkSymbols = recordPaths(record, ["symbols", "symbolKeys"]);
       const size = recordSize(record);
       if (route) {
@@ -409,7 +532,9 @@ function createBuilder(root: string, sourcePath: string): EvidenceBuilder {
       const route = recordRoute(record);
       if (!route) return;
       const runtime = normalizeRuntime(record.runtime ?? record.layer);
-      const entryFiles = recordPaths(record, ["files", "modules", "moduleIds"]).map(addItem);
+      const entryFiles = recordPaths(record, ["files", "modules", "moduleIds"])
+        .map(addItem)
+        .filter((item): item is string => item !== null);
       const entrySymbols = recordPaths(record, ["symbols", "symbolKeys"]);
       const target = routeFor(route);
       if (runtime) target.runtime = runtime;
@@ -417,20 +542,83 @@ function createBuilder(root: string, sourcePath: string): EvidenceBuilder {
       for (const symbol of entrySymbols) addUnique(target.symbols, symbol);
       for (const file of entryFiles) addUnique(files, file);
       for (const symbol of entrySymbols) addUnique(symbols, symbol);
+      // Real Turbopack route records list entry modules instead of a flat
+      // `files` array. Keep only project sources; bootstrap and template
+      // modules are framework code.
+      if (Array.isArray(record.entries)) {
+        for (const entry of record.entries) {
+          if (!isRecord(entry)) continue;
+          const modulePath = stringValue(entry.module_path ?? entry.path ?? entry.module);
+          const info = modulePathInfo(root, modulePath);
+          if (info.kind !== "source") continue;
+          addUnique(files, info.path);
+          const entryRuntime =
+            stringValue(entry.entry_kind) === "client_bootstrap"
+              ? "client"
+              : layerFromIdent(stringValue(entry.module_ident)) || "server";
+          addRouteFile(target, entryRuntime, info.path);
+          if (entryRuntime === "client") clientModules.add(info.path);
+          else if (entryRuntime === "server") serverModules.add(info.path);
+        }
+      }
+      return;
+    }
+    if (type === "output") {
+      const route = recordRoute(record);
+      const runtime = runtimeFromOutput(stringValue(record.filename));
+      for (const module of stringArray(record.modules)) {
+        const info = modulePathInfo(root, module);
+        if (info.kind !== "source") continue;
+        addUnique(files, info.path);
+        if (runtime === "client") clientModules.add(info.path);
+        else if (runtime === "server") serverModules.add(info.path);
+        if (route) addRouteFile(routeFor(route), runtime, info.path);
+      }
+      return;
+    }
+    if (type === "part") {
+      const route = recordRoute(record);
+      const runtime = runtimeFromOutput(stringValue(record.filename));
+      const info = modulePathInfo(
+        root,
+        stringValue(record.source_path ?? record.source ?? record.path ?? record.module),
+      );
+      if (info.kind !== "source") return;
+      addUnique(files, info.path);
+      if (runtime === "client") clientModules.add(info.path);
+      else if (runtime === "server") serverModules.add(info.path);
+      const size = recordSize(record);
+      if (size !== null) {
+        if (runtime === "client") {
+          sizeClient[info.path] = Math.max(sizeClient[info.path] ?? 0, size);
+        } else if (runtime === "server") {
+          sizeServer[info.path] = Math.max(sizeServer[info.path] ?? 0, size);
+        } else {
+          sizes[info.path] = Math.max(sizes[info.path] ?? 0, size);
+        }
+      }
+      if (route) addRouteFile(routeFor(route), runtime, info.path);
+      return;
+    }
+    if (type === "group") {
+      // Turbopack bootstrap groups list emitted chunk filenames, not source
+      // modules. They are understood and intentionally add no join evidence.
       return;
     }
     if (type === "client-reference" || type === "clientreference") {
       const from = stringValue(record.from ?? record.client ?? record.importer);
       const to = stringValue(record.to ?? record.server ?? record.action ?? record.target);
-      if (from && to) {
+      const normalizedFrom = from ? addItem(from) : null;
+      const normalizedTo = to ? addItem(to) : null;
+      if (normalizedFrom && normalizedTo) {
         clientReferences.push({
-          from: addItem(from),
-          to: addItem(to),
+          from: normalizedFrom,
+          to: normalizedTo,
           kind: stringValue(record.referenceKind ?? record.referenceType ?? record.reference) || "unknown",
         });
       }
       const file = recordFile(record);
-      if (file) addUnique(files, normalizePath(root, file));
+      if (file) addSourceFile(file);
       const symbol = recordSymbol(record);
       if (symbol) addUnique(symbols, symbol);
       return;
@@ -441,39 +629,69 @@ function createBuilder(root: string, sourcePath: string): EvidenceBuilder {
       if (file && hash) fileHashes[normalizePath(root, file)] = hash;
       return;
     }
-    // Assets and additive record families are counted, never guessed.
+    // Additive record families are counted, never guessed.
     unknownRecords += 1;
   };
 
   const finish = (hash?: string): BuildEvidence => {
     const mapItem = (item: string): string => moduleIds[item] ?? item;
-    const mappedFiles = files.map(mapItem);
+    const mappedFiles = dedupe(files.map(mapItem));
     const mappedSymbols = symbols.map((symbol) => {
       const [file, name] = symbol.split("#");
       if (name && file && moduleIds[file]) return `${moduleIds[file]}#${name}`;
       return symbol;
     });
     const mappedSizes: Record<string, number> = {};
-    for (const [key, value] of Object.entries(sizes)) {
-      mappedSizes[mapItem(key)] = value;
+    for (const key of new Set([
+      ...Object.keys(sizes),
+      ...Object.keys(sizeClient),
+      ...Object.keys(sizeServer),
+    ])) {
+      const value = sizeClient[key] ?? sizeServer[key] ?? sizes[key];
+      if (value !== undefined) mappedSizes[mapItem(key)] = value;
     }
     const mappedLayers: Record<string, string> = {};
+    for (const file of files) {
+      if (clientModules.has(file)) mappedLayers[file] = "client";
+      else if (serverModules.has(file)) mappedLayers[file] = "server";
+    }
     for (const [key, value] of Object.entries(layers)) {
       mappedLayers[mapItem(key)] = value;
     }
-    const mappedRoutes = routes.map((route) => ({
-      ...route,
-      files: route.files.map(mapItem),
-      symbols: route.symbols.map((symbol) => {
-        const [file, name] = symbol.split("#");
-        if (name && file && moduleIds[file]) return `${moduleIds[file]}#${name}`;
-        return symbol;
-      }),
-    }));
+    const mappedRoutes = [...routes.values()].map((route) => {
+      const client = dedupe(route.clientFiles.map(mapItem));
+      const server = dedupe(route.serverFiles.map(mapItem));
+      const neutral = dedupe(route.files.map(mapItem));
+      let runtime = route.runtime;
+      let routeFiles: string[];
+      if (runtime === "client" && client.length > 0) {
+        routeFiles = client;
+      } else if (runtime === "server" && server.length > 0) {
+        routeFiles = server;
+      } else if (client.length > 0) {
+        runtime = "client";
+        routeFiles = client;
+      } else if (server.length > 0) {
+        runtime = "server";
+        routeFiles = server;
+      } else {
+        routeFiles = neutral;
+      }
+      return {
+        route: route.route,
+        files: routeFiles,
+        symbols: dedupe(route.symbols.map((symbol) => {
+          const [file, name] = symbol.split("#");
+          if (name && file && moduleIds[file]) return `${moduleIds[file]}#${name}`;
+          return symbol;
+        })),
+        ...(runtime ? { runtime } : {}),
+      };
+    });
     return {
       source,
       version,
-      files: dedupe(mappedFiles),
+      files: mappedFiles,
       symbols: dedupe(mappedSymbols),
       routes: mappedRoutes,
       sizes: mappedSizes,

@@ -84,6 +84,206 @@ function receipts(directory) {
     .map((entry) => JSON.parse(readFileSync(join(path, entry), "utf8")));
 }
 
+function turbopackExport() {
+  return [
+    { type: "meta", schema_version: 1, snapshot_name: "shrike", route_count: 2, selected_routes: 2 },
+    {
+      type: "module",
+      ident: "[project]/app/page.tsx [app-client] (ecmascript)",
+      path: "[project]/app/page.tsx",
+      dependencies: {},
+    },
+    {
+      type: "module",
+      ident: "[project]/lib/orphan.ts [app-client] (ecmascript)",
+      path: "[project]/lib/orphan.ts",
+      dependencies: {},
+    },
+    {
+      type: "module",
+      ident: "[project]/app/robots.ts [app-rsc] (ecmascript)",
+      path: "[project]/app/robots.ts",
+      dependencies: {},
+    },
+    {
+      type: "module",
+      ident: "[project]/node_modules/next/dist/client/app.js [app-client] (ecmascript)",
+      path: "[project]/node_modules/next/dist/client/app.js",
+      dependencies: {},
+    },
+    {
+      type: "module",
+      ident: "[externals]/crypto [external] (crypto, cjs)",
+      path: "[externals]/crypto",
+      dependencies: {},
+    },
+    {
+      type: "module",
+      ident: "[project]/.next-internal/server/app/page/actions.js [app-rsc] (server actions loader, ecmascript)",
+      path: "[project]/.next-internal/server/app/page/actions.js",
+      dependencies: {},
+    },
+    {
+      type: "route",
+      route: "/",
+      entries: [
+        {
+          route_entry_id: "/|route|/page|[project]/node_modules/next/dist/client/app.js [app-client] (ecmascript)",
+          module_ident: "[project]/node_modules/next/dist/client/app.js [app-client] (ecmascript)",
+          module_path: "[project]/node_modules/next/dist/client/app.js",
+          role: "route",
+          entry_kind: "client_bootstrap",
+        },
+      ],
+    },
+    {
+      type: "route",
+      route: "/robots.txt",
+      entries: [
+        {
+          module_ident: "[project]/app/robots.ts [app-rsc] (ecmascript)",
+          module_path: "[project]/app/robots.ts",
+          role: "route",
+          entry_kind: "route",
+        },
+      ],
+    },
+    {
+      type: "output",
+      route: "/",
+      filename: "[client-fs]/_next/static/chunks/app.js",
+      modules: [
+        "[project]/app/page.tsx [app-client] (ecmascript)",
+        "[project]/lib/orphan.ts [app-client] (ecmascript)",
+        "[project]/node_modules/next/dist/client/app.js [app-client] (ecmascript)",
+        "[externals]/crypto [external] (crypto, cjs)",
+      ],
+      coverage: "exact",
+    },
+    {
+      type: "output",
+      route: "/robots.txt",
+      filename: "[output]/.next/server/app/robots.txt/route.js",
+      modules: ["[project]/app/robots.ts [app-rsc] (ecmascript)"],
+      coverage: "exact",
+    },
+    {
+      type: "part",
+      route: "/",
+      filename: "[client-fs]/_next/static/chunks/app.js",
+      source_path: "[project]/app/page.tsx",
+      size: 100,
+      compressed_size: 60,
+    },
+    {
+      type: "part",
+      route: "/",
+      filename: "[client-fs]/_next/static/chunks/app.js",
+      source_path: "[project]/lib/orphan.ts",
+      size: 40,
+      compressed_size: 20,
+    },
+    {
+      type: "part",
+      route: "/",
+      filename: "[client-fs]/_next/static/chunks/app.js",
+      source_path: "[project]/node_modules/next/dist/client/app.js",
+      size: 9999,
+      compressed_size: 5000,
+    },
+    {
+      type: "part",
+      route: "/robots.txt",
+      filename: "[output]/.next/server/app/robots.txt/route.js",
+      source_path: "[project]/app/robots.ts",
+      size: 30,
+      compressed_size: 15,
+    },
+    {
+      type: "group",
+      route: "/",
+      id: 0,
+      kind: "bootstrap",
+      trigger_module_ident: "[project]/node_modules/next/dist/client/app.js [app-client] (ecmascript)",
+      trigger_join: "joined",
+      outputs: ["[client-fs]/_next/static/chunks/app.js"],
+    },
+  ].map((record) => JSON.stringify(record)).join("\n") + "\n";
+}
+
+test("Turbopack [project]/[externals] records join only project sources", async () => {
+  const { normalizeBuildEvidence } = await import(new URL("../src/build.ts", import.meta.url).href);
+  const directory = scratch("turbopack");
+  try {
+    baseApp(directory);
+    write(directory, "package.json", '{"name":"build-app","private":true,"type":"module","dependencies":{"next":"16.4.2"}}\n');
+    write(directory, "app/robots.ts", "export default function robots() { return { rules: [] }; }\n");
+    const normalized = normalizeBuildEvidence(directory, turbopackExport(), "evidence.jsonl");
+    assert.deepEqual(normalized.files.sort(), [
+      "app/page.tsx",
+      "app/robots.ts",
+      "lib/orphan.ts",
+    ]);
+    assert.equal(normalized.unknownRecords, 0);
+    assert.deepEqual(normalized.sizes, {
+      "app/page.tsx": 100,
+      "app/robots.ts": 30,
+      "lib/orphan.ts": 40,
+    });
+    assert.deepEqual(normalized.layers, {
+      "app/page.tsx": "client",
+      "app/robots.ts": "server",
+      "lib/orphan.ts": "client",
+    });
+    const client = normalized.routes.find((route) => route.route === "/");
+    assert.equal(client?.runtime, "client");
+    assert.deepEqual(client?.files.sort(), ["app/page.tsx", "lib/orphan.ts"]);
+    const server = normalized.routes.find((route) => route.route === "/robots.txt");
+    assert.equal(server?.runtime, "server");
+    assert.deepEqual(server?.files, ["app/robots.ts"]);
+    assert.equal(
+      Object.values(normalized.moduleIds).includes("node_modules/next/dist/client/app.js"),
+      false,
+      "dependency modules must not enter the module index",
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("real Turbopack JSONL joins at full coverage with byte attribution", { skip: !hasEngine }, () => {
+  const directory = scratch("turbopack-join");
+  try {
+    baseApp(directory);
+    write(directory, "package.json", '{"name":"build-app","private":true,"type":"module","dependencies":{"next":"16.4.2"}}\n');
+    write(directory, "app/robots.ts", "export default function robots() { return { rules: [] }; }\n");
+    write(directory, ".shrike/build.jsonl", turbopackExport());
+    const result = run(directory, ["evidence", "--build", ".shrike/build.jsonl", "--json"]);
+    assert.equal(result.status, 0, result.stderr);
+    const joined = JSON.parse(result.stdout);
+    assert.equal(joined.status, "full");
+    assert.equal(joined.joined, 3);
+    assert.equal(joined.total, 3);
+    assert.equal(joined.coverage, 1);
+    assert.deepEqual(joined.unmatched, []);
+    assert.deepEqual(joined.bytes, {
+      matched: 170,
+      shared: 0,
+      totalRoute: 170,
+      unknown: 0,
+      partial: false,
+    });
+    assert.deepEqual(joined.routes, [
+      { route: "/", files: 2, symbols: 0, bytes: 140, runtime: "client", unknown: 0 },
+      { route: "/robots.txt", files: 1, symbols: 0, bytes: 30, runtime: "server", unknown: 0 },
+    ]);
+    assert.deepEqual(joined.diagnostics, []);
+    assert.equal(joined.evidence.version, "16.4.2");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("evidence --build reports coverage, routes, and shared bytes", { skip: !hasEngine }, () => {
   const directory = scratch("join");
   try {

@@ -9,7 +9,10 @@
     ],
     "newlyDeadFiles": [],
     "triggerKinds": {
-      "lib/format.ts#oldName": "indirect"
+      "lib/format.ts#oldName": "removed-import"
+    },
+    "triggerFiles": {
+      "lib/format.ts#oldName": "app/page.tsx"
     }
   },
   "notes": ""

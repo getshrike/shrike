@@ -12,6 +12,9 @@
     ],
     "triggerKinds": {
       "components/InvoiceCard.tsx#InvoiceCard": "removed-route"
+    },
+    "triggerFiles": {
+      "components/InvoiceCard.tsx#InvoiceCard": "app/invoices/page.tsx"
     }
   },
   "notes": ""
