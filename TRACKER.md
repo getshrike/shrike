@@ -61,7 +61,7 @@ demonstrated and the evidence is linked here.
 | 0 | [Foundations](plans/PLAN-0-foundations.md) | `done` | Contract, schemas, fixtures, CI green |
 | 1 | [Rust engine](plans/PLAN-1-rust-engine.md) | `done` | Engine builds, fixtures pass, budgets met |
 | 2 | [Graph and delta](plans/PLAN-2-graph-and-delta.md) | `done` | Orphan delta correct; corpus clean |
-| 3 | [Verification and receipts](plans/PLAN-3-verification-and-receipts.md) | `done` | End-to-end verified deletion PR + receipt |
+| 3 | [Verification and receipts](plans/PLAN-3-verification-and-receipts.md) | `done` | End-to-end verified deletion PR + receipt; 3 real batches verified on a Next.js 16.4.2 app with typecheck, lint, test, and build |
 | 4 | [Build graph and Next.js](plans/PLAN-4-build-graph-and-nextjs.md) | `done` | Build evidence join, streaming, verdicts, bytes, boundaries, fallbacks, fixtures, and receipts green; local real Next.js 16.4.2 reference-app coverage is 1.00 (25/25 modules); external partner-app runs remain a distribution gate |
 | 5 | [Distribution and launch](plans/PLAN-5-distribution-and-launch.md) | `in-progress` | Hooks + Action + MCP done; design partners and publish blocked |
 | 6 | [Hardening and scale](plans/PLAN-6-hardening-and-scale.md) | `in-progress` | Corpus, scale, benchmarks done; labeled set and release blocked |
@@ -154,7 +154,7 @@ demonstrated and the evidence is linked here.
 | 3.14 | Exit codes | `done` | 0/1/2/3/4/5 covered | `packages/cli/test/contracts.test.mjs`; `scripts/e2e-prune.mjs` (0/1/2/3/4/5) |
 | 3.15 | Flaky handling | `done` | Rerun, classify, record; no false regression | `packages/verifier/src/bisect.ts`; verification flaky fixture |
 | 3.16 | Failure drill | `done` | Broken deletion reverted; tree clean | `scripts/e2e-prune.mjs` rejected/revert-failure scenarios |
-| 3.17 | Real-app end-to-end | `blocked` | 3 batches verified with typecheck, lint, test, build | blocked: needs a real app and three verified batches; synthetic e2e is green |
+| 3.17 | Real-app end-to-end | `done` | 3 batches verified with typecheck, lint, test, build | local Next.js 16.4.2 app: three prune runs verified one batch each — `GithubIcon` (1 symbol/1 file, `rcpt_23f8e477a6adf4917c6c4b65`), `ProjectPreview`+`AspectRatio` (2/2, `rcpt_4ce568b572bba51b588629dc`), `ProjectDetail`+`case-studies` cascade (6/2, `rcpt_6e4dbb4b8dfcce8472c37813`); every receipt records typecheck/lint/test/build `pass`; cleanup branches `shrike/cleanup-af9525ce0356`, `shrike/cleanup-4f6605ee0411`, `shrike/cleanup-e9dd25485094` |
 | 3.18 | Docs update | `done` | `docs/05` matches behavior | `docs/05-verified-deletion.md`; this file |
 
 ### Phase 4 — Build graph and Next.js
@@ -377,6 +377,7 @@ not commitments; commitments are in the plans.
 | 2026-11-20 | Completed the hook fast-check path (baseline reuse, budget degradation, advisory statuses) and the Action `fail-on`/artifact policy; added contract tests and updated docs | `packages/cli/src/main.ts`, `packages/action/`, `packages/cli/test/contracts.test.mjs`, `packages/action/test/action.test.mjs`, `docs/07-agent-and-distribution.md` |
 | 2026-11-20 | Fixed trigger attribution to name the changed edge owner (the caller) and classify a deleted route file as `removed-route`; added trigger file/kind fixture assertions and recorded a real Next.js 16.4 app delta trial | `crates/shrike-delta/src/lib.rs`, `scripts/run-fixtures.mjs`, `fixtures/delta/`, `TRACKER.md` |
 | 2026-11-20 | Taught the build-evidence parser the real Next.js 16.4 Turbopack record families and path scheme; excluded dependency/framework/asset modules from join coverage; added route and byte attribution from `part` records; the local reference app now joins at full coverage | `packages/cli/src/build.ts`, `crates/shrike-evidence/src/lib.rs`, `packages/cli/test/build-evidence.test.mjs`, `docs/06-build-graph-and-nextjs.md`, `TRACKER.md` |
+| 2026-11-20 | Fixed cascaded deletion: a file whose every symbol is deleted and whose module is not live is now removed whole, so a component and its exclusive helper do not leave dangling imports; added a prune e2e cascade scenario and verified three real batches on a Next.js 16.4.2 app | `packages/cli/src/main.ts`, `scripts/e2e-prune.mjs`, `docs/05-verified-deletion.md`, `TRACKER.md` |
 
 ---
 
@@ -423,6 +424,9 @@ implementation starts; design-package validation is recorded below.
 | 2026-11-20 | 4.4–4.8 | `cargo test -p shrike-evidence` | OK: 14 tests — `[project]/` paths join, dependency/external/generated evidence is filtered, bytes and routes are correct |
 | 2026-11-20 | 4.5, 4.7, 4.8 | `shrike evidence --build .shrike/build.jsonl --require-build-evidence --json` on local Next.js 16.4.2 reference app | OK: status `full`, 25/25 project modules, coverage 1.00, 46,956 matched bytes (2,091 shared, 44,865 route-local), 5 routes, 0 diagnostics, 0 unmatched, 0 unknown records; exit 0 |
 | 2026-11-20 | Final gates | `pnpm -r typecheck`; `node scripts/lint.mjs`; `pnpm test:node`; `cargo fmt --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo test --workspace`; `node scripts/check.mjs`; `node scripts/check-docs.mjs`; `node scripts/check-links.mjs` | OK: all packages typecheck; lint; 83 Node tests; fmt; clippy with `-D warnings`; workspace tests; fixture matrix (14 delta, 6 verification, 1 build, 11 build-graph); 13 docs, 7 plans, 111 IDs; 115 links |
+| 2026-11-20 | 3.16, 3.17 | `node scripts/e2e-prune.mjs` | OK: verified, rejected, bisected, revert-failure, and cascade-deletion scenarios pass; the cascade case proves a component and its exclusive helper are removed together without dangling imports |
+| 2026-11-20 | 3.17 | `shrike prune --base main` on a local Next.js 16.4.2 app, three feature branches | OK: 3/3 batches verified; each receipt records typecheck, lint, test, and build `pass` — `GithubIcon` (1 symbol/1 file), `ProjectPreview`+`AspectRatio` (2/2), `ProjectDetail`+`case-studies` (6/2); cleanup branches retained |
+| 2026-11-20 | Final gates (cascade fix) | `pnpm -r typecheck`; `node scripts/lint.mjs`; `pnpm test:node`; `cargo fmt --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo test --workspace`; `node scripts/check.mjs`; `node scripts/check-docs.mjs`; `node scripts/check-links.mjs` | OK: all packages typecheck; lint; 83 Node tests; fmt; clippy; workspace tests; 5 prune e2e scenarios (including cascade); fixture matrix (14 delta, 6 verification, 1 build, 11 build-graph); 250 corpus cases; 13 docs, 7 plans, 111 IDs; 115 links |
 
 ---
 
