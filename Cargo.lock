@@ -776,6 +776,7 @@ dependencies = [
  "serde_json",
  "shrike-core",
  "shrike-graph",
+ "shrike-syntax",
 ]
 
 [[package]]

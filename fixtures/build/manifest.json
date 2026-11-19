@@ -2,11 +2,32 @@
   "schemaVersion": "1.0",
   "buildFile": "analyze.json",
   "expected": {
-    "status": "partial",
+    "status": "low-coverage",
     "joined": 5,
+    "total": 7,
+    "coverage": 0.7142857142857143,
     "unmatched": [
       "app/about/page.tsx",
       "app/about/page.tsx#default"
+    ],
+    "bytes": {
+      "matched": 2600,
+      "shared": 600,
+      "totalRoute": 2000
+    },
+    "routes": [
+      {
+        "route": "/",
+        "files": 3,
+        "symbols": 2,
+        "bytes": 2000
+      },
+      {
+        "route": "/about",
+        "files": 1,
+        "symbols": 0,
+        "bytes": 0
+      }
     ]
   }
 }

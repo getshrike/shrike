@@ -1,11 +1,13 @@
 {
+  "source": "next analyze export",
   "version": "16.4.0",
   "routes": [
     {
       "route": "/",
       "files": [
         "app/page.tsx",
-        "app/layout.tsx"
+        "app/layout.tsx",
+        "components/Button.tsx"
       ],
       "symbols": [
         "app/page.tsx#default",
@@ -15,7 +17,8 @@
     {
       "route": "/about",
       "files": [
-        "app/about/page.tsx"
+        "app/about/page.tsx",
+        "components/Button.tsx"
       ],
       "symbols": [
         "app/about/page.tsx#default"
@@ -26,5 +29,10 @@
     "app/page.tsx",
     "app/layout.tsx",
     "components/Button.tsx"
-  ]
+  ],
+  "sizes": {
+    "app/page.tsx": 1200,
+    "app/layout.tsx": 800,
+    "components/Button.tsx": 600
+  }
 }

@@ -138,6 +138,13 @@ pub fn dispatch(request: &Request) -> ShrikeResult<Value> {
                 &payload.build,
             ))?)
         }
+        "augment-build" => {
+            let payload: BuildPayload = parse(&request.payload)?;
+            let join = shrike_evidence::join_build(&payload.snapshot, &payload.build);
+            let snapshot =
+                shrike_evidence::augment_snapshot(&payload.snapshot, &payload.build, &join);
+            Ok(json!({"snapshot": snapshot, "join": join}))
+        }
         other => Err(ShrikeError::UnknownCommand(other.to_string())),
     }
 }

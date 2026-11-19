@@ -83,8 +83,26 @@
         "head": { "type": "string", "minLength": 1, "description": "Head ref or commit for delta and plan." },
         "symbol": { "type": "string", "pattern": "^[^#]+#[^#]+$", "description": "Stable symbol key path#Name for proof." },
         "planId": { "type": "string", "minLength": 1, "description": "Plan identifier for proof or verification." },
-        "snapshot": { "type": "string", "minLength": 1, "description": "Snapshot path or content hash for scan or proof." },
-        "build": { "type": "string", "minLength": 1, "description": "Path to a next analyze export JSONL file for join-build." },
+        "snapshot": {
+          "oneOf": [
+            { "$ref": "graph-snapshot.schema.json" },
+            { "type": "string", "minLength": 1 }
+          ],
+          "description": "Snapshot object or snapshot path/content hash for plan, proof, and build joins."
+        },
+        "baseSnapshot": { "$ref": "graph-snapshot.schema.json", "description": "Merge-base snapshot for delta." },
+        "headSnapshot": { "$ref": "graph-snapshot.schema.json", "description": "Head snapshot for delta." },
+        "baseCommit": { "type": "string", "minLength": 1 },
+        "headCommit": { "type": "string", "minLength": 1 },
+        "dirty": { "type": "boolean" },
+        "delta": { "type": "object", "description": "Delta report produced by the delta command." },
+        "build": {
+          "oneOf": [
+            { "type": "object" },
+            { "type": "string", "minLength": 1 }
+          ],
+          "description": "Normalized build evidence object or a path to a next analyze export JSONL file."
+        },
         "cacheDir": { "type": "string", "minLength": 1, "description": "Cache directory relative to root. Defaults to .shrike/cache." },
         "config": { "$ref": "config.schema.json" },
         "include": {
@@ -116,7 +134,7 @@
         "id": { "$ref": "#/$defs/requestId" },
         "command": {
           "type": "string",
-          "enum": ["ping", "analyze", "scan", "delta", "plan", "proof", "join-build"]
+          "enum": ["ping", "analyze", "scan", "delta", "plan", "proof", "join-build", "augment-build"]
         },
         "payload": { "$ref": "#/$defs/payload" }
       },
@@ -130,16 +148,20 @@
           "then": { "properties": { "payload": { "required": ["root"] } } }
         },
         {
-          "if": { "properties": { "command": { "enum": ["delta", "plan"] } }, "required": ["command"] },
-          "then": { "properties": { "payload": { "required": ["root", "base", "head"] } } }
+          "if": { "properties": { "command": { "const": "delta" } }, "required": ["command"] },
+          "then": { "properties": { "payload": { "required": ["baseSnapshot", "headSnapshot", "baseCommit", "headCommit"] } } }
+        },
+        {
+          "if": { "properties": { "command": { "const": "plan" } }, "required": ["command"] },
+          "then": { "properties": { "payload": { "required": ["snapshot", "delta"] } } }
         },
         {
           "if": { "properties": { "command": { "const": "proof" } }, "required": ["command"] },
-          "then": { "properties": { "payload": { "required": ["root", "symbol"] } } }
+          "then": { "properties": { "payload": { "required": ["snapshot", "symbol"] } } }
         },
         {
-          "if": { "properties": { "command": { "const": "join-build" } }, "required": ["command"] },
-          "then": { "properties": { "payload": { "required": ["root", "build"] } } }
+          "if": { "properties": { "command": { "enum": ["join-build", "augment-build"] } }, "required": ["command"] },
+          "then": { "properties": { "payload": { "required": ["snapshot", "build"] } } }
         }
       ]
     },

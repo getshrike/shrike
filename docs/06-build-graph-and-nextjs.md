@@ -2,7 +2,7 @@
 
 > **Parent:** [MASTER_PROMPT.md](../MASTER_PROMPT.md) · **Tracker:** [TRACKER.md](../TRACKER.md)
 > **Status:** canonical · Authored 2026-11-20
-> **Implementation status (2026-11-20): partial.** `shrike evidence --build <path>` joins a simplified JSON evidence file to the snapshot and reports `full`/`partial`/`none` with unmatched entries. Streaming JSONL ingestion, version guard, route/byte attribution, build-edge feedback, `--require-build-evidence`, and receipt population remain open and are tracked in `TRACKER.md` phase 4.
+> **Implementation status (2026-11-20): implemented for the master-prompt contract; a few depth items remain.** `shrike evidence` discovers `.next/analyze/*.json[l]`, `.shrike/build/*.json[l]`, or `next-analyze/*.json[l]`, or reads an explicit `--build <path>`. Evidence may be one JSON object or JSONL; malformed input fails closed with exit 4. The join reports coverage (`full` ≥ 0.95, `partial` ≥ 0.80, `low-coverage` < 0.80, `unsupported` below Next.js 16.1, `none` when absent), per-route membership, matched/shared/route-local bytes, and unmatched entries. `augment-build` seeds build-live modules and symbols and follows known static edges, so build evidence can only add liveness; `prune --build` records source, snapshot hash, version, and status in every receipt; `--require-build-evidence` turns unavailable or low-confidence evidence into exit 4. Not yet implemented: bounded-memory streaming for very large exports, stale-snapshot detection, client/server layer verdicts, and the client-boundary leak diagnostic. Those are tracked as partial or planned in [`TRACKER.md`](../TRACKER.md) phase 4.
 
 ---
 

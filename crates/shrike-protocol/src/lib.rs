@@ -22,6 +22,7 @@ pub const COMMANDS: &[&str] = &[
     "plan",
     "proof",
     "join-build",
+    "augment-build",
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

@@ -78,6 +78,46 @@ if (runEngine) {
   console.log("SKIP engine delta checks: shrike-engine not built (pass --engine after cargo build)");
 }
 
+if (runEngine) {
+  const buildDir = join(root, "fixtures", "build");
+  const manifest = readJson(join(buildDir, "manifest.json"));
+  try {
+    const evidence = readJson(join(buildDir, manifest.buildFile));
+    const analyzed = await request("analyze", { root: join(buildDir, "source"), config: {} });
+    const joinResult = await request("join-build", { snapshot: analyzed.snapshot, build: evidence });
+    const expected = manifest.expected ?? {};
+    const actualRoutes = (joinResult.routes ?? []).map((route) => ({
+      route: route.route,
+      files: route.files,
+      symbols: route.symbols,
+      bytes: route.bytes,
+    }));
+    const checks = [
+      ["status", joinResult.status, expected.status],
+      ["joined", joinResult.joined, expected.joined],
+      ["total", joinResult.total, expected.total],
+      ["unmatched", joinResult.unmatched, expected.unmatched],
+      ["bytes", joinResult.bytes, expected.bytes],
+      ["routes", actualRoutes, expected.routes],
+    ];
+    if (Math.abs(joinResult.coverage - expected.coverage) > 1e-9) {
+      checks.push(["coverage", joinResult.coverage, expected.coverage]);
+    }
+    const mismatches = checks.filter(([, actual, wanted]) => JSON.stringify(actual) !== JSON.stringify(wanted));
+    if (mismatches.length > 0) {
+      failures += 1;
+      for (const [name, actual, wanted] of mismatches) {
+        console.log(`FAIL build ${name}: expected ${JSON.stringify(wanted)}, got ${JSON.stringify(actual)}`);
+      }
+    } else {
+      console.log(`PASS build join: ${joinResult.status}, coverage ${joinResult.coverage.toFixed(3)}, ${joinResult.bytes.matched} matched bytes`);
+    }
+  } catch (error) {
+    failures += 1;
+    console.log(`ERROR build join: ${error.message}`);
+  }
+}
+
 for (const [name, path] of [
   ["verification", join(root, "fixtures", "verification", "manifest.json")],
   ["build", join(root, "fixtures", "build", "manifest.json")],
