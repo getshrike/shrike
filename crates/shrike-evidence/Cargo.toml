@@ -10,3 +10,6 @@ shrike-core = { workspace = true }
 shrike-graph = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+shrike-syntax = { workspace = true }

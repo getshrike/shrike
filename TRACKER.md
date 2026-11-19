@@ -33,10 +33,13 @@ demonstrated and the evidence is linked here.
 - **Implementation:** phases 0–3 are complete and exercised by the Rust,
   Node, fixture, corpus, and prune e2e gates. The CLI, verifier, receipts,
   hooks, action, and MCP server are implemented. Phase 4 (Next.js build
-  evidence) has a working join but not yet the full JSONL/route/byte/feedback
-  contract; the remaining items are listed as `in-progress` below. External
-  launch, design-partner, publish, and real-app acceptance items are `blocked`
-  on credentials or participants, not on code.
+  evidence) now has discovery, JSONL/object ingestion, a version guard, join
+  coverage, route/byte attribution, receipt population, `--require-build-evidence`,
+  and build-edge feedback into reachability. The remaining phase 4 items are
+  depth work (bounded-memory streaming, suffix/module-ID matching, client/server
+  verdicts, stale/build-failed statuses, corpus evidence mode) and are listed as
+  `in-progress` below. External launch, design-partner, publish, and real-app
+  acceptance items are `blocked` on credentials or participants, not on code.
 - **Prior prototype:** not a dependency. The old tree was removed; a backup
   exists outside the repository only as a safety net. No code, schema, or fixture
   from it is reused.
@@ -150,22 +153,22 @@ demonstrated and the evidence is linked here.
 
 | ID | Task | Status | Acceptance | Evidence |
 |---|---|---|---|---|
-| 4.1 | Snapshot discovery | `in-progress` | Finds the snapshot; runs export only with `--build` | partial: `shrike evidence --build <path>` reads an explicit snapshot; discovery and build execution are not implemented |
-| 4.2 | Version guard | `in-progress` | 16.4+ full; 16.1–16.3 partial; older unsupported | partial: version is carried in build evidence; the version guard is not enforced |
-| 4.3 | JSONL parser | `in-progress` | Streaming; tolerates additive fields | partial: JSON evidence objects are parsed; streaming JSONL is not implemented |
-| 4.4 | Module index | `in-progress` | Path and ID lookup; normalized | partial: exact path/symbol matching; loader/query/suffix normalization is not implemented |
-| 4.5 | Module-to-file join | `in-progress` | ≥ 90% coverage on a real app; unresolved recorded | partial: joined/unmatched counts; coverage thresholds are not computed |
-| 4.6 | Presence/absence | `in-progress` | Client/server distinction; suppress on presence | partial: membership join only; presence/absence verdicts are not applied to candidates |
-| 4.7 | Route attribution | `in-progress` | Per-route membership; shared chunks attributed once | partial: route records are accepted; per-candidate route attribution is not reported |
-| 4.8 | Byte impact | `in-progress` | Per-route and total; no double counting | partial: no byte fields or per-route/shared accounting yet |
-| 4.9 | Build-edge feedback | `planned` | Adds certain edges; suppresses false positives | planned: build edges are not fed back into reachability |
-| 4.10 | Server actions | `in-progress` | Client-reference manifest considered; conservative fallback | partial: `use server` exports are static entries; client-reference edges are not joined |
-| 4.11 | Client boundaries | `in-progress` | `"use client"` entry semantics; leak diagnostic | partial: static `use client` semantics; build-layer leak diagnostics are not implemented |
+| 4.1 | Snapshot discovery | `done` | Finds the snapshot; runs export only with `--build` | `packages/cli/src/build.ts` discovers `.next/analyze`, `.shrike/build`, and `next-analyze`, or reads `--build <path>`; `packages/cli/test/build-evidence.test.mjs` |
+| 4.2 | Version guard | `done` | 16.4+ full; 16.1–16.3 partial; older unsupported | `crates/shrike-evidence/src/lib.rs` capability/status tests; lower package/evidence version wins |
+| 4.3 | JSONL parser | `in-progress` | Streaming; tolerates additive fields | JSON object and JSONL both parse; malformed input fails closed; unknown records are ignored. The file is read whole, so bounded-memory streaming remains open |
+| 4.4 | Module index | `in-progress` | Path and ID lookup; normalized | loader, query, `turbopack://`, absolute, and relative paths normalize; exact path/symbol match. Suffix and module-ID indexes remain open |
+| 4.5 | Module-to-file join | `done` | ≥ 90% coverage on a real app; unresolved recorded | coverage thresholds `full` ≥ 0.95, `partial` ≥ 0.80, `low-coverage` < 0.80; unmatched listed; `fixtures/build/` |
+| 4.6 | Presence/absence | `in-progress` | Client/server distinction; suppress on presence | membership join and presence-based suppression are wired through `augment-build`; per-candidate `present`/`absent`/`unknown` and client/server verdicts remain open |
+| 4.7 | Route attribution | `done` | Per-route membership; shared chunks attributed once | per-route files/symbols/bytes in `fixtures/build/manifest.json`; shared modules counted once in `bytes.shared` |
+| 4.8 | Byte impact | `in-progress` | Per-route and total; no double counting | `matched`/`shared`/`totalRoute` are reported and tested; missing sizes are treated as zero rather than `unknown` |
+| 4.9 | Build-edge feedback | `done` | Adds certain edges; suppresses false positives | `augment_snapshot` seeds build-live modules/symbols and follows known edges; `augment-build` engine command; Rust and CLI closure tests |
+| 4.10 | Server actions | `in-progress` | Client-reference manifest considered; conservative fallback | `use server` exports are static entries; client-reference records add liveness through the build join; explicit manifest edges remain open |
+| 4.11 | Client boundaries | `in-progress` | `"use client"` entry semantics; leak diagnostic | static `use client` semantics are implemented; build-layer mismatch/leak diagnostics remain open |
 | 4.12 | Proxy/middleware/metadata | `done` | Entry and matcher semantics; never dead | `crates/shrike-graph/src/entries.rs`; corpus proxy/middleware/metadata cases |
-| 4.13 | Fallback matrix | `in-progress` | Missing/stale/parse-error/unsupported → static-only with status | partial: `full`/`partial`/`none` join statuses; `--require-build-evidence` and the full matrix are pending |
-| 4.14 | Receipt integration | `planned` | Build evidence status and hash recorded | planned: the receipt schema has a build field, but prune does not populate it |
-| 4.15 | Corpus with/without evidence | `in-progress` | Green in both modes | partial: corpus is green without evidence; the evidence mode is not wired into the corpus runner |
-| 4.16 | Docs update | `in-progress` | `docs/06` matches behavior | partial: `docs/06` describes the target, not the current subset |
+| 4.13 | Fallback matrix | `in-progress` | Missing/stale/parse-error/unsupported → static-only with status | `full`, `partial`, `low-coverage`, `none`, `unsupported`, and `malformed` are emitted; `stale` and `build-failed` remain open because Shrike consumes a snapshot rather than running a build |
+| 4.14 | Receipt integration | `done` | Build evidence status and hash recorded | every prune receipt carries source, snapshot hash, version, and status; `absent` is explicit; `--require-build-evidence` fails closed; `packages/cli/test/build-evidence.test.mjs` |
+| 4.15 | Corpus with/without evidence | `in-progress` | Green in both modes | corpus is green without evidence; the evidence-mode runner and suppressed-candidate report remain open |
+| 4.16 | Docs update | `done` | `docs/06` matches behavior | `docs/06-build-graph-and-nextjs.md` implementation status and fallback notes updated |
 
 ### Phase 5 — Distribution and launch
 
@@ -357,6 +360,8 @@ not commitments; commitments are in the plans.
 | 2026-11-20 | Added content-addressed recovery snapshots, `shrike recover`, exit 5, and revert-failure receipts | `packages/cli/src/recovery.ts`, `scripts/e2e-prune.mjs` |
 | 2026-11-20 | Added engine timeout, config child-process isolation, four-tool MCP contract, and receipt structural validation | `packages/cli/src/engine.ts`, `packages/cli/src/config.ts`, `packages/receipts/src/validate.ts` |
 | 2026-11-20 | Expanded the must-not-report corpus to 250 entries and recorded benchmark actuals | `fixtures/must-not-report/`, `TRACKER.md` |
+| 2026-11-20 | Implemented build-evidence discovery, JSONL/object ingestion, version guard, join coverage, route/byte attribution, and receipt population | `packages/cli/src/build.ts`, `crates/shrike-evidence/`, `fixtures/build/`, `packages/cli/test/build-evidence.test.mjs` |
+| 2026-11-20 | Added build-edge feedback: build-live modules seed a liveness closure over known edges; build evidence can only suppress, never delete | `crates/shrike-evidence/`, `crates/shrike-engine/`, `packages/cli/src/main.ts` |
 
 ---
 
@@ -381,7 +386,10 @@ implementation starts; design-package validation is recorded below.
 | 2026-11-20 | 3.4–3.16 | `node scripts/e2e-prune.mjs` | OK: verified, rejected, bisected, revert-failure/recovery |
 | 2026-11-20 | 1.15, 6.4–6.5 | `node benchmarks/harness.mjs` | OK: 1k/10k budgets met; deterministic snapshots |
 | 2026-11-20 | 0.14 | `node scripts/check.mjs` | OK: schemas, receipts, corpus, delta, verification, build, prune e2e |
-| 2026-11-20 | 4.1–4.15 | `shrike evidence --build fixtures/build/analyze.json` | Partial: join status and unmatched entries; JSONL/routes/bytes/feedback pending |
+| 2026-11-20 | 4.1–4.16 | `node --test packages/cli/test/build-evidence.test.mjs` | OK: 10 tests — discovery, explicit path, JSONL/object join, malformed/traversal refusal, version guard, required evidence, suppression, edge closure, receipt metadata, fail-closed prune |
+| 2026-11-20 | 4.9 | `cargo test -p shrike-evidence` | OK: 7 tests, including build liveness closure and low-coverage non-augmentation |
+| 2026-11-20 | 4.1–4.16 | `node scripts/check.mjs` | OK: build fixture joins `low-coverage`, coverage 0.714, 2,600 matched bytes; all gates green |
+| 2026-11-20 | 0.8, 3.14 | `cargo fmt --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `pnpm -r typecheck`; `pnpm test:node` | OK: 38 Node tests; no clippy warnings |
 
 ---
 

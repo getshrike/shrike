@@ -21,6 +21,7 @@ import {
   resolveDefaultBase, restoreAll,
 } from "./git.ts";
 import { VERSION, PROTOCOL_VERSION } from "./version.ts";
+import { EMPTY_BUILD_HASH, loadBuildEvidence, type BuildEvidence } from "./build.ts";
 import {
   bisectFailure, captureBaseline, classifyCheck, detectPackageManager, detectRepositoryChecks, runChecks,
   type Baseline, type BisectUnit, type CheckResult, type ComparedCheck,
@@ -28,7 +29,7 @@ import {
 import {
   buildReceipt, writeReceipt, readReceipt, listReceipts, captureEnvironment, toReceiptChecks,
   renderPrBody, renderReceiptComment,
-  type ReceiptRejection,
+  type ReceiptBuild, type ReceiptRejection,
 } from "@shrike/receipts";
 import { buildCleanupBrief, installHook, uninstallHook, type HookTarget } from "@shrike/agent";
 
@@ -36,6 +37,7 @@ interface Snapshot {
   files: { path: string; contentHash: string; lines: number }[];
   symbols: { key: string; file: string; kind: string; span: { start: number; end: number; line: number }; lines: number; publicApi: boolean }[];
   candidates: string[];
+  live?: string[];
   graphHash: string;
   [key: string]: unknown;
 }
@@ -61,9 +63,27 @@ interface Plan {
   [key: string]: unknown;
 }
 
+interface BuildJoinResult {
+  status: string;
+  joined: number;
+  total: number;
+  coverage: number;
+  unmatched: string[];
+  routes: { route: string; files: number; symbols: number; bytes: number }[];
+  bytes: { matched: number; shared: number; totalRoute: number };
+  diagnostics: { code: string; severity: string; message: string }[];
+}
+
+interface BuildEvidenceInfo {
+  evidence: BuildEvidence;
+  join: BuildJoinResult;
+  path: string | null;
+}
+
 const BOOLEAN_FLAGS = new Set([
   "json", "help", "force", "pr", "in-place", "allow-dirty", "verify", "receipt",
   "quiet", "dry-run", "claude", "cursor", "opencode", "all", "no-checks",
+  "require-build-evidence",
 ]);
 
 async function main(argv: string[]): Promise<number> {
@@ -157,11 +177,12 @@ interface AnalysisPair {
   baseCommit: string;
   headCommit: string;
   dirty: boolean;
+  build: BuildEvidenceInfo | null;
   cleanup: () => void;
 }
 
 async function analyzePair(root: string, args: ParsedArgs): Promise<AnalysisPair> {
-  rejectUnknownFlags(args, ["json", "base", "help", "allow-dirty", "quiet"]);
+  rejectUnknownFlags(args, ["json", "base", "help", "allow-dirty", "quiet", "build", "require-build-evidence"]);
   const config = await loadConfig(root);
   const baseRef = resolveDefaultBase(root, stringFlag(args, "base"));
   const baseCommit = mergeBase(root, baseRef);
@@ -174,14 +195,64 @@ async function analyzePair(root: string, args: ParsedArgs): Promise<AnalysisPair
   try {
     const base = await analyze(worktree.directory, config);
     const headSnapshot = await analyze(root, config);
+    const build = await attachBuildEvidence(root, headSnapshot, args);
     const delta = await requestEngine<DeltaReport>("delta", {
       baseSnapshot: base, headSnapshot, baseRef, baseCommit, headCommit: head, dirty,
     });
-    return { base, head: headSnapshot, delta, baseRef, baseCommit, headCommit: head, dirty, cleanup: worktree.cleanup };
+    return { base, head: headSnapshot, delta, baseRef, baseCommit, headCommit: head, dirty, build, cleanup: worktree.cleanup };
   } catch (error) {
     worktree.cleanup();
     throw error;
   }
+}
+
+async function attachBuildEvidence(
+  root: string,
+  head: Snapshot,
+  args: ParsedArgs,
+): Promise<BuildEvidenceInfo | null> {
+  const explicit = stringFlag(args, "build");
+  const required = booleanFlag(args, "require-build-evidence");
+  if (!explicit && !required) return null;
+  const loaded = loadBuildEvidence(root, explicit);
+  if (loaded.error) {
+    throw new CliError(ExitCode.COULD_NOT_RUN, "build-evidence", loaded.error);
+  }
+  const result = await requestEngine<{ snapshot: Snapshot; join: BuildJoinResult }>("augment-build", {
+    snapshot: head,
+    build: loaded.evidence,
+  });
+  if (required && !["full", "partial"].includes(result.join.status)) {
+    throw new CliError(
+      ExitCode.COULD_NOT_RUN,
+      "build-evidence-required",
+      `build evidence is required but status is ${result.join.status}${loaded.path ? ` (${loaded.path})` : ""}`,
+    );
+  }
+  // Build evidence can only add liveness. The engine seeds the evidenced
+  // modules and follows known edges so their dependencies are not reported dead.
+  if (result.join.status === "full" || result.join.status === "partial") {
+    Object.assign(head, result.snapshot);
+  }
+  return { evidence: loaded.evidence, join: result.join, path: loaded.path };
+}
+
+function toReceiptBuild(info: BuildEvidenceInfo | null): ReceiptBuild {
+  if (!info) {
+    return {
+      source: "static",
+      snapshotHash: EMPTY_BUILD_HASH,
+      version: "unknown",
+      status: "absent",
+    };
+  }
+  const status = info.join.status === "none" ? "absent" : info.join.status;
+  return {
+    source: info.evidence.source || "next analyze export",
+    snapshotHash: info.evidence.snapshotHash,
+    version: info.evidence.version || "unknown",
+    status: status as ReceiptBuild["status"],
+  };
 }
 
 async function deltaCommand(root: string, args: ParsedArgs): Promise<number> {
@@ -208,7 +279,7 @@ async function planCommand(root: string, args: ParsedArgs): Promise<number> {
 }
 
 async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
-  rejectUnknownFlags(args, ["json", "base", "help", "allow-dirty", "pr", "in-place", "verify", "receipt", "dry-run", "no-checks"]);
+  rejectUnknownFlags(args, ["json", "base", "help", "allow-dirty", "pr", "in-place", "verify", "receipt", "dry-run", "no-checks", "build", "require-build-evidence"]);
   if (booleanFlag(args, "no-checks")) {
     throw new UsageError("--no-checks is not supported: a verified deletion requires at least one project check");
   }
@@ -216,6 +287,15 @@ async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
   const pair = await analyzePair(root, args);
   const config = await loadConfig(root);
   const plan = await requestEngine<Plan>("plan", { snapshot: pair.head, delta: pair.delta, config: engineConfig(config) });
+  const receiptBuild = toReceiptBuild(pair.build);
+  const make = (
+    batch: BatchLike,
+    checks: ComparedCheck[],
+    outcome: string,
+    patchPath: string,
+    rejected: ReceiptRejection[] = [],
+    recovery?: RecoveryReference,
+  ) => makeReceipt(root, pair, plan, batch, checks, outcome, patchPath, rejected, recovery, receiptBuild);
   pair.cleanup();
   if (plan.batches.length === 0) {
     if (booleanFlag(args, "json")) writeJson({ plan, outcome: "clean" });
@@ -304,7 +384,7 @@ async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
         if (applied.lines === 0) continue;
         if (applied.blocking.length === 0) {
           commitAll(workingRoot, `shrike: remove ${batch.symbols.length} dead symbols (${batch.id})`);
-          const receipt = makeReceipt(root, pair, plan, batch, applied.compared, "verified", activePatch);
+          const receipt = make(batch, applied.compared, "verified", activePatch);
           receipts.push(writeReceipt(root, receipt));
           if (!booleanFlag(args, "quiet") && !booleanFlag(args, "json")) writeHuman(`Verified ${batch.id}: ${batch.symbols.length} symbols, ${batch.files.length} files.`);
           continue;
@@ -314,7 +394,7 @@ async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
         restore();
         const bisection = await bisectBatch(workingRoot, pair.head, batch, checks, baseline, checksEnabled);
         if (bisection.status === "inconclusive") {
-          const receipt = makeReceipt(root, pair, plan, batch, bisection.compared.length > 0 ? bisection.compared : applied.compared, "error", activePatch, rejectionsFor(batch.symbols, batch.files, applied.blocking, bisection.reason));
+          const receipt = make(batch, bisection.compared.length > 0 ? bisection.compared : applied.compared, "error", activePatch, rejectionsFor(batch.symbols, batch.files, applied.blocking, bisection.reason));
           receipts.push(writeReceipt(root, receipt));
           outcome = "error";
           if (booleanFlag(args, "json")) writeJson({ plan, outcome, receipts });
@@ -329,7 +409,7 @@ async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
             const retryPatch = writePatch(root, workingRoot, batch.id);
             activePatch = retryPatch;
             commitAll(workingRoot, `shrike: remove ${batch.symbols.length} dead symbols (${batch.id})`);
-            const receipt = makeReceipt(root, pair, plan, batch, retry.compared, "flaky", retryPatch);
+            const receipt = make(batch, retry.compared, "flaky", retryPatch);
             receipts.push(writeReceipt(root, receipt));
             if (!booleanFlag(args, "quiet") && !booleanFlag(args, "json")) writeHuman(`Verified ${batch.id} (flaky on first attempt).`);
             continue;
@@ -337,7 +417,7 @@ async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
           restore();
         }
         if (bisection.status === "interaction-failure" || bisection.rejected.length === 0 || bisection.rejected.length === batch.symbols.length) {
-          const receipt = makeReceipt(root, pair, plan, batch, applied.compared, bisection.status === "interaction-failure" ? "interaction-failure" : "rejected", activePatch, rejectionsFor(batch.symbols, batch.files, applied.blocking, bisection.reason));
+          const receipt = make(batch, applied.compared, bisection.status === "interaction-failure" ? "interaction-failure" : "rejected", activePatch, rejectionsFor(batch.symbols, batch.files, applied.blocking, bisection.reason));
           receipts.push(writeReceipt(root, receipt));
           hadRejection = true;
           outcome = bisection.status === "interaction-failure" ? "interaction-failure" : "rejected";
@@ -353,7 +433,7 @@ async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
         activePatch = culpritPatch;
         restore();
         const culpritBatch = subsetBatch(pair.head, batch, culprit, `${batch.id}-rejected`);
-        const rejectedReceipt = makeReceipt(root, pair, plan, culpritBatch, culpritRun.compared, "rejected", culpritPatch, rejectionsFor(culprit, culpritBatch.files, culpritRun.blocking, bisection.reason));
+        const rejectedReceipt = make(culpritBatch, culpritRun.compared, "rejected", culpritPatch, rejectionsFor(culprit, culpritBatch.files, culpritRun.blocking, bisection.reason));
         receipts.push(writeReceipt(root, rejectedReceipt));
         hadRejection = true;
         outcome = "rejected";
@@ -366,7 +446,7 @@ async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
         activeCompared = remainderRun.compared;
         if (remainderRun.blocking.length > 0) {
           restore();
-          const wholeReceipt = makeReceipt(root, pair, plan, batch, remainderRun.compared, "rejected", activePatch, rejectionsFor(batch.symbols, batch.files, remainderRun.blocking, "remainder failed after bisection"));
+          const wholeReceipt = make(batch, remainderRun.compared, "rejected", activePatch, rejectionsFor(batch.symbols, batch.files, remainderRun.blocking, "remainder failed after bisection"));
           receipts.push(writeReceipt(root, wholeReceipt));
           continue;
         }
@@ -374,7 +454,7 @@ async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
         const remainderPatch = writePatch(root, workingRoot, remainderBatch.id);
         activePatch = remainderPatch;
         commitAll(workingRoot, `shrike: remove ${remainder.length} dead symbols (${batch.id})`);
-        const verifiedReceipt = makeReceipt(root, pair, plan, remainderBatch, remainderRun.compared, "verified", remainderPatch);
+        const verifiedReceipt = make(remainderBatch, remainderRun.compared, "verified", remainderPatch);
         receipts.push(writeReceipt(root, verifiedReceipt));
         if (!booleanFlag(args, "quiet") && !booleanFlag(args, "json")) writeHuman(`Verified ${remainder.length} of ${batch.symbols.length} symbols from ${batch.id}.`);
       }
@@ -387,7 +467,7 @@ async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
       let receiptPath: string | null = null;
       if (activeBatch) {
         try {
-          const receipt = makeReceipt(root, pair, plan, activeBatch, activeCompared, "revert-failed", activePatch, [], recovery);
+          const receipt = make(activeBatch, activeCompared, "revert-failed", activePatch, [], recovery);
           receiptPath = writeReceipt(root, receipt);
           receipts.push(receiptPath);
         } catch (receiptError) {
@@ -433,6 +513,7 @@ function makeReceipt(
   patchPath: string,
   rejected: ReceiptRejection[] = [],
   recovery?: RecoveryReference,
+  build?: ReceiptBuild,
 ) {
   const policy = plan.policy;
   return buildReceipt({
@@ -452,6 +533,7 @@ function makeReceipt(
     },
     environment: captureEnvironment({ packageManager: detectPackageManager(root) }),
     ...(recovery ? { recovery } : {}),
+    ...(build ? { build } : {}),
   });
 }
 
@@ -686,14 +768,35 @@ async function proofCommand(root: string, args: ParsedArgs): Promise<number> {
 }
 
 async function evidenceCommand(root: string, args: ParsedArgs): Promise<number> {
-  const buildPath = stringFlag(args, "build");
-  if (!buildPath) throw new UsageError("evidence requires --build <path>");
+  rejectUnknownFlags(args, ["json", "build", "require-build-evidence", "help"]);
+  const loaded = loadBuildEvidence(root, stringFlag(args, "build"));
+  if (loaded.error) {
+    throw new CliError(ExitCode.COULD_NOT_RUN, "build-evidence", loaded.error);
+  }
   const config = await loadConfig(root);
   const snapshot = await analyze(root, config);
-  const build = JSON.parse(readFileSync(join(root, buildPath), "utf8"));
-  const result = await requestEngine("join-build", { snapshot, build });
-  if (booleanFlag(args, "json")) writeJson(result);
-  else writeHuman(JSON.stringify(result, null, 2));
+  const result = await requestEngine<BuildJoinResult>("join-build", {
+    snapshot,
+    build: loaded.evidence,
+  });
+  if (booleanFlag(args, "require-build-evidence") && !["full", "partial"].includes(result.status)) {
+    throw new CliError(
+      ExitCode.COULD_NOT_RUN,
+      "build-evidence-required",
+      `build evidence is required but status is ${result.status}`,
+    );
+  }
+  const payload = {
+    ...result,
+    evidence: {
+      path: loaded.path,
+      source: loaded.evidence.source,
+      version: loaded.evidence.version,
+      snapshotHash: loaded.evidence.snapshotHash,
+    },
+  };
+  if (booleanFlag(args, "json")) writeJson(payload);
+  else writeHuman(JSON.stringify(payload, null, 2));
   return ExitCode.OK;
 }
 
@@ -921,11 +1024,11 @@ Commands:
   scan                 Current-state dead-code evidence
   delta --base <ref>   Whole-graph PR orphan delta
   plan --base <ref>    Deletion batches and blast radius
-  prune --base <ref>   Apply, verify, commit batches (branch only)
+  prune --base <ref> [--build <path>]  Apply, verify, commit batches (branch only)
   verify --plan <id>   Re-check a plan/receipt
   receipt [id]         Show receipts
   proof <symbol>       Witness path or proof trace
-  evidence --build <path>  Join build-graph evidence
+  evidence [--build <path>] [--require-build-evidence]  Join build-graph evidence
   hook install --claude|--cursor|--opencode
   mcp serve            MCP server over stdio
   cache clean|verify   Cache maintenance

@@ -1378,6 +1378,11 @@ fn route_of(path: &str) -> Option<String> {
     Some(route)
 }
 
+/// Recompute the content hash after an evidence join adds liveness.
+pub fn rehash_snapshot(snapshot: &mut GraphSnapshot) {
+    snapshot.graph_hash = graph_hash(snapshot);
+}
+
 fn graph_hash(snapshot: &GraphSnapshot) -> String {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
