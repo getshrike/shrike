@@ -64,9 +64,21 @@ if (runEngine) {
       const actual = new Set(delta.newlyDead.map((item) => item.symbol));
       const missing = (manifest.expected?.newlyDead ?? []).filter((symbol) => !actual.has(symbol));
       const unexpected = [...actual].filter((symbol) => !(manifest.expected?.newlyDead ?? []).includes(symbol));
-      if (missing.length > 0 || unexpected.length > 0) {
+      const bySymbol = new Map(delta.newlyDead.map((item) => [item.symbol, item]));
+      const triggerMismatches = [];
+      for (const [symbol, kind] of Object.entries(manifest.expected?.triggerKinds ?? {})) {
+        if (bySymbol.get(symbol)?.trigger?.kind !== kind) {
+          triggerMismatches.push(`${symbol} kind=${bySymbol.get(symbol)?.trigger?.kind ?? "missing"} (wanted ${kind})`);
+        }
+      }
+      for (const [symbol, file] of Object.entries(manifest.expected?.triggerFiles ?? {})) {
+        if (bySymbol.get(symbol)?.trigger?.file !== file) {
+          triggerMismatches.push(`${symbol} file=${bySymbol.get(symbol)?.trigger?.file ?? "missing"} (wanted ${file})`);
+        }
+      }
+      if (missing.length > 0 || unexpected.length > 0 || triggerMismatches.length > 0) {
         failures += 1;
-        console.log(`FAIL ${scenario}: missing=[${missing.join(", ")}] unexpected=[${unexpected.join(", ")}]`);
+        console.log(`FAIL ${scenario}: missing=[${missing.join(", ")}] unexpected=[${unexpected.join(", ")}] triggers=[${triggerMismatches.join(", ")}]`);
       } else {
         console.log(`PASS ${scenario}: ${actual.size} newly dead`);
       }

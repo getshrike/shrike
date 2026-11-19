@@ -2,7 +2,7 @@
 
 > **Parent:** [MASTER_PROMPT.md](../MASTER_PROMPT.md) · **Tracker:** [TRACKER.md](../TRACKER.md)
 > **Status:** canonical · Authored 2026-11-20
-> **Implementation status (2026-11-20):** Claude Code, Cursor, and OpenCode hooks, the GitHub Action, the PR/receipt renderers, the four-tool read-only MCP server, and a read-only [design-partner kit](../design-partner/README.md) are implemented. npm publishing, signed releases, landing tests, and design-partner trials are blocked on credentials or participants. Local packaging checks verify the tarball contents; the publish dry run itself needs registry access.
+> **Implementation status (2026-11-20):** Claude Code, Cursor, and OpenCode hooks, the GitHub Action, the PR/receipt renderers, the four-tool read-only MCP server, and a read-only [design-partner kit](../design-partner/README.md) are implemented. The hook runs fast-tier checks against a reused baseline inside its budget; the Action supports `fail-on: newly-dead` and replaces/removes its delta artifact. npm publishing, signed releases, landing tests, and design-partner trials are blocked on credentials or participants. Local packaging checks verify the tarball contents; the publish dry run itself needs registry access.
 
 ---
 
@@ -42,6 +42,18 @@ After an agent finishes an edit:
 4. print a one-screen summary.
 
 The hook **never applies a deletion**. It reports; the human or agent decides.
+The delta runs in a child process with `--allow-dirty`. Checks are the
+configured `tier: "fast"` checks, or typecheck/lint discovered from
+`package.json` when no checks are configured. A persisted baseline is reused
+only when its head commit matches and every fast check matches a stored entry
+by name and command, so a standard-tier baseline captured by `prune` can still
+explain a pre-existing failure. The hook never captures a baseline because that
+work belongs to `prune`. Check failures are advisory and never change the
+hook's exit code.
+
+The brief's `checks` field is one of `pass`, `fail`, `timeout`, `error`,
+`skipped` (no fast checks configured or discoverable), or `skipped-budget`
+(the remaining budget was too small to start or finish a check).
 
 ### 2.2 Budget
 
@@ -53,6 +65,9 @@ The hook **never applies a deletion**. It reports; the human or agent decides.
 
 If the budget is exceeded, the hook degrades to delta-only, marks the brief
 `checks: skipped-budget`, and exits 0. It never blocks the agent for minutes.
+The delta child process is capped at 55 s, and the checks share one deadline
+derived from the total budget. Tests may shorten the budgets with
+`SHRIKE_HOOK_TOTAL_BUDGET_MS` and `SHRIKE_HOOK_CHECKS_BUDGET_MS`.
 
 ### 2.3 Hook events
 
@@ -105,7 +120,9 @@ symbol names and paths.
 
 - No network calls.
 - No source upload.
-- Writes only under `.shrike/`.
+- The hook writes only under `.shrike/`; the project's own fast checks may write
+  their normal build caches, but the hook never edits source or applies a
+  deletion.
 - A 60-second hard timeout.
 - If the engine is missing, the hook prints one line and exits 0; it does not
   block the agent.
@@ -186,6 +203,7 @@ artifact.
 | `mode` | `delta` | `delta` (read-only) or `prune` (verified cleanup PR) |
 | `base` | `origin/${{ github.base_ref }}` | Base ref |
 | `max-items` | `0` | Fail delta mode when the count exceeds this value; `0` disables |
+| `fail-on` | `never` | `newly-dead` fails delta mode on any finding; `never` fails only above `max-items` |
 
 Outputs: `count`, `delta-path` (delta mode); `outcome`, `receipts` (prune mode).
 The Action is a thin wrapper over the CLI; it does not re-implement analysis.

@@ -12,6 +12,9 @@
     ],
     "triggerKinds": {
       "lib/format.ts#formatInvoice": "removed-import"
+    },
+    "triggerFiles": {
+      "lib/format.ts#formatInvoice": "app/page.tsx"
     }
   },
   "notes": ""

@@ -15,9 +15,14 @@
       "lib/shared.ts"
     ],
     "triggerKinds": {
-      "lib/a.ts#a": "indirect",
-      "lib/b.ts#b": "indirect",
-      "lib/shared.ts#shared": "indirect"
+      "lib/a.ts#a": "removed-import",
+      "lib/b.ts#b": "removed-import",
+      "lib/shared.ts#shared": "removed-import"
+    },
+    "triggerFiles": {
+      "lib/a.ts#a": "app/page.tsx",
+      "lib/b.ts#b": "app/page.tsx",
+      "lib/shared.ts#shared": "app/page.tsx"
     }
   },
   "notes": ""

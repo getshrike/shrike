@@ -81,6 +81,53 @@ test("delta mode reports a count and fails only above max-items", () => {
   }
 });
 
+test("fail-on newly-dead fails on a finding even when max-items is disabled", () => {
+  const directory = scratch("fail-on");
+  try {
+    fakeShrike(directory);
+    const { result } = run(directory, { INPUT_MODE: "delta", INPUT_MAX_ITEMS: "0", INPUT_FAIL_ON: "newly-dead" });
+    assert.equal(result.status, 1, result.stderr);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("invalid fail-on fails closed without invoking the CLI", () => {
+  const directory = scratch("fail-on-invalid");
+  try {
+    fakeShrike(directory);
+    const { result, log } = run(directory, { INPUT_MODE: "delta", INPUT_FAIL_ON: "sometimes" });
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /expected newly-dead or never/);
+    assert.equal(log, "");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("delta artifacts are replaced on rerun and removed when the delta fails", () => {
+  const directory = scratch("artifact");
+  try {
+    fakeShrike(directory);
+    const first = run(directory, { INPUT_MODE: "delta" });
+    assert.equal(first.result.status, 0, first.result.stderr);
+    const artifact = join(directory, ".shrike", "action-delta.json");
+    const firstBytes = readFileSync(artifact, "utf8");
+    assert.equal(JSON.parse(firstBytes).newlyDead.length, 1);
+
+    const second = run(directory, { INPUT_MODE: "delta" });
+    assert.equal(second.result.status, 0, second.result.stderr);
+    assert.equal(readFileSync(artifact, "utf8"), firstBytes, "the artifact was appended to instead of replaced");
+
+    writeFileSync(join(directory, "bin", "shrike"), "#!/usr/bin/env node\nprocess.exit(4);\n");
+    const failed = run(directory, { INPUT_MODE: "delta" });
+    assert.equal(failed.result.status, 4, failed.result.stderr);
+    assert.equal(existsSync(artifact), false, "a failed run left stale evidence behind");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("prune refuses a fork pull request before invoking the CLI", () => {
   const directory = scratch("fork");
   try {

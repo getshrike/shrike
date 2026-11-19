@@ -32,7 +32,11 @@ demonstrated and the evidence is linked here.
   6 JSON Schemas. Link, task-ID, decision-ID, and schema-structure checks pass.
 - **Implementation:** phases 0–4 are complete and exercised by the Rust,
   Node, fixture, corpus, and prune e2e gates. The CLI, verifier, receipts,
-  hooks, action, and MCP server are implemented. Phase 4 (Next.js build
+  hooks, action, and MCP server are implemented. The hook runs fast-tier
+  checks (configured or discovered) against a reused baseline inside its 60 s
+  budget and degrades to `checks: skipped-budget`; the Action supports
+  `fail-on: newly-dead`, replaces its delta artifact on rerun, and removes
+  stale evidence when a run fails. Phase 4 (Next.js build
   evidence) includes bounded-memory JSONL streaming, module-ID and suffix
   matching, per-candidate client/server verdicts, unknown-size accounting,
   server-action/client-reference build edges, the client-boundary leak
@@ -58,7 +62,7 @@ demonstrated and the evidence is linked here.
 | 1 | [Rust engine](plans/PLAN-1-rust-engine.md) | `done` | Engine builds, fixtures pass, budgets met |
 | 2 | [Graph and delta](plans/PLAN-2-graph-and-delta.md) | `done` | Orphan delta correct; corpus clean |
 | 3 | [Verification and receipts](plans/PLAN-3-verification-and-receipts.md) | `done` | End-to-end verified deletion PR + receipt |
-| 4 | [Build graph and Next.js](plans/PLAN-4-build-graph-and-nextjs.md) | `done` | Build evidence join, streaming, verdicts, bytes, boundaries, fallbacks, fixtures, and receipts green; real-app coverage is a release gate |
+| 4 | [Build graph and Next.js](plans/PLAN-4-build-graph-and-nextjs.md) | `done` | Build evidence join, streaming, verdicts, bytes, boundaries, fallbacks, fixtures, and receipts green; local real Next.js 16.4.2 reference-app coverage is 1.00 (25/25 modules); external partner-app runs remain a distribution gate |
 | 5 | [Distribution and launch](plans/PLAN-5-distribution-and-launch.md) | `in-progress` | Hooks + Action + MCP done; design partners and publish blocked |
 | 6 | [Hardening and scale](plans/PLAN-6-hardening-and-scale.md) | `in-progress` | Corpus, scale, benchmarks done; labeled set and release blocked |
 
@@ -117,7 +121,7 @@ demonstrated and the evidence is linked here.
 | 2.3 | Comparability gate | `done` | Refuses incomparable inputs with a named reason | `crates/shrike-delta/src/`; `fixtures/delta/` |
 | 2.4 | Live-set diff | `done` | `live(base) − live(head)`; no pre-existing debt | `crates/shrike-delta/src/`; `node scripts/delta-fixtures.mjs` |
 | 2.5 | Witness lookup | `done` | Lost witness path present for every delta item | `crates/shrike-graph/src/`; `shrike proof` |
-| 2.6 | Trigger attribution | `done` | Names the changed file/symbol that removed the edge | `crates/shrike-delta/src/`; delta fixture oracles |
+| 2.6 | Trigger attribution | `done` | Names the changed file/symbol that removed the edge | `crates/shrike-delta/src/lib.rs` reports the edge owner (the changed caller) as `trigger.file`, including `removed-route` for a deleted route file; `fixtures/delta/{removed-caller,removed-route,barrel,cycle,interaction,renamed-export}` assert `triggerKinds` and `triggerFiles`; local real-app trial attributes `app/components/work.tsx#Work` to `app/page.tsx` |
 | 2.7 | Cascade closure | `done` | Exclusive ownership; stop conditions; unknown blocks | `crates/shrike-delta/src/`; `fixtures/delta/` |
 | 2.8 | Batch conflict graph | `done` | No shared files/SCC/order within a batch | `crates/shrike-plan/src/`; plan tests |
 | 2.9 | Blast-radius guard | `done` | Batch over limit is split or refused with a reason | `crates/shrike-plan/src/`; batch cap tests |
@@ -127,7 +131,7 @@ demonstrated and the evidence is linked here.
 | 2.13 | Delta fixtures + corpus | `done` | Nine scenarios; zero corpus findings | `node scripts/delta-fixtures.mjs`; `node scripts/corpus-runner.mjs` |
 | 2.14 | Monorepo handling | `done` | Workspace boundaries respected | `crates/shrike-resolve/src/`; `fixtures/delta/monorepo` |
 | 2.15 | Determinism | `done` | Byte-identical output across runs and thread counts | `node scripts/delta-fixtures.mjs`; determinism CI step |
-| 2.16 | Real-app delta | `blocked` | A synthetic feature removal produces untouched-file orphans | blocked: needs a real application/PR; synthetic removal is covered by `fixtures/delta/removed-caller` |
+| 2.16 | Real-app delta | `done` | A synthetic feature removal produces untouched-file orphans | Local Next.js 16.4.2 app (`portfolio` snapshot `80b85ad`) on a trial branch removing the `Work` import/use from `app/page.tsx`; `shrike delta --base main` reported `app/components/work.tsx#Work` (1 untouched file, 25 lines) with trigger `app/page.tsx` and `removed-import`; external partner PRs remain under 5.14 |
 | 2.17 | Docs update | `done` | `docs/04` matches behavior | `docs/04-whole-graph-delta.md`; this file |
 
 ### Phase 3 — Verification and receipts
@@ -159,12 +163,12 @@ demonstrated and the evidence is linked here.
 |---|---|---|---|---|
 | 4.1 | Snapshot discovery | `done` | Finds the snapshot; runs export only with `--build` | `packages/cli/src/build.ts` discovers `.next/analyze`, `.shrike/build`, and `next-analyze`, or reads `--build <path>`; `packages/cli/test/build-evidence.test.mjs` |
 | 4.2 | Version guard | `done` | 16.4+ full; 16.1–16.3 partial; older unsupported | `crates/shrike-evidence/src/lib.rs` capability/status tests; lower package/evidence version wins |
-| 4.3 | JSONL parser | `done` | Streaming; tolerates additive fields | `packages/cli/src/build.ts` streams JSONL in 64 KiB chunks with a `StringDecoder`; object/array and JSONL inputs normalize; malformed lines fail closed with line numbers; unknown record families are counted; 10,000-line host test and `fixtures/build-graph/` |
-| 4.4 | Module index | `done` | Path and ID lookup; normalized | loader prefixes, query strings, `turbopack://`, `file://`, absolute, and relative paths normalize; module IDs map to paths; exact path/symbol match then longest suffix; duplicate evidence keys are deterministic; host and Rust tests |
-| 4.5 | Module-to-file join | `done` | ≥ 90% coverage on a real app; unresolved recorded | coverage thresholds `full` ≥ 0.95, `partial` ≥ 0.80, `low-coverage` < 0.80; unmatched listed; `fixtures/build/` |
+| 4.3 | JSONL parser | `done` | Streaming; tolerates additive fields | `packages/cli/src/build.ts` streams JSONL in 64 KiB chunks with a `StringDecoder`; understands the real Next.js 16.4 Turbopack `meta`/`module`/`route`/`output`/`part`/`group` families plus synthetic `chunk`/`entry`; object/array and JSONL inputs normalize; malformed lines fail closed with line numbers; unknown record families are counted; 10,000-line host test, real-Turbopack host tests, and `fixtures/build-graph/` |
+| 4.4 | Module index | `done` | Path and ID lookup; normalized | `[project]/`, `[externals]/`, `[client-fs]/`, `[output]/`, `[next]/`, `[turbopack]/`, Turbopack layer annotations, proxy modules, loader prefixes, query strings, `turbopack://`, `file://`, absolute, and relative paths normalize; module IDs map to project source paths; exact path/symbol match then longest suffix; duplicate evidence keys are deterministic; host and Rust tests |
+| 4.5 | Module-to-file join | `done` | ≥ 90% coverage on a real app; unresolved recorded | local Next.js 16.4.2 reference app joins 25/25 project modules at coverage 1.00 (46,956 matched bytes, 5 routes); dependency/framework/asset modules are excluded from the denominator while unmatched project modules remain unknown; coverage thresholds `full` ≥ 0.95, `partial` ≥ 0.80, `low-coverage` < 0.80; `fixtures/build/` and `packages/cli/test/build-evidence.test.mjs` |
 | 4.6 | Presence/absence | `done` | Client/server distinction; suppress on presence | `candidate_verdicts` reports `present`, `server-only`, `absent`, `unknown`, `unsupported`, and `stale` per candidate; client-route presence beats a server layer; `fixtures/build-graph/server-action/` and `client-boundary/` |
-| 4.7 | Route attribution | `done` | Per-route membership; shared chunks attributed once | per-route files/symbols/bytes in `fixtures/build/manifest.json`; shared modules counted once in `bytes.shared` |
-| 4.8 | Byte impact | `done` | Per-route and total; no double counting | `matched`/`shared`/`totalRoute` are reported; missing sizes increment `bytes.unknown`, set `bytes.partial`, and are listed in `unknownSizes`; non-full joins set `bytes.partial`; `fixtures/build-graph/shared-chunk/` and host/Rust tests |
+| 4.7 | Route attribution | `done` | Per-route membership; shared chunks attributed once | per-route files/symbols/bytes in `fixtures/build/manifest.json`; real Turbopack `output`/`part` records attribute project sources to client/server routes; shared modules counted once in `bytes.shared` |
+| 4.8 | Byte impact | `done` | Per-route and total; no double counting | real reference app reports 46,956 matched bytes (2,091 shared, 44,865 route-local) from `part.size`; `matched`/`shared`/`totalRoute` are reported; missing sizes increment `bytes.unknown`, set `bytes.partial`, and are listed in `unknownSizes`; non-full joins set `bytes.partial`; `fixtures/build-graph/shared-chunk/` and host/Rust tests |
 | 4.9 | Build-edge feedback | `done` | Adds certain edges; suppresses false positives | `augment_snapshot` seeds build-live modules/symbols and follows known edges; `augment-build` engine command; Rust and CLI closure tests |
 | 4.10 | Server actions | `done` | Client-reference manifest considered; conservative fallback | `client-reference` records create `kind: "build"`, `certainty: "certain"` edges, seed liveness, and produce `server-only` verdicts; `fixtures/build-graph/server-action/` and Rust/host tests |
 | 4.11 | Client boundaries | `done` | `"use client"` entry semantics; leak diagnostic | static `use client` semantics plus `client-boundary-leak` warning for server-layer files in client routes; opt out with `clientBoundaryLeaks: false` or `--no-client-boundary-leaks`; `fixtures/build-graph/client-boundary/` |
@@ -181,10 +185,10 @@ demonstrated and the evidence is linked here.
 | 5.1 | Claude Code hook | `done` | Install, run, uninstall; idempotent | `packages/agent/src/hooks.ts`; `packages/cli/test/contracts.test.mjs` |
 | 5.2 | Cursor hook | `done` | Same fast path | `packages/agent/src/hooks.ts`; `packages/cli/test/contracts.test.mjs` |
 | 5.3 | OpenCode hook | `done` | Same fast path | `packages/agent/src/hooks.ts`; `packages/cli/test/contracts.test.mjs` |
-| 5.4 | Fast-path budget | `done` | ≤ 60 s or delta-only | `shrike hook run` 55 s timeout; `packages/cli/src/main.ts` |
+| 5.4 | Fast-path budget | `done` | ≤ 60 s or delta-only | `shrike hook run` runs configured fast-tier checks (or discovers typecheck/lint), reuses a matching stored baseline, shares one 60 s deadline with the 55 s delta, and records `pass`/`fail`/`timeout`/`error`/`skipped`/`skipped-budget`; `SHRIKE_HOOK_TOTAL_BUDGET_MS`/`SHRIKE_HOOK_CHECKS_BUDGET_MS`; `packages/cli/test/contracts.test.mjs` (5 hook fast-path tests) |
 | 5.5 | Hook output + brief | `done` | One-screen summary + JSON `CleanupBrief` | `packages/agent/src/brief.ts`; `.shrike/brief.json` contract test |
 | 5.6 | Hook safety | `done` | No source upload; `.shrike/` only; timeout | hook writes `.shrike/` only; prompt-injection sanitization; contract test |
-| 5.7 | GitHub Action | `blocked` | Opens a draft PR on a test repo | `packages/action/` supports delta/prune, records outputs, and refuses forks; local tests cover delta thresholds, fork refusal, prune outputs, and unknown modes; external test-repo run is blocked on a test repository |
+| 5.7 | GitHub Action | `blocked` | Opens a draft PR on a test repo | `packages/action/` supports delta/prune, `fail-on` (`newly-dead` or `never`), records outputs, replaces the delta artifact on rerun, removes stale evidence on failure, and refuses forks; local tests cover thresholds, fail-on, invalid inputs, artifact replacement/removal, fork refusal, prune outputs, and unknown modes; external test-repo run is blocked on a test repository |
 | 5.8 | PR template + receipt comment | `done` | Per-batch commits; receipt link; rejected list | `packages/receipts/src/render.ts`; `scripts/e2e-prune.mjs` per-batch commits |
 | 5.9 | MCP wrapper | `done` | 4 tools; no mutation | `packages/cli/src/main.ts` MCP server; four-tool contract test |
 | 5.10 | Package naming + publish dry run | `blocked` | Name available; tarball contents verified | local tarball gate passes (`scripts/check-package.mjs`: launcher, dist, README, license; no source/tests/fixtures); npm scope availability and registry publish dry run remain blocked on credentials |
@@ -370,6 +374,9 @@ not commitments; commitments are in the plans.
 | 2026-11-20 | Completed the local security review: allowlisted config and check environments, added prompt-injection and render tests, recorded audits, and documented residual release gates | `packages/verifier/src/run.ts`, `packages/cli/src/config.ts`, `packages/agent/test/`, `packages/receipts/test/`, `docs/09-security-and-trust.md`, `.github/workflows/ci.yml` |
 | 2026-11-20 | Added a warm delta measurement and p95 reporting to the benchmark harness; recorded 1k/10k actuals | `benchmarks/harness.mjs`, `benchmarks/README.md`, `TRACKER.md` |
 | 2026-11-20 | Reconciled README, license, and docs with the implemented build-graph and distribution state | `README.md`, `LICENSE`, `packages/cli/package.json`, `docs/08-benchmarks-and-confidence.md` |
+| 2026-11-20 | Completed the hook fast-check path (baseline reuse, budget degradation, advisory statuses) and the Action `fail-on`/artifact policy; added contract tests and updated docs | `packages/cli/src/main.ts`, `packages/action/`, `packages/cli/test/contracts.test.mjs`, `packages/action/test/action.test.mjs`, `docs/07-agent-and-distribution.md` |
+| 2026-11-20 | Fixed trigger attribution to name the changed edge owner (the caller) and classify a deleted route file as `removed-route`; added trigger file/kind fixture assertions and recorded a real Next.js 16.4 app delta trial | `crates/shrike-delta/src/lib.rs`, `scripts/run-fixtures.mjs`, `fixtures/delta/`, `TRACKER.md` |
+| 2026-11-20 | Taught the build-evidence parser the real Next.js 16.4 Turbopack record families and path scheme; excluded dependency/framework/asset modules from join coverage; added route and byte attribution from `part` records; the local reference app now joins at full coverage | `packages/cli/src/build.ts`, `crates/shrike-evidence/src/lib.rs`, `packages/cli/test/build-evidence.test.mjs`, `docs/06-build-graph-and-nextjs.md`, `TRACKER.md` |
 
 ---
 
@@ -408,6 +415,14 @@ implementation starts; design-package validation is recorded below.
 | 2026-11-20 | 6.6 | `pnpm audit --prod`; `cargo audit --json` | OK: pnpm no known vulnerabilities; cargo audit 0 vulnerabilities (1550 advisories, 108 dependencies) |
 | 2026-11-20 | 6.6, 5.5, 5.6 | `node --test packages/agent/test/brief.test.mjs`; `node --test packages/receipts/test/redact.test.mjs`; `node --test packages/receipts/test/render.test.mjs`; `node --test packages/verifier/test/checks.test.mjs` | OK: injection stripping/labels/caps, synthetic secret redaction, Markdown escaping, safe check environment |
 | 2026-11-20 | 6.5, 6.9 | `node benchmarks/harness.mjs --files 1000 --runs 7`; `node benchmarks/harness.mjs --files 10000 --runs 7`; `node scripts/check-links.mjs`; `node scripts/check-docs.mjs`; `node scripts/check-schemas.mjs` | OK: 1k 222/146 ms cold/warm, 346 ms delta; 10k 2.70/1.37 s cold/warm, 231 MB RSS; 115 links, 13 docs/7 plans/111 IDs, 1231 fixture files |
+| 2026-11-20 | 5.4, 5.5, 5.6 | `node --test packages/cli/test/contracts.test.mjs` | OK: 30 tests — hook fast checks pass, fail, budget degradation, discovery, and stored-baseline classification; CLI contracts, recovery, MCP, and prune paths |
+| 2026-11-20 | 5.7 | `node --test packages/action/test/action.test.mjs` | OK: 7 tests — delta threshold, `fail-on: newly-dead`, invalid `fail-on`, artifact replacement/removal, fork refusal, prune outputs, unknown modes |
+| 2026-11-20 | 2.6, 2.16 | `node scripts/run-fixtures.mjs --engine` | OK: 14 delta fixtures pass with `triggerKinds` and `triggerFiles` assertions; `removed-route` reports the deleted route file, other caller removals report the caller |
+| 2026-11-20 | 2.16 | `shrike delta --base main` on a local Next.js 16.4.2 `portfolio` copy (snapshot `80b85ad`) with the `Work` caller removed | OK: 1 newly dead symbol in untouched `app/components/work.tsx`; trigger `app/page.tsx`, kind `removed-import`, 25 estimated lines, 1 batch; exit 1 |
+| 2026-11-20 | 4.3–4.8 | `node --test packages/cli/test/build-evidence.test.mjs` | OK: 18 tests — real Turbopack `meta`/`module`/`route`/`output`/`part`/`group` JSONL parses to project-only files, layers, routes, and 170 matched bytes at full coverage; dependency, external, generated, and asset modules are excluded |
+| 2026-11-20 | 4.4–4.8 | `cargo test -p shrike-evidence` | OK: 14 tests — `[project]/` paths join, dependency/external/generated evidence is filtered, bytes and routes are correct |
+| 2026-11-20 | 4.5, 4.7, 4.8 | `shrike evidence --build .shrike/build.jsonl --require-build-evidence --json` on local Next.js 16.4.2 reference app | OK: status `full`, 25/25 project modules, coverage 1.00, 46,956 matched bytes (2,091 shared, 44,865 route-local), 5 routes, 0 diagnostics, 0 unmatched, 0 unknown records; exit 0 |
+| 2026-11-20 | Final gates | `pnpm -r typecheck`; `node scripts/lint.mjs`; `pnpm test:node`; `cargo fmt --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo test --workspace`; `node scripts/check.mjs`; `node scripts/check-docs.mjs`; `node scripts/check-links.mjs` | OK: all packages typecheck; lint; 83 Node tests; fmt; clippy with `-D warnings`; workspace tests; fixture matrix (14 delta, 6 verification, 1 build, 11 build-graph); 13 docs, 7 plans, 111 IDs; 115 links |
 
 ---
 

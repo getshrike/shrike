@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { writeFakeEngine } from "@shrike/testkit";
+import { failureSignature } from "@shrike/verifier";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const cli = join(root, "packages", "cli", "src", "main.ts");
@@ -443,6 +444,118 @@ test("hook run exits zero and writes a brief when a base is available", { skip: 
     assert.equal(brief.base, "main");
     assert.ok(brief.newlyDead >= 1);
     assert.match(brief.nextCommand, /shrike/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("hook run executes configured fast checks and records the result", { skip: !hasEngine }, () => {
+  const directory = makeOrphanRepo("hook-fast-checks", {
+    checks: [
+      { name: "fast-smoke", command: "node -e 0", required: true, tier: "fast" },
+      // A standard-tier check must not run in the hook budget.
+      { name: "standard-fail", command: "node -e \"process.exit(1)\"", required: true, tier: "standard" },
+    ],
+  });
+  try {
+    const result = run(directory, ["hook", "run", "--json"], { SHRIKE_HOOK_BASE: "main" });
+    assert.equal(result.status, 0, result.stderr);
+    const brief = JSON.parse(readFileSync(join(directory, ".shrike", "brief.json"), "utf8"));
+    assert.equal(brief.checks, "pass");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("hook run reports a failing fast check without blocking the agent", { skip: !hasEngine }, () => {
+  const directory = makeOrphanRepo("hook-fast-fail", {
+    checks: [{ name: "fast-fail", command: "node -e \"process.exit(1)\"", required: true, tier: "fast" }],
+  });
+  try {
+    const result = run(directory, ["hook", "run", "--json"], { SHRIKE_HOOK_BASE: "main" });
+    assert.equal(result.status, 0, "the hook must never block the agent");
+    const brief = JSON.parse(readFileSync(join(directory, ".shrike", "brief.json"), "utf8"));
+    assert.equal(brief.checks, "fail");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("hook run degrades to skipped-budget instead of overrunning its checks budget", { skip: !hasEngine }, () => {
+  const directory = makeOrphanRepo("hook-budget", {
+    checks: [{ name: "slow", command: "node -e \"setTimeout(() => {}, 5000)\"", required: true, tier: "fast" }],
+  });
+  try {
+    const started = Date.now();
+    const result = run(directory, ["hook", "run", "--json"], {
+      SHRIKE_HOOK_BASE: "main",
+      SHRIKE_HOOK_CHECKS_BUDGET_MS: "1",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(Date.now() - started < 10_000, "the hook overran its budget");
+    const brief = JSON.parse(readFileSync(join(directory, ".shrike", "brief.json"), "utf8"));
+    assert.equal(brief.checks, "skipped-budget");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("hook run discovers fast checks from package scripts when no checks are configured", { skip: !hasEngine }, () => {
+  const directory = makeRepo("hook-discovery");
+  try {
+    write(directory, "app/page.tsx", "import { orphan } from '../lib/orphan';\nexport default function Page() { return orphan(); }\n");
+    write(directory, "lib/orphan.ts", "export function orphan() { return 1; }\n");
+    write(directory, "package.json", JSON.stringify({
+      name: "hook-discovery",
+      private: true,
+      type: "module",
+      scripts: { typecheck: "node -e 0", lint: "node -e 0", test: "node -e \"process.exit(1)\"" },
+    }));
+    git(directory, ["add", "-A"]);
+    git(directory, ["commit", "-q", "-m", "base"]);
+    git(directory, ["checkout", "-q", "-b", "feature"]);
+    write(directory, "app/page.tsx", "export default function Page() { return null; }\n");
+    git(directory, ["add", "-A"]);
+    git(directory, ["commit", "-q", "-m", "remove caller"]);
+
+    const result = run(directory, ["hook", "run", "--json"], { SHRIKE_HOOK_BASE: "main" });
+    assert.equal(result.status, 0, result.stderr);
+    const brief = JSON.parse(readFileSync(join(directory, ".shrike", "brief.json"), "utf8"));
+    assert.equal(brief.checks, "pass", "fast discovery must not run the failing test script");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("hook run compares against a stored baseline failure", { skip: !hasEngine }, () => {
+  const command = "node -e \"process.exit(1)\"";
+  const directory = makeOrphanRepo("hook-baseline", {
+    checks: [{ name: "fast-fail", command, required: true, tier: "fast" }],
+  });
+  try {
+    const head = git(directory, ["rev-parse", "HEAD"]);
+    write(directory, ".shrike/baseline.json", JSON.stringify({
+      schemaVersion: "1.0",
+      head,
+      capturedAt: new Date().toISOString(),
+      checks: [{
+        name: "fast-fail",
+        command,
+        status: "fail",
+        exitCode: 1,
+        durationMs: 1,
+        output: "",
+        signature: failureSignature(""),
+        timedOut: false,
+        reruns: 0,
+        flaky: false,
+        required: true,
+      }],
+    }));
+    const result = run(directory, ["hook", "run", "--json"], { SHRIKE_HOOK_BASE: "main" });
+    assert.equal(result.status, 0, result.stderr);
+    const brief = JSON.parse(readFileSync(join(directory, ".shrike", "brief.json"), "utf8"));
+    assert.equal(brief.checks, "pass", "a known baseline failure was reported as a new failure");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

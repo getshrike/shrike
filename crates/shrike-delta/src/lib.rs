@@ -316,18 +316,39 @@ fn attribute(
             .any(|kind| head_edges.contains(&(source, target, kind)));
         if !still_there {
             let kind = existing[0];
-            let file = base_symbols
-                .get(target)
+            // The trigger is the owner of the removed edge: the caller that
+            // stopped importing/referencing the now-dead symbol. Fall back to
+            // the target when the source has no symbol record.
+            let source_file = base_symbols
+                .get(source)
                 .map(|symbol| symbol.file.clone())
+                .or_else(|| head_symbols.get(source).map(|symbol| symbol.file.clone()));
+            let file = source_file
+                .clone()
+                .or_else(|| base_symbols.get(target).map(|symbol| symbol.file.clone()))
                 .or_else(|| head_symbols.get(target).map(|symbol| symbol.file.clone()))
-                .or_else(|| base_symbols.get(source).map(|symbol| symbol.file.clone()))
                 .unwrap_or_default();
-            let trigger_kind = match kind {
-                "jsx" => "removed-jsx",
-                "re-export" => "removed-re-export",
-                "dynamic" => "changed-dynamic",
-                "import" => "removed-import",
-                _ => "removed-call",
+            let source_was_entry = source_file.as_ref().is_some_and(|path| {
+                base.entries.iter().any(|entry| {
+                    entry.route.is_some()
+                        && base_symbols
+                            .get(entry.symbol.as_str())
+                            .is_some_and(|symbol| &symbol.file == path)
+                })
+            });
+            let source_deleted = source_file
+                .as_ref()
+                .is_some_and(|path| !head.files.iter().any(|head_file| &head_file.path == path));
+            let trigger_kind = if source_deleted && source_was_entry {
+                "removed-route"
+            } else {
+                match kind {
+                    "jsx" => "removed-jsx",
+                    "re-export" => "removed-re-export",
+                    "dynamic" => "changed-dynamic",
+                    "import" => "removed-import",
+                    _ => "removed-call",
+                }
             };
             return (
                 Trigger {
