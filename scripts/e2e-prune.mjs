@@ -189,8 +189,8 @@ scenario("bisected batch", () => {
     assert(rejected.rejected.length === 1, "bisection did not record one rejection");
     assert(rejected.rejected[0].symbols.includes("lib/bad.ts#bad"), "bisection rejected the wrong symbol");
     const branch = "shrike/cleanup-" + output.plan.id.replace(/^plan_/, "");
-    const good = git(directory, ["show", `${branch}:lib/good.ts`]);
-    assert(!good.includes("good"), "passing remainder was not committed");
+    const branchFiles = git(directory, ["ls-tree", "-r", "--name-only", branch]).split("\n");
+    assert(!branchFiles.includes("lib/good.ts"), "passing remainder was not deleted");
     const bad = git(directory, ["show", `${branch}:lib/bad.ts`]);
     assert(bad.includes("bad"), "culprit was committed despite the rejection");
     const dirty = git(directory, ["status", "--porcelain"]).split("\n").filter((line) => line.trim() && !line.slice(3).startsWith(".shrike/"));
@@ -237,6 +237,47 @@ scenario("revert failure and recovery", () => {
     assert(restored.includes("formatInvoice"), "recover did not restore the original bytes");
     const dirty = git(directory, ["status", "--porcelain"]).split("\n").filter((line) => line.trim() && !line.slice(3).startsWith(".shrike/"));
     assert(dirty.length === 0, `tree is dirty after recovery: ${dirty.join(", ")}`);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+scenario("cascade deletion", () => {
+  const directory = makeRepo("cascade");
+  try {
+    write(directory, "app/page.tsx", `import { outer } from "../lib/outer";\nexport default function Page() { return outer(); }\n`);
+    write(directory, "lib/inner.ts", `export function inner() { return "inner"; }\n`);
+    write(directory, "lib/outer.ts", `import { inner } from "./inner";\nexport function outer() { return inner(); }\n`);
+    write(directory, "package.json", `{"name":"prune-cascade","private":true,"type":"module"}\n`);
+    write(directory, "check.mjs", `import { existsSync, readFileSync } from "node:fs";\nfor (const [file, name] of [["lib/inner.ts", "inner"], ["lib/outer.ts", "outer"]]) {\n  if (!existsSync(file)) continue;\n  const source = readFileSync(file, "utf8");\n  if (!source.includes("function " + name)) throw new Error("deleted " + name + " left " + file);\n}\n`);
+    write(directory, "shrike.config.json", JSON.stringify({
+      checks: [{ name: "smoke", command: "node check.mjs", required: true, timeoutMs: 30_000 }],
+    }));
+    git(directory, ["add", "-A"]);
+    git(directory, ["commit", "-q", "-m", "base"]);
+    git(directory, ["checkout", "-q", "-b", "feature"]);
+    write(directory, "app/page.tsx", `export default function Page() { return null; }\n`);
+    git(directory, ["add", "-A"]);
+    git(directory, ["commit", "-q", "-m", "remove caller"]);
+
+    const delta = runCli(directory, ["delta", "--base", "main", "--json"]);
+    assert(delta.status === 1, `expected delta exit 1, got ${delta.status}: ${delta.stderr}`);
+    const symbols = JSON.parse(delta.stdout).newlyDead.map((item) => item.symbol);
+    assert(symbols.includes("lib/outer.ts#outer"), "outer was not newly dead");
+    assert(symbols.includes("lib/inner.ts#inner"), "inner was not cascaded");
+
+    const result = runPrune(directory);
+    assert(result.status === 0, `expected exit 0, got ${result.status}: ${result.stderr}`);
+    const output = JSON.parse(result.stdout);
+    assert(output.outcome === "verified", "cascade batch was not verified");
+    const branch = "shrike/cleanup-" + output.plan.id.replace(/^plan_/, "");
+    const branchFiles = git(directory, ["ls-tree", "-r", "--name-only", branch]).split("\n");
+    assert(!branchFiles.includes("lib/outer.ts"), "outer file was left behind");
+    assert(!branchFiles.includes("lib/inner.ts"), "inner file was left behind");
+    const written = receipts(directory);
+    assert(written.length === 1 && written[0].outcome === "verified", "expected one verified receipt");
+    assert(written[0].batch.symbols.includes("lib/outer.ts#outer"), "receipt missing outer");
+    assert(written[0].batch.symbols.includes("lib/inner.ts#inner"), "receipt missing inner");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

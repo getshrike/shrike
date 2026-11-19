@@ -784,6 +784,16 @@ function applySymbols(root: string, snapshot: Snapshot, symbols: string[]): numb
     if (list) list.push(key);
     else byFile.set(file, [key]);
   }
+  // A file whose every symbol is being deleted is itself dead. Removing the
+  // whole file is what prevents dangling imports from a deleted dependency
+  // (for example `b.ts` importing `a.ts` when both are removed together).
+  const symbolsByFile = new Map<string, string[]>();
+  for (const symbol of snapshot.symbols) {
+    const list = symbolsByFile.get(symbol.file);
+    if (list) list.push(symbol.key);
+    else symbolsByFile.set(symbol.file, [symbol.key]);
+  }
+  const live = new Set(snapshot.live ?? []);
   let removed = 0;
   for (const [file, keys] of [...byFile.entries()].sort(([left], [right]) => left.localeCompare(right))) {
     let path: string;
@@ -799,6 +809,19 @@ function applySymbols(root: string, snapshot: Snapshot, symbols: string[]): numb
     if (!existsSync(path)) continue;
     const content = readFileSync(path, "utf8");
     const lines = content.split("\n");
+    const deleting = new Set(keys);
+    const fileSymbols = (symbolsByFile.get(file) ?? []).filter(
+      (key) => !key.endsWith("#__module__"),
+    );
+    if (
+      fileSymbols.length > 0 &&
+      fileSymbols.every((key) => deleting.has(key)) &&
+      !live.has(`${file}#__module__`)
+    ) {
+      removed += contentLineCount(content);
+      rmSync(path);
+      continue;
+    }
     const ranges: [number, number][] = [];
     for (const key of keys) {
       const symbol = snapshot.symbols.find((candidate) => candidate.key === key && candidate.file === file);
@@ -818,6 +841,12 @@ function applySymbols(root: string, snapshot: Snapshot, symbols: string[]): numb
     writeFileSync(path, kept.join("\n"));
   }
   return removed;
+}
+
+function contentLineCount(content: string): number {
+  if (content.length === 0) return 0;
+  const lines = content.split("\n");
+  return content.endsWith("\n") ? lines.length - 1 : lines.length;
 }
 
 function lineAt(content: string, offset: number): number {

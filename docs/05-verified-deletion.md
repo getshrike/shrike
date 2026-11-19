@@ -68,6 +68,13 @@ The deletion is applied in one of two modes:
 `in-place` refuses a dirty tree unless `--allow-dirty` is explicit. The default
 is `worktree`.
 
+When every symbol in a file belongs to the deletion set and the file's module
+symbol is not live, the whole file is removed rather than leaving an empty
+declaration shell. This keeps cascaded deletions — a component and its
+exclusive helper — from leaving dangling imports. A file whose module symbol is
+live for side effects is never removed wholesale; only the selected symbol
+spans are removed.
+
 ### 2.3 Check
 
 Checks are detected from `package.json` scripts or supplied in
