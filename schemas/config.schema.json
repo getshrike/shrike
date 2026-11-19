@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://shrike.dev/schemas/config.schema.json",
-  "title": "Shrike EngineConfig",
-  "description": "The normalized, camelCase configuration passed from the TypeScript host to the Rust engine, plus host-side check and pull-request options. A minimal empty object is valid and produces the documented defaults. Unknown keys are rejected with a helpful error.",
+  "title": "Shrike Config",
+  "description": "The camelCase configuration accepted by the Shrike CLI and passed to the Rust engine after host-only options are removed. A minimal empty object is valid and produces the documented defaults. Unknown keys are rejected by the host's schema validation when a project opts in.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -14,24 +14,39 @@
     },
     "include": {
       "type": "array",
-      "description": "Glob set to inventory. Default: [\"**/*.{ts,tsx,js,jsx,mjs,cjs}\"].",
+      "description": "Glob set to inventory. Default: [\"**/*.ts\",\"**/*.tsx\",\"**/*.js\",\"**/*.jsx\",\"**/*.mjs\",\"**/*.cjs\"].",
       "items": { "type": "string", "minLength": 1 },
       "minItems": 1,
       "uniqueItems": true,
-      "default": ["**/*.{ts,tsx,js,jsx,mjs,cjs}"]
+      "default": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs"]
     },
     "ignore": {
       "type": "array",
-      "description": "Glob set skipped during inventory. Default: [\".next/**\", \"node_modules/**\", \"dist/**\", \"build/**\", \"coverage/**\", \".shrike/**\"].",
+      "description": "Glob set skipped during inventory. Ignore wins over include.",
       "items": { "type": "string", "minLength": 1 },
       "uniqueItems": true,
-      "default": [".next/**", "node_modules/**", "dist/**", "build/**", "coverage/**", ".shrike/**"]
+      "default": [
+        "node_modules/**",
+        ".git/**",
+        ".next/**",
+        ".shrike/**",
+        "dist/**",
+        "build/**",
+        "out/**",
+        "coverage/**",
+        ".turbo/**",
+        ".vercel/**",
+        "*.min.js",
+        "*.generated.*"
+      ]
     },
     "tsconfig": {
-      "type": "string",
-      "minLength": 1,
-      "default": "tsconfig.json",
-      "description": "tsconfig used for paths and baseUrl resolution. Default: \"tsconfig.json\"."
+      "description": "tsconfig used for paths and baseUrl resolution. Default: \"tsconfig.json\".",
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ],
+      "default": "tsconfig.json"
     },
     "cacheDir": {
       "type": "string",
@@ -39,50 +54,56 @@
       "default": ".shrike/cache",
       "description": "Content-addressed cache directory, safe to delete. Default: \".shrike/cache\"."
     },
-    "workspaces": {
+    "entryPolicy": {
+      "type": "string",
+      "enum": ["local", "production"],
+      "default": "local",
+      "description": "Entry seeding policy. local includes test and local-tooling entries; production excludes test-only entries. Default: \"local\"."
+    },
+    "testEntries": {
+      "type": "boolean",
+      "default": true,
+      "description": "Include test, storybook, and fixture entries when entryPolicy is local. Default: true."
+    },
+    "includeGenerated": {
+      "type": "boolean",
+      "default": false,
+      "description": "Treat generated files as deletion candidates. Generated files are always parsed for edges. Default: false."
+    },
+    "publicApi": {
       "type": "array",
-      "description": "Workspace globs for monorepo boundaries. Default: [] (detected from package.json workspaces or pnpm-workspace.yaml).",
+      "description": "Extra repository-relative globs whose exports are public API and never deletion candidates. Default: [].",
       "items": { "type": "string", "minLength": 1 },
       "uniqueItems": true,
       "default": []
     },
-    "entryPolicy": {
-      "type": "string",
-      "enum": ["production", "local", "ci"],
-      "default": "production",
-      "description": "Entry seeding policy. production excludes test and Storybook entries; local includes tests; ci matches production. Default: \"production\"."
-    },
-    "includeTests": {
-      "type": "boolean",
-      "default": true,
-      "description": "Include test entries when entryPolicy is local. Default: true."
-    },
-    "includeStories": {
-      "type": "boolean",
-      "default": false,
-      "description": "Include Storybook story entries. Default: false."
-    },
-    "publicApi": {
-      "$ref": "#/$defs/publicApi",
-      "description": "Public API markers. Defaults: packageExports true, declarationFiles true, indexSurface true."
-    },
     "generated": {
-      "$ref": "#/$defs/generated",
-      "description": "Generated-file policy. Defaults: exclude true with the documented patterns."
+      "type": "array",
+      "description": "Extra repository-relative globs treated as generated. Default: [].",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "default": []
     },
     "batchPolicy": {
       "$ref": "#/$defs/batchPolicy",
       "description": "Blast-radius cap. Defaults: maxSymbols 50, maxFiles 10, maxLiveGraphPercent 5, allowOversized false."
     },
+    "entryAdapters": {
+      "type": "array",
+      "description": "Framework adapters to enable. Unknown names are ignored with a warning. Default: [\"next-app\",\"next-pages\",\"react\",\"packages\",\"tests\",\"configs\"].",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "default": ["next-app", "next-pages", "react", "packages", "tests", "configs"]
+    },
     "checks": {
       "type": "array",
-      "description": "Project checks in execution order. Default: [] (detect from package.json scripts).",
+      "description": "Project checks in execution order. When non-empty, these replace script discovery. Default: [].",
       "items": { "$ref": "#/$defs/check" },
       "default": []
     },
     "pr": {
       "$ref": "#/$defs/pr",
-      "description": "Pull-request options. Defaults: draft true, labels [\"shrike\",\"cleanup\"], branchPrefix \"shrike/cleanup\", commentReceipt true, base \"main\"."
+      "description": "Pull-request options. Defaults: draft true, labels [\"shrike\",\"cleanup\"], branchPrefix \"shrike/cleanup\", commentReceipt true, base null, title \"Shrike: verified cleanup\"."
     },
     "verification": {
       "$ref": "#/$defs/verification",
@@ -91,50 +112,9 @@
     "build": {
       "$ref": "#/$defs/build",
       "description": "Optional Next.js build-graph evidence. Defaults: evidence false, snapshot \".next/analyze.jsonl\", requireEvidence false."
-    },
-    "receipts": {
-      "$ref": "#/$defs/receipts",
-      "description": "Receipt output. Defaults: dir \".shrike/receipts\", write true."
-    },
-    "output": {
-      "$ref": "#/$defs/output",
-      "description": "CLI output. Defaults: format text, color true."
-    },
-    "resolver": {
-      "$ref": "#/$defs/resolver",
-      "description": "Resolver extensions, conditions, and aliases. Defaults: standard TypeScript extensions and import/require/types/default conditions."
-    },
-    "maxWorkers": {
-      "type": "integer",
-      "minimum": 0,
-      "default": 0,
-      "description": "Maximum parse workers; 0 means auto. Default: 0."
     }
   },
   "$defs": {
-    "publicApi": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "packageExports": { "type": "boolean", "default": true, "description": "Treat package.json exports/main/module/types surfaces as public. Default: true." },
-        "declarationFiles": { "type": "boolean", "default": true, "description": "Treat declaration files as public. Default: true." },
-        "indexSurface": { "type": "boolean", "default": true, "description": "Treat a library index.ts public surface as public. Default: true." }
-      }
-    },
-    "generated": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "exclude": { "type": "boolean", "default": true, "description": "Exclude generated files from deletion candidates while still parsing them for edges. Default: true." },
-        "patterns": {
-          "type": "array",
-          "items": { "type": "string", "minLength": 1 },
-          "uniqueItems": true,
-          "default": ["**/*.generated.*", "**/@generated/**", "**/.next/**"],
-          "description": "Generated-file globs. Default: [\"**/*.generated.*\", \"**/@generated/**\", \"**/.next/**\"]."
-        }
-      }
-    },
     "batchPolicy": {
       "type": "object",
       "additionalProperties": false,
@@ -173,71 +153,34 @@
         },
         "branchPrefix": { "type": "string", "minLength": 1, "default": "shrike/cleanup", "description": "Branch prefix. Default: \"shrike/cleanup\"." },
         "commentReceipt": { "type": "boolean", "default": true, "description": "Post the receipt as a PR comment. Default: true." },
-        "base": { "type": "string", "minLength": 1, "default": "main", "description": "Base branch for the PR. Default: \"main\"." },
-        "title": { "type": "string", "minLength": 1, "default": "Verified cleanup", "description": "PR title. Default: \"Verified cleanup\"." }
+        "base": {
+          "description": "Base branch for the PR. Default: null, which uses the plan's base ref or main.",
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ],
+          "default": null
+        },
+        "title": { "type": "string", "minLength": 1, "default": "Shrike: verified cleanup", "description": "PR title. Default: \"Shrike: verified cleanup\"." }
       }
     },
     "verification": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "mode": { "type": "string", "enum": ["worktree", "in-place"], "default": "worktree", "description": "Apply mode. worktree is the CI default; in-place requires a clean tree. Default: \"worktree\"." },
-        "allowDirty": { "type": "boolean", "default": false, "description": "Allow in-place verification on a dirty tree. Default: false." },
-        "tier": { "type": "string", "enum": ["fast", "standard", "full"], "default": "standard", "description": "Check tier. Default: \"standard\"." },
-        "baselinePath": { "type": "string", "minLength": 1, "default": ".shrike/baseline.json", "description": "Baseline file path. Default: \".shrike/baseline.json\"." },
-        "timeoutMs": { "type": "integer", "minimum": 1, "default": 600000, "description": "Overall verification timeout. Default: 600000." }
+        "mode": { "type": "string", "enum": ["worktree", "in-place"], "default": "worktree", "description": "Apply mode. worktree is the default; in-place requires a clean tree unless allowDirty is set. Default: \"worktree\"." },
+        "allowDirty": { "type": "boolean", "default": false, "description": "Allow verification on a dirty tree. Worktree mode still refuses because it cannot be reproduced from a commit. Default: false." },
+        "tier": { "type": "string", "enum": ["fast", "standard", "full"], "default": "standard", "description": "Check tier. fast is typecheck+lint, standard adds test, full adds build. Default: \"standard\"." },
+        "baselinePath": { "type": "string", "minLength": 1, "default": ".shrike/baseline.json", "description": "Baseline file path relative to the repository. Default: \".shrike/baseline.json\"." }
       }
     },
     "build": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "evidence": { "type": "boolean", "default": false, "description": "Consume next analyze export evidence. Default: false." },
+        "evidence": { "type": "boolean", "default": false, "description": "Consume next analyze export evidence by default. Default: false." },
         "snapshot": { "type": "string", "minLength": 1, "default": ".next/analyze.jsonl", "description": "Path to the JSONL build export. Default: \".next/analyze.jsonl\"." },
-        "requireEvidence": { "type": "boolean", "default": false, "description": "Fail closed with exit 4 when evidence is absent, stale, malformed, or unsupported. Default: false." },
-        "nextVersion": { "type": "string", "minLength": 1, "description": "Optional pinned Next.js version. Detected from package.json when omitted." }
-      }
-    },
-    "receipts": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "dir": { "type": "string", "minLength": 1, "default": ".shrike/receipts", "description": "Receipt directory. Default: \".shrike/receipts\"." },
-        "write": { "type": "boolean", "default": true, "description": "Write receipts for every batch, including rejected ones. Default: true." }
-      }
-    },
-    "output": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "format": { "type": "string", "enum": ["text", "json", "markdown"], "default": "text", "description": "Output format. Default: \"text\"." },
-        "color": { "type": "boolean", "default": true, "description": "Use ANSI color in terminal output. Default: true." }
-      }
-    },
-    "resolver": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "aliases": {
-          "type": "object",
-          "additionalProperties": { "type": "string", "minLength": 1 },
-          "default": {},
-          "description": "Explicit alias map, for example {\"@/\": \"src/\"}. Default: {}."
-        },
-        "extensions": {
-          "type": "array",
-          "items": { "type": "string", "pattern": "^\\." },
-          "uniqueItems": true,
-          "default": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"],
-          "description": "Resolution extensions in order. Default: [\".ts\",\".tsx\",\".js\",\".jsx\",\".mjs\",\".cjs\",\".json\"]."
-        },
-        "conditions": {
-          "type": "array",
-          "items": { "type": "string", "minLength": 1 },
-          "uniqueItems": true,
-          "default": ["import", "require", "types", "default"],
-          "description": "Package exports conditions in order. Default: [\"import\",\"require\",\"types\",\"default\"]."
-        }
+        "requireEvidence": { "type": "boolean", "default": false, "description": "Fail closed with exit 4 when evidence is absent, stale, malformed, or unsupported. Default: false." }
       }
     }
   },
@@ -249,6 +192,7 @@
       "ignore": [".next/**", "node_modules/**", ".shrike/**"],
       "tsconfig": "tsconfig.json",
       "entryPolicy": "production",
+      "testEntries": false,
       "batchPolicy": {
         "maxSymbols": 50,
         "maxFiles": 10,
@@ -278,7 +222,7 @@
         "labels": ["shrike", "cleanup"],
         "branchPrefix": "shrike/cleanup",
         "commentReceipt": true,
-        "base": "main"
+        "base": null
       },
       "verification": {
         "mode": "worktree",
@@ -290,14 +234,6 @@
         "evidence": true,
         "snapshot": ".next/analyze.jsonl",
         "requireEvidence": false
-      },
-      "receipts": {
-        "dir": ".shrike/receipts",
-        "write": true
-      },
-      "output": {
-        "format": "text",
-        "color": true
       }
     }
   ]

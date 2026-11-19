@@ -487,6 +487,45 @@ produce a complete result.
 
 ---
 
+## Open-decision resolutions (2026-11-20)
+
+The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
+behind the implementation. A blocked item is not a code decision; it needs an
+external app, credential, or participant.
+
+| ID | Resolution | Why |
+|---|---|---|
+| Q-001 | TypeScript host owns the CLI; Rust owns analysis | D-002: config execution and process orchestration belong in Node |
+| Q-002 | Worktree by default; in-place explicit | Protects the reviewer's tree and makes verification reproducible from a commit |
+| Q-003 | Package entry/exports, `.d.ts`, and `publicApi` globs are public | Conservative: a public surface is never a deletion candidate |
+| Q-004 | fast = typecheck+lint; standard adds test; full adds build | Matches CI cost tiers; standard is the default |
+| Q-005 | Content-address first; signing deferred | A hash is verifiable without key distribution; signing is additive |
+| Q-006 | Read-only trial kit; no network; `.shrike/` only | A partner can evaluate without granting write trust |
+| Q-007 | Registry availability blocked; local tarball gate green | Package-name and publish checks need credentials |
+| Q-008 | Next.js 16.4+ full; 16.1–16.3 partial; older unsupported | The export contract is only complete from 16.4 |
+| Q-009 | Protocol/snapshot `1.0` checked; mismatch fails closed | A cached proof from an unknown version is not a proof |
+| Q-010 | Workspaces from `package.json` and `pnpm-workspace.yaml` | Native monorepo semantics without a new config surface |
+| Q-011 | One engine process per command | Bounded failure, timeout, and no daemon lifecycle |
+| Q-012 | Test/storybook entries included under local policy | Local cleanup should not report test-only code as dead |
+| Q-013 | Configured globs plus package/declaration surfaces | No unstated public-API heuristics |
+| Q-014 | No per-version schema; tolerate additive fields | The export is young and versioned; strict parsing would block valid data |
+| Q-015 | Normalize virtual/module IDs; unmatched stays unknown | An unjoined virtual module must not confirm deletion |
+| Q-016 | Consume by default; `--run-build` opt-in | Never make a build a hidden dependency of analysis |
+| Q-017 | Claude `Stop`, Cursor `afterFileEdit`+`stop`, OpenCode `session.idle` | Each host's documented task-end event |
+| Q-018 | Workflow `GITHUB_TOKEN` via `git`/`gh`; no App | Least privilege; prune refuses forks |
+| Q-019 | Task-end hook, advisory and non-blocking | A hook must not hang or mutate the tree |
+| Q-020 | Labeled set blocked at 10–20 repositories | Precision without a sample is a claim, not a measurement |
+| Q-021 | Per-repository results deferred | Publication needs the labeled set and partner consent |
+| Q-022 | Trial reports stay local; aggregates need permission | No source upload and no surprise publication |
+| Q-023 | Native first; WASM fallback | Native meets the memory and startup budgets |
+| Q-024 | Linux/macOS x64+arm64, Windows x64 planned | D-011 distribution matrix; publishing is blocked |
+| Q-025 | Only present-in-both, newly unreachable symbols are orphans | A rename or deletion is not a cleanup target, so it cannot become a false orphan |
+| Q-026 | Full checks first; affected-only deferred | Measure real check cost before narrowing coverage |
+| Q-027 | Client-reference manifest optional | Its absence degrades to static reachability, never a blocked run |
+| Q-028 | Free CLI and design-partner trials in v1 | No hosted product or pricing before the wedge is proven |
+| Q-029 | `batchPolicy` caps: 50 symbols, 10 files, 5% live graph | D-013 bounded blast radius, configurable with an explicit override |
+| Q-030 | JSON receipt plus Markdown PR body/comment | Machine proof and human review from one artifact |
+
 ## Decision index
 
 | ID | Decision | Status |

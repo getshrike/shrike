@@ -1,0 +1,60 @@
+{
+  "source": "next analyze export",
+  "version": "16.4.0",
+  "files": [
+    "app/page.tsx",
+    "app/layout.tsx",
+    "app/about/page.tsx",
+    "components/Button.tsx",
+    "lib/format.ts",
+    "lib/helper.ts",
+    "lib/dynamic.ts",
+    "lib/server.ts",
+    "lib/action.ts"
+  ],
+  "symbols": [
+    "app/page.tsx#default",
+    "app/layout.tsx#default",
+    "app/about/page.tsx#default",
+    "components/Button.tsx#Button",
+    "lib/format.ts#formatInvoice",
+    "lib/helper.ts#helper",
+    "lib/dynamic.ts#Widget",
+    "lib/server.ts#serverAction",
+    "lib/action.ts#submit"
+  ],
+  "routes": [
+    {
+      "route": "/",
+      "runtime": "client",
+      "files": ["app/page.tsx", "app/layout.tsx", "components/Button.tsx"],
+      "symbols": ["app/page.tsx#default", "app/layout.tsx#default"]
+    },
+    {
+      "route": "/about",
+      "runtime": "server",
+      "files": ["app/about/page.tsx", "app/layout.tsx", "components/Button.tsx"],
+      "symbols": ["app/about/page.tsx#default"]
+    }
+  ],
+  "sizes": {
+    "app/page.tsx": 1200,
+    "app/layout.tsx": 800,
+    "app/about/page.tsx": 700,
+    "components/Button.tsx": 600,
+    "lib/format.ts": 300,
+    "lib/helper.ts": 200,
+    "lib/dynamic.ts": 250,
+    "lib/server.ts": 150,
+    "lib/action.ts": 100,
+    "app/page.tsx#default": 50,
+    "app/layout.tsx#default": 50,
+    "app/about/page.tsx#default": 50,
+    "components/Button.tsx#Button": 50,
+    "lib/format.ts#formatInvoice": 50,
+    "lib/helper.ts#helper": 50,
+    "lib/dynamic.ts#Widget": 50,
+    "lib/server.ts#serverAction": 50,
+    "lib/action.ts#submit": 50
+  }
+}

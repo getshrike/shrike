@@ -10,6 +10,8 @@ node benchmarks/generate.mjs --out /tmp/shrike-bench --files 10000 --seed 42
 node benchmarks/harness.mjs --files 10000
 ```
 
-Budgets from MASTER_PROMPT.md: warm delta ≤ 20 s at 10k files; two snapshots
-≤ 600 MB; deterministic output byte-for-byte. Results are environment-specific;
-record the machine and commit in TRACKER.md before claiming a metric.
+Budgets from MASTER_PROMPT.md §17: 1k cold ≤ 1.5 s, 1k warm ≤ 400 ms, 10k cold
+≤ 6 s, 10k warm ≤ 2 s, 10k peak RSS ≤ 600 MB, and a 1k-file warm delta ≤ 1 s.
+Snapshots must be byte-identical across runs and thread counts. Results are
+environment-specific; record the machine and commit in TRACKER.md before
+claiming a metric.

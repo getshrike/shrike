@@ -13,9 +13,10 @@ records exactly what was removed and what was verified.
 This repository contains the **design and working implementation** of Shrike
 1.0. The Rust engine, TypeScript host, CLI, verifier, receipts, hooks, GitHub
 Action, and MCP server are implemented. Phase 4 (Next.js build-graph evidence)
-has a working join; the full JSONL/route/byte/feedback contract is still in
-progress. External launch items (design partners, npm publish, signed releases)
-are tracked as blocked in [`TRACKER.md`](TRACKER.md).
+includes JSONL streaming, route and byte attribution, server/client verdicts,
+build-edge feedback, and the fallback matrix. External launch items (design
+partners, npm publish, signed releases) are tracked as blocked in
+[`TRACKER.md`](TRACKER.md).
 
 ---
 
@@ -43,7 +44,7 @@ proof**.
 | **Whole-graph PR orphan delta** | Compares the merge-base graph to the PR head and reports code that became dead anywhere in the repo, including files the PR never touched | Changed-file audits cannot see this; current-state scanners cannot attribute it |
 | **Verified deletion batches** | Applies each closure-complete batch in isolation, runs the project's checks against a baseline, bisects failures, and reverts only the culprit | Advisory tools stop at "safe to delete"; Shrike produces a reviewable PR |
 | **Portable receipt** | Emits a content-addressed JSON proof: graph hashes, witnesses, patches, checks, baseline status, build evidence, outcome | A receipt is auditable and shareable; a score is not |
-| **Build-graph evidence** | Joins build evidence to confirm presence and, as the phase-4 contract lands, report route and byte impact and catch dynamic edges the static graph missed | Optional confirmation, never a hard dependency |
+| **Build-graph evidence** | Joins build evidence to confirm presence and report route and byte impact, while catching dynamic edges the static graph missed | Optional confirmation, never a hard dependency |
 | **Rust speed and determinism** | Parses and indexes 10,000 files in seconds with bounded memory; identical input produces byte-identical output | Fast enough for a post-agent hook; deterministic enough for CI |
 
 The wedge is not "we find dead code." It is:
@@ -68,7 +69,7 @@ The wedge is not "we find dead code." It is:
 | TypeScript host | Implemented — `pnpm -r typecheck`, `pnpm test:node` |
 | Fixtures and corpus | 14 delta, 6 verification, 250 must-not-report entries |
 | Verified deletion | Implemented — `node scripts/e2e-prune.mjs` |
-| Build-graph evidence | Partial — join works; JSONL/routes/bytes/feedback pending |
+| Build-graph evidence | Implemented — JSONL joins, routes, bytes, verdicts, fallbacks, build-edge feedback; 11 build-graph fixtures |
 | External launch | Blocked on partners and credentials — see [`TRACKER.md`](TRACKER.md) |
 
 The full status, decisions, metrics, and evidence log live in
@@ -123,20 +124,22 @@ contain working code and are exercised by `.github/workflows/ci.yml`.
 ## Quick start
 
 ```bash
-# Build the Rust engine
+# Build the Rust engine and install the workspace
 cargo build --release -p shrike-engine
+pnpm install
 
 # Run the local gates
-pnpm install
 pnpm -r typecheck
 pnpm test:node
 cargo test --workspace
 node scripts/check.mjs
 
-# Use the CLI from a repository
-node /path/to/shrike/packages/cli/src/main.ts scan --json
-node /path/to/shrike/packages/cli/src/main.ts delta --base origin/main --json
-node /path/to/shrike/packages/cli/src/main.ts prune --base origin/main --json
+# First scan from the repository root
+node packages/cli/src/main.ts scan --json
+
+# Use the CLI from another repository by pointing at the engine
+SHRIKE_ENGINE=/path/to/shrike/target/release/shrike-engine \
+  node /path/to/shrike/packages/cli/src/main.ts delta --base origin/main --json
 ```
 
 `prune` defaults to a branch worktree under `.shrike/worktrees/`, writes a
@@ -239,11 +242,11 @@ These are targets, not results. Actuals are recorded in
 
 ## Working name
 
-`shrike` is the working name and the CLI binary. The npm package name and any
-scope are confirmed in [`PLAN-5`](plans/PLAN-5-distribution-and-launch.md). The
-Rust crates use the `shrike-` prefix.
+`shrike` is the working name and the CLI binary. The npm package name and scope
+are still subject to registry availability; the local tarball gate is green.
+See [`PLAN-5`](plans/PLAN-5-distribution-and-launch.md). The Rust crates use the
+`shrike-` prefix.
 
 ## License
 
-Unlicensed draft. The license is decided before the first public release; see
-[`PLAN-5`](plans/PLAN-5-distribution-and-launch.md).
+MIT. See [`LICENSE`](LICENSE).

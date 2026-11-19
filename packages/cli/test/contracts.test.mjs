@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -51,6 +52,64 @@ function makeRepo(name) {
   return directory;
 }
 
+function makeOrphanRepo(name, config = {}) {
+  const directory = makeRepo(name);
+  write(directory, "app/page.tsx", "import { orphan } from '../lib/orphan';\nexport default function Page() { return orphan(); }\n");
+  write(directory, "lib/orphan.ts", "export function orphan() { return 1; }\n");
+  write(directory, "package.json", JSON.stringify({
+    name,
+    private: true,
+    type: "module",
+    packageManager: "npm@11.0.0",
+    scripts: {
+      typecheck: "node -e 0",
+      lint: "node -e 0",
+      test: "node -e 0",
+    },
+  }));
+  const resolved = typeof config === "function" ? config(directory) : config;
+  write(directory, "shrike.config.json", JSON.stringify(resolved));
+  git(directory, ["add", "-A"]);
+  git(directory, ["commit", "-q", "-m", "base"]);
+  git(directory, ["checkout", "-q", "-b", "feature"]);
+  write(directory, "app/page.tsx", "export default function Page() { return null; }\n");
+  git(directory, ["add", "-A"]);
+  git(directory, ["commit", "-q", "-m", "remove caller"]);
+  return directory;
+}
+
+test("corrupted cache is detected and rebuilt, never trusted", { skip: !hasEngine }, () => {
+  const directory = makeRepo("cache-corruption");
+  try {
+    write(directory, "app/page.tsx", "export default function Page() { return null; }\n");
+    write(directory, "package.json", '{"name":"cache-corruption","private":true,"type":"module"}\n');
+    const first = run(directory, ["scan", "--json"]);
+    assert.equal(first.status, 0, first.stderr);
+    const snapshots = join(directory, ".shrike", "cache", "snapshots");
+    const cached = readdirSync(snapshots).filter((name) => name.endsWith(".json"));
+    assert.equal(cached.length, 1, "expected one cached snapshot");
+
+    writeFileSync(join(snapshots, cached[0]), "{ corrupted\n");
+    const broken = run(directory, ["cache", "verify", "--json"]);
+    assert.equal(broken.status, 1, broken.stderr);
+    assert.deepEqual(JSON.parse(broken.stdout).broken, [cached[0]]);
+
+    const rebuilt = run(directory, ["scan", "--json"]);
+    assert.equal(rebuilt.status, 0, rebuilt.stderr);
+    assert.deepEqual(JSON.parse(rebuilt.stdout), JSON.parse(first.stdout));
+    const clean = run(directory, ["cache", "verify", "--json"]);
+    assert.equal(clean.status, 0, clean.stderr);
+    assert.deepEqual(JSON.parse(clean.stdout).broken, []);
+
+    writeFileSync(join(directory, ".shrike", "cache", "manifest.json"), "{ corrupted\n");
+    const afterManifest = run(directory, ["scan", "--json"]);
+    assert.equal(afterManifest.status, 0, afterManifest.stderr);
+    assert.deepEqual(JSON.parse(afterManifest.stdout), JSON.parse(first.stdout));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("config evaluation timeout fails closed with exit 2", () => {
   const directory = scratch("config-timeout");
   try {
@@ -64,6 +123,26 @@ test("config evaluation timeout fails closed with exit 2", () => {
     assert.equal(result.status, 2, result.stderr);
     assert.match(`${result.stderr}${result.stdout}`, /timed out after 250ms|terminated/);
     assert.ok(Date.now() - started < 5_000, "config timeout was not enforced");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("config evaluation does not inherit arbitrary secrets", () => {
+  const directory = scratch("config-env");
+  try {
+    write(
+      directory,
+      "shrike.config.mjs",
+      "import { writeFileSync } from 'node:fs';\n" +
+        "writeFileSync('config-env.txt', process.env.SHRIKE_CONFIG_SECRET_TEST ?? 'missing');\n" +
+        "export default {};\n",
+    );
+    const result = run(directory, ["scan", "--json"], {
+      SHRIKE_CONFIG_SECRET_TEST: "top-secret",
+    });
+    assert.ok(result.status === 0 || result.status === 1, result.stderr);
+    assert.equal(readFileSync(join(directory, "config-env.txt"), "utf8"), "missing");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -113,6 +192,19 @@ test("prune refuses to run when no checks are discoverable", { skip: !hasEngine 
       .split("\n")
       .filter((line) => line.trim() && !line.slice(3).startsWith(".shrike/"));
     assert.deepEqual(dirty, [], "working tree was modified without checks");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("prune refuses a dirty working tree before creating a worktree", { skip: !hasEngine }, () => {
+  const directory = makeOrphanRepo("dirty-tree");
+  try {
+    write(directory, "app/page.tsx", "// uncommitted\nexport default function Page() { return null; }\n");
+    const result = run(directory, ["prune", "--base", "main", "--json"]);
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(`${result.stderr}${result.stdout}`, /prune requires a clean working tree/);
+    assert.equal(existsSync(join(directory, ".shrike", "worktrees")), false, "a worktree was created for a dirty tree");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -192,6 +284,36 @@ test("an engine timeout fails closed with exit 4", () => {
     assert.equal(result.status, 4, result.stderr);
     assert.match(`${result.stderr}${result.stdout}`, /timed out after 200ms/);
     assert.ok(Date.now() - started < 5_000, "engine timeout was not enforced");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("an engine response with the wrong protocol version fails closed with exit 4", () => {
+  const directory = scratch("engine-protocol");
+  try {
+    const fake = writeFakeEngine(join(directory, "fake"), {
+      defaultResult: { snapshot: { files: [] }, candidates: [] },
+      protocolVersion: "2.0",
+    });
+    const result = run(directory, ["scan", "--json"], { SHRIKE_ENGINE: fake.path });
+    assert.equal(result.status, 4, result.stderr);
+    assert.match(`${result.stderr}${result.stdout}`, /protocol version 2\.0 is not supported/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a successful engine response without a result fails closed with exit 4", () => {
+  const directory = scratch("engine-partial");
+  try {
+    const fake = writeFakeEngine(join(directory, "fake"), {
+      defaultResult: { snapshot: { files: [] }, candidates: [] },
+      omitResult: true,
+    });
+    const result = run(directory, ["scan", "--json"], { SHRIKE_ENGINE: fake.path });
+    assert.equal(result.status, 4, result.stderr);
+    assert.match(`${result.stderr}${result.stdout}`, /omitted the result/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -331,6 +453,140 @@ test("hook run is non-blocking outside a repository", () => {
   try {
     const result = run(directory, ["hook", "run"]);
     assert.equal(result.status, 0, result.stderr);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("prune runs the configured standard tier and records the test check", { skip: !hasEngine }, () => {
+  const directory = makeOrphanRepo("standard-tier", { verification: { tier: "standard" } });
+  try {
+    const result = run(directory, ["prune", "--base", "main", "--json"]);
+    assert.equal(result.status, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.outcome, "verified");
+    assert.equal(output.receipts.length, 1);
+    const receipt = JSON.parse(readFileSync(output.receipts[0], "utf8"));
+    assert.deepEqual(
+      receipt.checks.map((check) => check.name),
+      ["typecheck", "lint", "test"],
+    );
+    assert.equal(receipt.outcome, "verified");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("plan persists an artifact and verify --plan re-runs verification", { skip: !hasEngine }, () => {
+  const directory = makeOrphanRepo("verify-plan", { verification: { tier: "standard" } });
+  try {
+    const planned = run(directory, ["plan", "--base", "main", "--json"]);
+    assert.equal(planned.status, 1, planned.stderr);
+    const plan = JSON.parse(planned.stdout);
+    const artifact = join(directory, ".shrike", "plans", `${plan.id}.json`);
+    assert.equal(existsSync(artifact), true, "plan artifact was not written");
+
+    const verified = run(directory, ["verify", "--plan", plan.id, "--json"]);
+    assert.equal(verified.status, 0, verified.stderr);
+    const output = JSON.parse(verified.stdout);
+    assert.equal(output.outcome, "verified");
+    assert.equal(output.receipts.length, 1);
+    const receipt = JSON.parse(readFileSync(output.receipts[0], "utf8"));
+    assert.equal(receipt.outcome, "verified");
+    assert.equal(receipt.plan.id, plan.id);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("delta --fail-on controls the findings exit code", { skip: !hasEngine }, () => {
+  const directory = makeOrphanRepo("delta-fail-on");
+  try {
+    const failing = run(directory, ["delta", "--base", "main", "--json"]);
+    assert.equal(failing.status, 1, failing.stderr);
+    assert.ok(JSON.parse(failing.stdout).newlyDead.length >= 1);
+
+    const never = run(directory, ["delta", "--base", "main", "--json", "--fail-on", "never"]);
+    assert.equal(never.status, 0, never.stderr);
+    assert.ok(JSON.parse(never.stdout).newlyDead.length >= 1);
+
+    const invalid = run(directory, ["delta", "--base", "main", "--json", "--fail-on", "sometimes"]);
+    assert.equal(invalid.status, 2, invalid.stderr);
+    assert.match(`${invalid.stderr}${invalid.stdout}`, /invalid --fail-on value/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a persisted baseline is reused for the same head and check set", { skip: !hasEngine }, () => {
+  let countFile = "";
+  const directory = makeOrphanRepo("baseline-reuse", (repo) => {
+    countFile = join(repo, ".shrike", "count.txt");
+    const script = join(repo, ".shrike", "check.mjs");
+    mkdirSync(dirname(script), { recursive: true });
+    writeFileSync(
+      script,
+      `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(countFile)}, "run\\n");\n`,
+    );
+    return {
+      checks: [{ name: "smoke", command: `${process.execPath} ${script}`, required: true, timeoutMs: 30_000 }],
+      verification: { tier: "fast" },
+    };
+  });
+  try {
+    const lines = () => readFileSync(countFile, "utf8").trim().split("\n").filter(Boolean).length;
+    const first = run(directory, ["prune", "--base", "main", "--json"]);
+    assert.equal(first.status, 0, first.stderr);
+    const firstOutput = JSON.parse(first.stdout);
+    assert.equal(lines(), 2, "first run should capture a baseline and run one after-check");
+
+    git(directory, ["branch", "-D", firstOutput.branch]);
+    const baselineBefore = readFileSync(join(directory, ".shrike", "baseline.json"), "utf8");
+    const second = run(directory, ["prune", "--base", "main", "--json"]);
+    assert.equal(second.status, 0, second.stderr);
+    assert.equal(lines(), 3, "second run should reuse the baseline and run only the after-check");
+    assert.equal(
+      readFileSync(join(directory, ".shrike", "baseline.json"), "utf8"),
+      baselineBefore,
+      "baseline was rewritten instead of reused",
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("pr config supplies the branch prefix", { skip: !hasEngine }, () => {
+  const directory = makeOrphanRepo("pr-config", { pr: { branchPrefix: "team/cleanup" } });
+  try {
+    const result = run(directory, ["prune", "--base", "main", "--json"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(JSON.parse(result.stdout).branch, /^team\/cleanup-/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("verify --plan fails closed for missing, corrupt, and stale plans", { skip: !hasEngine }, () => {
+  const directory = makeOrphanRepo("plan-errors");
+  try {
+    const missing = run(directory, ["verify", "--plan", "plan_deadbeef", "--json"]);
+    assert.equal(missing.status, 4, missing.stderr);
+    assert.match(`${missing.stderr}${missing.stdout}`, /plan_deadbeef was not found/);
+
+    write(directory, ".shrike/plans/plan_bad.json", "{ broken\n");
+    const corrupt = run(directory, ["verify", "--plan", "plan_bad", "--json"]);
+    assert.equal(corrupt.status, 4, corrupt.stderr);
+    assert.match(`${corrupt.stderr}${corrupt.stdout}`, /could not be parsed/);
+
+    const planned = run(directory, ["plan", "--base", "main", "--json"]);
+    assert.equal(planned.status, 1, planned.stderr);
+    const plan = JSON.parse(planned.stdout);
+    write(directory, "app/page.tsx", "export default function Page() { return 2; }\n");
+    git(directory, ["add", "-A"]);
+    git(directory, ["commit", "-q", "-m", "move head"]);
+    const stale = run(directory, ["verify", "--plan", plan.id, "--json"]);
+    assert.equal(stale.status, 4, stale.stderr);
+    assert.match(`${stale.stderr}${stale.stdout}`, /targets .* but HEAD is/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

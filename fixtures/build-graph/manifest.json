@@ -1,0 +1,175 @@
+{
+  "schemaVersion": "1.0",
+  "source": "source",
+  "scenarios": [
+    {
+      "name": "next-16.4",
+      "kind": "join",
+      "evidence": "scenarios/next-16.4/evidence.json",
+      "expected": {
+        "status": "full",
+        "joined": 18,
+        "total": 18,
+        "coverage": 1,
+        "bytes": {
+          "matched": 4750,
+          "shared": 1400,
+          "totalRoute": 3350,
+          "unknown": 0,
+          "partial": false
+        },
+        "unknownSizes": [],
+        "routes": [
+          { "route": "/", "files": 3, "symbols": 2, "bytes": 1300, "runtime": "client", "unknown": 0 },
+          { "route": "/about", "files": 3, "symbols": 1, "bytes": 750, "runtime": "server", "unknown": 0 }
+        ]
+      }
+    },
+    {
+      "name": "next-16.1",
+      "kind": "join",
+      "evidence": "scenarios/next-16.1/evidence.json",
+      "expected": {
+        "status": "partial",
+        "joined": 18,
+        "total": 18,
+        "coverage": 1,
+        "bytes": {
+          "matched": 4750,
+          "shared": 1400,
+          "totalRoute": 3350,
+          "unknown": 0,
+          "partial": true
+        }
+      }
+    },
+    {
+      "name": "next-15",
+      "kind": "join",
+      "evidence": "scenarios/next-15/evidence.json",
+      "expected": {
+        "status": "unsupported",
+        "joined": 18,
+        "total": 18,
+        "coverage": 1
+      }
+    },
+    {
+      "name": "low-coverage",
+      "kind": "join",
+      "evidence": "scenarios/low-coverage/evidence.json",
+      "expected": {
+        "status": "low-coverage",
+        "joined": 1,
+        "total": 4,
+        "coverage": 0.25,
+        "bytes": {
+          "matched": 1200,
+          "shared": 0,
+          "totalRoute": 1200,
+          "unknown": 0,
+          "partial": true
+        },
+        "routes": []
+      }
+    },
+    {
+      "name": "shared-chunk",
+      "kind": "join",
+      "evidence": "scenarios/shared-chunk/evidence.json",
+      "expected": {
+        "status": "full",
+        "joined": 8,
+        "total": 8,
+        "coverage": 1,
+        "bytes": {
+          "matched": 3500,
+          "shared": 1400,
+          "totalRoute": 2100,
+          "unknown": 0,
+          "partial": false
+        },
+        "routes": [
+          { "route": "/", "files": 3, "symbols": 2, "bytes": 1300, "runtime": "client", "unknown": 0 },
+          { "route": "/about", "files": 3, "symbols": 1, "bytes": 750, "runtime": "server", "unknown": 0 }
+        ]
+      }
+    },
+    {
+      "name": "dynamic-edge",
+      "kind": "augment",
+      "evidence": "scenarios/dynamic-edge/evidence.json",
+      "expected": {
+        "status": "full",
+        "joined": 6,
+        "total": 6,
+        "coverage": 1,
+        "edges": [
+          { "to": "lib/dynamic.ts#Widget", "evidence": "client-reference:client-component" }
+        ],
+        "live": ["lib/helper.ts#helper"],
+        "dead": ["lib/format.ts#formatInvoice"]
+      }
+    },
+    {
+      "name": "server-action",
+      "kind": "augment",
+      "evidence": "scenarios/server-action/evidence.json",
+      "expected": {
+        "status": "full",
+        "joined": 4,
+        "total": 4,
+        "coverage": 1,
+        "edges": [
+          { "to": "lib/action.ts#submit", "evidence": "client-reference:server-action" }
+        ],
+        "verdicts": {
+          "lib/action.ts#submit": "server-only"
+        },
+        "live": ["lib/action.ts#submit"],
+        "dead": ["lib/format.ts#formatInvoice"]
+      }
+    },
+    {
+      "name": "client-boundary",
+      "kind": "join",
+      "evidence": "scenarios/client-boundary/evidence.json",
+      "expected": {
+        "status": "full",
+        "joined": 4,
+        "total": 4,
+        "coverage": 1,
+        "diagnostics": [
+          { "code": "client-boundary-leak", "file": "lib/server.ts", "severity": "warning" }
+        ],
+        "verdicts": {
+          "lib/server.ts#serverAction": "present"
+        }
+      }
+    },
+    {
+      "name": "missing",
+      "kind": "host",
+      "expected": {
+        "status": "none"
+      }
+    },
+    {
+      "name": "stale",
+      "kind": "host",
+      "evidence": "scenarios/stale/evidence.json",
+      "expected": {
+        "status": "stale"
+      }
+    },
+    {
+      "name": "malformed",
+      "kind": "host",
+      "evidence": "scenarios/malformed/evidence.jsonl",
+      "expected": {
+        "exit": 4,
+        "error": "invalid JSON"
+      }
+    }
+  ]
+}

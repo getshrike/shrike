@@ -6,9 +6,10 @@
  * native engine over every delta scenario and checks the expected newly-dead
  * symbols. Verification fixtures are reported but executed by the host tests.
  */
-import { spawn } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
 const engine = process.env.SHRIKE_ENGINE ?? join(root, "target", "debug", "shrike-engine");
@@ -91,6 +92,8 @@ if (runEngine) {
       files: route.files,
       symbols: route.symbols,
       bytes: route.bytes,
+      runtime: route.runtime ?? null,
+      unknown: route.unknown,
     }));
     const checks = [
       ["status", joinResult.status, expected.status],
@@ -98,6 +101,7 @@ if (runEngine) {
       ["total", joinResult.total, expected.total],
       ["unmatched", joinResult.unmatched, expected.unmatched],
       ["bytes", joinResult.bytes, expected.bytes],
+      ["unknownSizes", joinResult.unknownSizes, expected.unknownSizes],
       ["routes", actualRoutes, expected.routes],
     ];
     if (Math.abs(joinResult.coverage - expected.coverage) > 1e-9) {
@@ -118,9 +122,148 @@ if (runEngine) {
   }
 }
 
+function subsetMatch(actual, wanted) {
+  return Object.entries(wanted).every(([key, value]) => JSON.stringify(actual?.[key]) === JSON.stringify(value));
+}
+
+function compareJoin(joinResult, expected) {
+  const mismatches = [];
+  for (const key of ["status", "joined", "total"]) {
+    if (key in expected && joinResult[key] !== expected[key]) {
+      mismatches.push([key, joinResult[key], expected[key]]);
+    }
+  }
+  if ("coverage" in expected && Math.abs(joinResult.coverage - expected.coverage) > 1e-9) {
+    mismatches.push(["coverage", joinResult.coverage, expected.coverage]);
+  }
+  for (const key of ["bytes", "unknownSizes", "routes", "unmatched"]) {
+    if (key in expected && JSON.stringify(joinResult[key]) !== JSON.stringify(expected[key])) {
+      mismatches.push([key, joinResult[key], expected[key]]);
+    }
+  }
+  for (const wanted of expected.edges ?? []) {
+    if (!(joinResult.edges ?? []).some((edge) => subsetMatch(edge, wanted))) {
+      mismatches.push(["edges", joinResult.edges, wanted]);
+    }
+  }
+  for (const [symbol, verdict] of Object.entries(expected.verdicts ?? {})) {
+    const actual = (joinResult.verdicts ?? []).find((item) => item.symbol === symbol);
+    if (actual?.verdict !== verdict) mismatches.push([`verdict ${symbol}`, actual?.verdict, verdict]);
+  }
+  for (const wanted of expected.diagnostics ?? []) {
+    if (!(joinResult.diagnostics ?? []).some((item) => subsetMatch(item, wanted))) {
+      mismatches.push(["diagnostics", joinResult.diagnostics, wanted]);
+    }
+  }
+  return mismatches;
+}
+
+function copyFixtureSource(source, destination) {
+  cpSync(source, destination, {
+    recursive: true,
+    filter: (path) => !path.split(/[\\/]/).includes(".shrike") && !path.split(/[\\/]/).includes(".next"),
+  });
+}
+
+function runCli(cwd, args) {
+  return spawnSync(process.execPath, [join(root, "packages", "cli", "src", "main.ts"), ...args], {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+    env: { ...process.env, SHRIKE_ENGINE: engine },
+  });
+}
+
+if (runEngine) {
+  const buildGraphDir = join(root, "fixtures", "build-graph");
+  const manifest = readJson(join(buildGraphDir, "manifest.json"));
+  const source = join(buildGraphDir, manifest.source);
+  const work = mkdtempSync(join(tmpdir(), "shrike-build-graph-"));
+  try {
+    copyFixtureSource(source, work);
+    const analyzed = await request("analyze", { root: work, config: {} });
+    for (const scenario of manifest.scenarios) {
+      const expected = scenario.expected ?? {};
+      try {
+        if (scenario.kind === "host") {
+          const directory = mkdtempSync(join(tmpdir(), `shrike-build-graph-${scenario.name}-`));
+          try {
+            copyFixtureSource(source, directory);
+            const args = ["evidence", "--json"];
+            if (scenario.evidence) {
+              const evidencePath = join(buildGraphDir, scenario.evidence);
+              const target = join(directory, basename(evidencePath));
+              cpSync(evidencePath, target);
+              args.push("--build", basename(evidencePath));
+            }
+            const result = runCli(directory, args);
+            const output = `${result.stdout}${result.stderr}`;
+            const actualExit = result.status;
+            if ("exit" in expected && actualExit !== expected.exit) {
+              throw new Error(`expected exit ${expected.exit}, got ${actualExit}: ${output}`);
+            }
+            if (expected.error && !output.includes(expected.error)) {
+              throw new Error(`expected error containing ${JSON.stringify(expected.error)}: ${output}`);
+            }
+            if (expected.status) {
+              const payload = JSON.parse(result.stdout);
+              if (payload.status !== expected.status) {
+                throw new Error(`expected status ${expected.status}, got ${payload.status}`);
+              }
+            }
+          } finally {
+            rmSync(directory, { recursive: true, force: true });
+          }
+        } else {
+          const evidence = readJson(join(buildGraphDir, scenario.evidence));
+          if (scenario.kind === "augment") {
+            const result = await request("augment-build", { snapshot: analyzed.snapshot, build: evidence });
+            const mismatches = compareJoin(result.join, expected);
+            for (const symbol of expected.live ?? []) {
+              if (!result.snapshot.live.includes(symbol)) {
+                mismatches.push(["live", symbol, "not live"]);
+              }
+            }
+            for (const symbol of expected.dead ?? []) {
+              if (result.snapshot.live.includes(symbol) || !result.snapshot.candidates.includes(symbol)) {
+                mismatches.push(["dead", symbol, "not a dead candidate"]);
+              }
+            }
+            if (mismatches.length > 0) {
+              failures += 1;
+              for (const [name, actual, wanted] of mismatches) {
+                console.log(`FAIL build-graph ${scenario.name} ${name}: expected ${JSON.stringify(wanted)}, got ${JSON.stringify(actual)}`);
+              }
+            } else {
+              console.log(`PASS build-graph ${scenario.name}: ${result.join.status}, ${result.snapshot.candidates.length} candidates`);
+            }
+          } else {
+            const joinResult = await request("join-build", { snapshot: analyzed.snapshot, build: evidence });
+            const mismatches = compareJoin(joinResult, expected);
+            if (mismatches.length > 0) {
+              failures += 1;
+              for (const [name, actual, wanted] of mismatches) {
+                console.log(`FAIL build-graph ${scenario.name} ${name}: expected ${JSON.stringify(wanted)}, got ${JSON.stringify(actual)}`);
+              }
+            } else {
+              console.log(`PASS build-graph ${scenario.name}: ${joinResult.status}`);
+            }
+          }
+        }
+      } catch (error) {
+        failures += 1;
+        console.log(`ERROR build-graph ${scenario.name}: ${error.message}`);
+      }
+    }
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
 for (const [name, path] of [
   ["verification", join(root, "fixtures", "verification", "manifest.json")],
   ["build", join(root, "fixtures", "build", "manifest.json")],
+  ["build-graph", join(root, "fixtures", "build-graph", "manifest.json")],
 ]) {
   if (existsSync(path)) {
     const manifest = readJson(path);

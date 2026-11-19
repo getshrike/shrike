@@ -44,7 +44,10 @@ worktree and only the commands the project declares.
 - `node --experimental-strip-types` or a bundled loader, pinned;
 - a 5-second timeout;
 - no network by default (document that this is best-effort, not a sandbox);
-- the config may import only from the project and `shrike/config`;
+- only the safe host environment plus the config URL/output paths; ambient
+  secrets are not inherited;
+- the config is expected to import only from the project and `shrike/config`;
+  this is a review expectation, not a module-loading sandbox;
 - a config that throws fails closed with exit 2.
 
 The config is data after evaluation. The engine receives a normalized JSON
@@ -115,7 +118,8 @@ Before writing a receipt or log:
 2. replace the home directory with `~`;
 3. mask values matching token patterns (`ghp_`, `github_pat_`, `sk-`, AWS keys,
    bearer tokens);
-4. mask `*_TOKEN`, `*_SECRET`, `*_KEY` environment values;
+4. mask credential-shaped assignments (`NAME=value` for token, secret,
+   password, key, or credential variables);
 5. strip ANSI escapes and control characters.
 
 Redaction is tested with a fixture containing synthetic secrets.
@@ -254,29 +258,80 @@ permissions:
 
 ## 9. Security acceptance criteria
 
-- [ ] `scan`, `delta`, `plan`, `proof`, and `evidence` spawn no project process.
-- [ ] Config evaluation has a timeout and a child-process boundary.
-- [ ] The verifier refuses a dirty tree in-place without `--allow-dirty`.
-- [ ] Worktrees are removed on success and on handled failure.
-- [ ] Revert failure exits 5 and prints a restore command.
-- [ ] Receipts and logs redact the repo root, home, tokens, and secrets.
-- [ ] A synthetic secret fixture produces no secret in any output.
-- [ ] Markdown rendering escapes paths and truncates logs.
-- [ ] Fork PRs cannot run prune with write permissions.
-- [ ] The launcher verifies the engine checksum.
-- [ ] Dependencies are audited in CI.
-- [ ] The agent brief strips instruction-like comments and is size-capped.
-- [ ] Path traversal attempts are rejected.
-- [ ] A corrupted cache entry is discarded and recorded, not trusted.
+Status as of the local 1.0 review (2026-11-20). A checked item has a
+reproducible local test or code review; release-only items are called out.
+
+- [x] `scan`, `delta`, `plan`, `proof`, and `evidence` spawn no project process.
+  The Rust workspace has no process-spawn call; `std::process::id()` is the only
+  process API use.
+- [x] Config evaluation has a timeout and a child-process boundary.
+  `packages/cli/test/contracts.test.mjs` (`config evaluation timeout`).
+- [x] The verifier refuses a dirty tree in-place without `--allow-dirty`.
+  CLI contract tests cover the prune clean-tree guard and dirty-plan rejection.
+- [x] Worktrees are removed on success and on handled failure.
+  `scripts/e2e-prune.mjs` asserts one worktree remains after verified, rejected,
+  bisected, and revert-failure paths.
+- [x] Revert failure exits 5 and prints a restore command.
+  `scripts/e2e-prune.mjs` (`revert failure and recovery`).
+- [x] Receipts and logs redact the repo root, home, tokens, and secrets.
+  `packages/receipts/test/redact.test.mjs`.
+- [x] A synthetic secret fixture produces no secret in any output.
+  `packages/receipts/test/redact.test.mjs`.
+- [x] Project checks inherit only a safe environment by default.
+  `packages/verifier/test/checks.test.mjs` (`project checks inherit only the safe
+  environment unless a secret is declared`).
+- [x] Markdown rendering escapes paths and truncates logs.
+  `packages/receipts/test/render.test.mjs`.
+- [x] Fork PRs cannot run prune with write permissions.
+  `packages/action/test/action.test.mjs` (`prune refuses a fork pull request`).
+- [ ] The launcher verifies the engine checksum. This is a release gate: it
+  depends on the signed platform packages in 6.7/5.10, which are blocked on
+  release infrastructure.
+- [x] Dependencies are audited locally and in CI.
+  `pnpm audit --prod` reports no known vulnerabilities; `cargo audit` reports
+  0 vulnerabilities across 108 dependencies and 1,550 advisories. The CI
+  workflow runs both commands.
+- [x] The agent brief strips instruction-like comments and is size-capped.
+  `packages/agent/test/brief.test.mjs`.
+- [x] Path traversal attempts are rejected.
+  `packages/cli/test/build-evidence.test.mjs` and
+  `packages/cli/test/recovery.test.mjs`.
+- [x] A corrupted cache entry is discarded and recorded, not trusted.
+  `packages/cli/test/contracts.test.mjs` (`corrupted cache is detected and
+  rebuilt`).
 
 ---
 
 ## 10. Open questions
 
-| ID | Question | Owner |
+| Q-044 | Is the config child process sandboxed beyond a timeout? | PLAN-0: no. It has a timeout and a safe environment, but it is not a network or filesystem sandbox; documented residual. |
+| Q-045 | Which secrets may a check declare? | PLAN-3: only values passed explicitly in `CheckSpec.env`; ambient `*_TOKEN`, `*_SECRET`, and `*_KEY` variables are not inherited. |
+| Q-046 | Is the engine binary reproducible? | PLAN-6: not yet proven. Deterministic output is tested; reproducible release builds and signing are release gates under 6.7. |
+
+---
+
+## 11. Local security review report (2026-11-20)
+
+**Scope:** the local Shrike 1.0 code in this repository. This is an internal
+review against the threat model above, not a third-party audit.
+
+| Boundary | Review result | Evidence |
 |---|---|---|
-| Q-005 | Sign receipts? | PLAN-3: content hash first, signing later |
-| Q-006 | How is a design partner's repo isolated during a trial? | PLAN-5 |
-| Q-044 | Is the config child process sandboxed beyond a timeout? | PLAN-0 |
-| Q-045 | Which secrets may a check declare? | PLAN-3 |
-| Q-046 | Is the engine binary reproducible? | PLAN-6 |
+| Analyzer | No subprocess, no network, parser-only. The only `std::process` use is `id()`. | `crates/`; code search |
+| Config execution | Child process, 5 s default timeout, JSON result, fail-closed on timeout, crash, or non-object export. | `packages/cli/src/config.ts`; CLI contract tests |
+| Verifier | Worktree by default; clean-tree guard; per-check timeout; safe environment; output capped and normalized; worktrees removed. | `packages/verifier/src/run.ts`; `scripts/e2e-prune.mjs` |
+| In-place apply | Explicit opt-in; recovery snapshot before mutation; failed revert exits 5 with a recovery path. | `packages/cli/src/recovery.ts`; e2e revert-failure case |
+| Renderer and receipt | Markdown cells escaped; output truncated; ANSI/control characters stripped; repo, home, tokens, and declared secrets redacted. | `packages/receipts/src/render.ts`; `packages/receipts/src/redact.ts`; render/redaction tests |
+| Agent bundle | Repository content labeled untrusted, injection phrases stripped, control characters removed, item and byte caps enforced. | `packages/agent/src/brief.ts`; brief tests |
+| CI | Fork prune refusal; dependency audits; read-only default permissions. | `packages/action/test/action.test.mjs`; `.github/workflows/ci.yml` |
+
+**Residual risks:**
+
+- A malicious repository can run arbitrary code through its own declared checks.
+  The controls are explicit consent, worktree isolation, safe environment, and
+  no write token on forks; this is not a sandbox.
+- Release artifacts are not yet signed, checksummed, or provenance-attested.
+  That is 6.7, blocked on release infrastructure. The launcher checksum
+  verification is therefore a release gate, not a 1.0 local-code claim.
+- No external security review has been performed. The local review and tests are
+  the evidence available at this stage.

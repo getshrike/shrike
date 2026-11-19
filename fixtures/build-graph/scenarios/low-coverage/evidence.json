@@ -1,0 +1,15 @@
+{
+  "source": "next analyze export",
+  "version": "16.4.0",
+  "files": [
+    "app/page.tsx",
+    "virtual/missing-a.ts",
+    "virtual/missing-b.ts",
+    "virtual/missing-c.ts"
+  ],
+  "symbols": [],
+  "routes": [],
+  "sizes": {
+    "app/page.tsx": 1200
+  }
+}

@@ -7,7 +7,7 @@
  * `/proc/<pid>/status`. Results are printed as JSON for the tracker.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,8 +27,8 @@ if (!engine || !existsSync(engine)) {
   process.exit(4);
 }
 const directory = mkdtempSync(join(tmpdir(), `shrike-bench-${files}-`));
-function request(id) {
-  return `${JSON.stringify({ protocolVersion: "1.0", id, command: "analyze", payload: { root: directory, config: {} } })}\n`;
+function request(id, command = "analyze", payload = { root: directory, config: {} }) {
+  return `${JSON.stringify({ protocolVersion: "1.0", id, command, payload })}\n`;
 }
 
 function peakRss(pid) {
@@ -42,6 +42,30 @@ function peakRss(pid) {
 }
 
 function run(id) {
+  return invoke(request(id), id).then(({ ms, rssKb, response }) => ({
+    ms,
+    rssKb,
+    snapshot: response.result.snapshot,
+  }));
+}
+
+function runDelta(id, baseSnapshot, headSnapshot) {
+  const payload = {
+    baseSnapshot,
+    headSnapshot,
+    baseRef: "bench-base",
+    baseCommit: "bench-base",
+    headCommit: "bench-head",
+    dirty: false,
+  };
+  return invoke(request(id, "delta", payload), id).then(({ ms, rssKb, response }) => ({
+    ms,
+    rssKb,
+    report: response.result,
+  }));
+}
+
+function invoke(line, id) {
   return new Promise((resolveRun, reject) => {
     const started = process.hrtime.bigint();
     const child = spawn(engine, [], { stdio: ["pipe", "pipe", "pipe"] });
@@ -57,22 +81,22 @@ function run(id) {
       clearInterval(poll);
       const ms = Number(process.hrtime.bigint() - started) / 1e6;
       if (code !== 0) {
-        reject(new Error(`engine failed (${code}): ${stderr.slice(0, 400)}`));
+        reject(new Error(`engine failed (${code}) on ${id}: ${stderr.slice(0, 400)}`));
         return;
       }
-      const line = stdout.split("\n").find((value) => value.trim().length > 0);
-      if (!line) {
-        reject(new Error("engine produced no response"));
+      const output = stdout.split("\n").find((value) => value.trim().length > 0);
+      if (!output) {
+        reject(new Error(`engine produced no response on ${id}`));
         return;
       }
-      const response = JSON.parse(line);
+      const response = JSON.parse(output);
       if (!response.ok) {
-        reject(new Error(`engine error: ${JSON.stringify(response.error)}`));
+        reject(new Error(`engine error on ${id}: ${JSON.stringify(response.error)}`));
         return;
       }
-      resolveRun({ ms, snapshot: response.result.snapshot, rssKb: rssKb || null });
+      resolveRun({ ms, rssKb: rssKb || null, response });
     });
-    child.stdin.end(request(id));
+    child.stdin.end(line);
   });
 }
 
@@ -80,6 +104,11 @@ function median(values) {
   const sorted = [...values].sort((left, right) => left - right);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+}
+
+function p95(values) {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
 }
 
 try {
@@ -92,6 +121,24 @@ try {
   const warm = [];
   for (let index = 0; index < runs; index += 1) warm.push(await run(`warm-${index}`));
 
+  // Delta: keep the base snapshot, remove the only caller of feature0, then
+  // measure the warm delta command. Restore the source so the benchmark repo
+  // remains deterministic.
+  const page = join(directory, "app", "page.tsx");
+  const pageSource = readFileSync(page, "utf8");
+  let deltaRuns = [];
+  let deltaFindings = 0;
+  try {
+    writeFileSync(page, "export default function Page() { return null; }\n");
+    const head = await run("delta-head");
+    for (let index = 0; index < runs; index += 1) {
+      deltaRuns.push(await runDelta(`delta-${index}`, cold.snapshot, head.snapshot));
+    }
+    deltaFindings = deltaRuns[0]?.report?.newlyDead?.length ?? 0;
+  } finally {
+    writeFileSync(page, pageSource);
+  }
+
   const report = {
     engine,
     files: cold.snapshot.files.length,
@@ -99,7 +146,12 @@ try {
     candidates: cold.snapshot.candidates.length,
     coldMs: Math.round(cold.ms),
     warmMs: Math.round(median(warm.map((value) => value.ms))),
+    warmP95Ms: Math.round(p95(warm.map((value) => value.ms))),
     warmRunsMs: warm.map((value) => Math.round(value.ms)),
+    deltaMs: deltaRuns.length > 0 ? Math.round(median(deltaRuns.map((value) => value.ms))) : null,
+    deltaP95Ms: deltaRuns.length > 0 ? Math.round(p95(deltaRuns.map((value) => value.ms))) : null,
+    deltaRunsMs: deltaRuns.map((value) => Math.round(value.ms)),
+    deltaFindings,
     peakRssMb: cold.rssKb === null ? null : Math.round(cold.rssKb / 1024),
     cacheEntries: existsSync(join(directory, ".shrike", "cache", "snapshots")) ? readdirSync(join(directory, ".shrike", "cache", "snapshots")).length : 0,
     generatedFiles: files,

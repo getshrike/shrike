@@ -24,6 +24,7 @@ function run(cwd, args, env = {}) {
     cwd,
     encoding: "utf8",
     env: { ...process.env, SHRIKE_ENGINE: engine, ...env },
+    maxBuffer: 64 * 1024 * 1024,
   });
 }
 
@@ -302,6 +303,151 @@ test("prune records build evidence in the receipt", { skip: !hasEngine }, () => 
     assert.equal(written[0].build.source, "next analyze export");
     assert.match(written[0].build.snapshotHash, /^sha256:[0-9a-f]{64}$/);
     assert.ok(written[0].batch.symbols.includes("lib/format.ts#formatInvoice"));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("JSONL streaming normalizes module ids, layers, and client references", { skip: !hasEngine }, () => {
+  const directory = scratch("jsonl");
+  try {
+    baseApp(directory);
+    const lines = [
+      { type: "module", id: "m1", path: "app/page.tsx", layer: "client", size: 100 },
+      { type: "module", id: "m2", path: "lib/orphan.ts", layer: "server", size: 40 },
+      { type: "entry", route: "/", runtime: "client", modules: ["m1"] },
+      { type: "client-reference", from: "m1", to: "m2#orphan", referenceKind: "server-action" },
+      { type: "asset", path: "static/chunk.js", size: 10 },
+    ];
+    write(directory, ".next/analyze/export.jsonl", `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
+    const result = run(directory, ["evidence", "--build", ".next/analyze/export.jsonl", "--json"]);
+    assert.equal(result.status, 0, result.stderr);
+    const joined = JSON.parse(result.stdout);
+    assert.equal(joined.status, "full");
+    assert.equal(joined.unmatched.length, 0);
+    assert.equal(joined.evidence.unknownRecords, 1);
+    assert.ok(joined.edges.some((edge) => edge.to === "lib/orphan.ts#orphan"));
+    const verdict = joined.verdicts.find((item) => item.symbol === "lib/orphan.ts#orphan");
+    assert.equal(verdict.verdict, "server-only");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("stale evidence is explicit and fails closed only when required", { skip: !hasEngine }, () => {
+  const directory = scratch("stale");
+  try {
+    baseApp(directory);
+    write(directory, "evidence.json", evidence({
+      fileHashes: { "app/page.tsx": `sha256:${"0".repeat(64)}` },
+    }));
+    const optional = run(directory, ["evidence", "--build", "evidence.json", "--json"]);
+    assert.equal(optional.status, 0, optional.stderr);
+    assert.equal(JSON.parse(optional.stdout).status, "stale");
+    const required = run(directory, [
+      "evidence", "--build", "evidence.json", "--require-build-evidence", "--json",
+    ]);
+    assert.equal(required.status, 4, required.stderr);
+    assert.match(`${required.stderr}${required.stdout}`, /required but status is stale/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a failed build is a recorded status, not a crash", { skip: !hasEngine }, () => {
+  const directory = scratch("build-failed");
+  try {
+    baseApp(directory);
+    const optional = run(directory, [
+      "evidence", "--run-build", "--build-command", "node -e \"process.exit(1)\"", "--json",
+    ]);
+    assert.equal(optional.status, 0, optional.stderr);
+    const joined = JSON.parse(optional.stdout);
+    assert.equal(joined.status, "build-failed");
+    assert.match(joined.evidence.failure, /exit 1|Command failed/);
+    const required = run(directory, [
+      "evidence", "--run-build", "--build-command", "node -e \"process.exit(1)\"",
+      "--require-build-evidence", "--json",
+    ]);
+    assert.equal(required.status, 4, required.stderr);
+    assert.match(`${required.stderr}${required.stdout}`, /build failed/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("unknown sizes and client-boundary leaks are reported and opt-outable", { skip: !hasEngine }, () => {
+  const directory = scratch("leak");
+  try {
+    baseApp(directory);
+    write(directory, "evidence.json", evidence({
+      files: ["app/page.tsx", "lib/orphan.ts"],
+      symbols: ["app/page.tsx#default", "lib/orphan.ts#orphan"],
+      layers: { "lib/orphan.ts": "server" },
+      routes: [{
+        route: "/",
+        runtime: "client",
+        files: ["app/page.tsx", "lib/orphan.ts"],
+        symbols: ["app/page.tsx#default", "lib/orphan.ts#orphan"],
+      }],
+      // The symbol and the file carry sizes; the other file and symbol do not.
+      sizes: { "app/page.tsx#default": 100, "lib/orphan.ts": 40 },
+    }));
+    const joined = run(directory, ["evidence", "--build", "evidence.json", "--json"]);
+    assert.equal(joined.status, 0, joined.stderr);
+    const payload = JSON.parse(joined.stdout);
+    assert.equal(payload.bytes.unknown, 2);
+    assert.equal(payload.bytes.partial, true);
+    assert.deepEqual(payload.unknownSizes, ["app/page.tsx", "lib/orphan.ts#orphan"]);
+    assert.ok(payload.diagnostics.some((item) => item.code === "client-boundary-leak"));
+
+    const disabled = run(directory, [
+      "evidence", "--build", "evidence.json", "--no-client-boundary-leaks", "--json",
+    ]);
+    assert.equal(disabled.status, 0, disabled.stderr);
+    assert.ok(!JSON.parse(disabled.stdout).diagnostics.some((item) => item.code === "client-boundary-leak"));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("loader prefixes, query strings, and module ids resolve by suffix", { skip: !hasEngine }, () => {
+  const directory = scratch("suffix");
+  try {
+    baseApp(directory);
+    write(directory, "evidence.json", evidence({
+      files: ["webpack://next/dist/loader.js!./lib/orphan.ts?ts=1", "/repo/app/page.tsx"],
+      symbols: ["m1#default", "lib/orphan.ts#orphan"],
+      moduleIds: { m1: "app/page.tsx" },
+      routes: [],
+      sizes: {},
+    }));
+    const result = run(directory, ["evidence", "--build", "evidence.json", "--json"]);
+    assert.equal(result.status, 0, result.stderr);
+    const joined = JSON.parse(result.stdout);
+    assert.equal(joined.status, "full");
+    assert.deepEqual(joined.unmatched, []);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a large JSONL export streams without loading the whole file", { skip: !hasEngine }, () => {
+  const directory = scratch("large-jsonl");
+  try {
+    baseApp(directory);
+    const lines = [
+      JSON.stringify({ type: "module", id: "m0", path: "app/page.tsx", layer: "client", size: 100 }),
+      ...Array.from({ length: 10_000 }, (_, index) =>
+        JSON.stringify({ type: "module", id: `v${index}`, path: `virtual/module-${index}.ts`, size: 1 }),
+      ),
+    ];
+    write(directory, ".next/analyze/export.jsonl", `${lines.join("\n")}\n`);
+    const result = run(directory, ["evidence", "--build", ".next/analyze/export.jsonl", "--json"]);
+    assert.equal(result.status, 0, result.stderr);
+    const joined = JSON.parse(result.stdout);
+    assert.equal(joined.status, "low-coverage");
+    assert.ok(joined.unmatched.length >= 10_000);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

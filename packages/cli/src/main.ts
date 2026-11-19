@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { parseArgs, booleanFlag, stringFlag, rejectUnknownFlags, type ParsedArgs } from "./args.ts";
-import { loadConfig, engineConfig, findConfigPath, repoRoot, type ShrikeConfig } from "./config.ts";
+import {
+  loadConfig, engineConfig, findConfigPath, repoRoot, cacheDirectory, type ShrikeConfig,
+  type VerificationTier,
+} from "./config.ts";
 import { requestEngine } from "./engine.ts";
 import { ExitCode, isCliError, UsageError, ConfigError, CliError, RevertFailedError } from "./errors.ts";
 import { writeJson, writeHuman, writeStderr, writeJsonError, formatCount } from "./output.ts";
@@ -24,7 +28,7 @@ import { VERSION, PROTOCOL_VERSION } from "./version.ts";
 import { EMPTY_BUILD_HASH, loadBuildEvidence, type BuildEvidence } from "./build.ts";
 import {
   bisectFailure, captureBaseline, classifyCheck, detectPackageManager, detectRepositoryChecks, runChecks,
-  type Baseline, type BisectUnit, type CheckResult, type ComparedCheck,
+  type Baseline, type BisectUnit, type CheckResult, type CheckSpec, type ComparedCheck,
 } from "@shrike/verifier";
 import {
   buildReceipt, writeReceipt, readReceipt, listReceipts, captureEnvironment, toReceiptChecks,
@@ -150,14 +154,20 @@ export default config;
 }
 
 async function analyze(root: string, config: ShrikeConfig): Promise<Snapshot> {
-  const result = await requestEngine<{ snapshot: Snapshot }>("analyze", { root, config: engineConfig(config) });
+  const result = await requestEngine<{ snapshot: Snapshot }>("analyze", {
+    root,
+    config: engineConfig(config),
+    cacheDir: cacheDirectory(root, config),
+  });
   return result.snapshot;
 }
 
 async function scanCommand(root: string, args: ParsedArgs): Promise<number> {
   const config = await loadConfig(root);
   const result = await requestEngine<{ snapshot: Snapshot; candidates: unknown[] }>("scan", {
-    root, config: engineConfig(config),
+    root,
+    config: engineConfig(config),
+    cacheDir: cacheDirectory(root, config),
   });
   if (booleanFlag(args, "json")) writeJson(result);
   else {
@@ -181,21 +191,28 @@ interface AnalysisPair {
   cleanup: () => void;
 }
 
-async function analyzePair(root: string, args: ParsedArgs): Promise<AnalysisPair> {
-  rejectUnknownFlags(args, ["json", "base", "help", "allow-dirty", "quiet", "build", "require-build-evidence"]);
+async function analyzePair(
+  root: string,
+  args: ParsedArgs,
+  options: { allowDirty?: boolean } = {},
+): Promise<AnalysisPair> {
+  rejectUnknownFlags(args, [
+    "json", "base", "help", "allow-dirty", "quiet", "build", "require-build-evidence",
+    "run-build", "build-command", "no-client-boundary-leaks", "tier", "in-place",
+  ]);
   const config = await loadConfig(root);
   const baseRef = resolveDefaultBase(root, stringFlag(args, "base"));
   const baseCommit = mergeBase(root, baseRef);
   const head = headCommit(root);
   const dirty = isDirty(root);
-  if (dirty && !booleanFlag(args, "allow-dirty")) {
+  if (dirty && !(booleanFlag(args, "allow-dirty") || options.allowDirty)) {
     throw new UsageError("working tree is dirty; commit, stash, or pass --allow-dirty");
   }
   const worktree = createWorktree(root, baseCommit, "base");
   try {
     const base = await analyze(worktree.directory, config);
     const headSnapshot = await analyze(root, config);
-    const build = await attachBuildEvidence(root, headSnapshot, args);
+    const build = await attachBuildEvidence(root, headSnapshot, args, config);
     const delta = await requestEngine<DeltaReport>("delta", {
       baseSnapshot: base, headSnapshot, baseRef, baseCommit, headCommit: head, dirty,
     });
@@ -210,13 +227,27 @@ async function attachBuildEvidence(
   root: string,
   head: Snapshot,
   args: ParsedArgs,
+  config: ShrikeConfig,
 ): Promise<BuildEvidenceInfo | null> {
-  const explicit = stringFlag(args, "build");
-  const required = booleanFlag(args, "require-build-evidence");
-  if (!explicit && !required) return null;
-  const loaded = loadBuildEvidence(root, explicit);
+  const explicit =
+    stringFlag(args, "build") ?? (config.build.evidence ? config.build.snapshot : undefined);
+  const required = booleanFlag(args, "require-build-evidence") || config.build.requireEvidence;
+  const loaded = loadBuildEvidence(root, explicit, {
+    runBuild: booleanFlag(args, "run-build"),
+    buildCommand: stringFlag(args, "build-command"),
+  });
   if (loaded.error) {
     throw new CliError(ExitCode.COULD_NOT_RUN, "build-evidence", loaded.error);
+  }
+  if (loaded.failure && required) {
+    throw new CliError(
+      ExitCode.COULD_NOT_RUN,
+      "build-failed",
+      `build evidence is required but the build failed: ${loaded.failure}`,
+    );
+  }
+  if (booleanFlag(args, "no-client-boundary-leaks")) {
+    loaded.evidence.clientBoundaryLeaks = false;
   }
   const result = await requestEngine<{ snapshot: Snapshot; join: BuildJoinResult }>("augment-build", {
     snapshot: head,
@@ -226,7 +257,7 @@ async function attachBuildEvidence(
     throw new CliError(
       ExitCode.COULD_NOT_RUN,
       "build-evidence-required",
-      `build evidence is required but status is ${result.join.status}${loaded.path ? ` (${loaded.path})` : ""}`,
+      `build evidence is required but status is ${result.join.status}${loaded.path ? ` (${loaded.path})` : ""}${loaded.failure ? `: ${loaded.failure}` : ""}`,
     );
   }
   // Build evidence can only add liveness. The engine seeds the evidenced
@@ -256,13 +287,152 @@ function toReceiptBuild(info: BuildEvidenceInfo | null): ReceiptBuild {
 }
 
 async function deltaCommand(root: string, args: ParsedArgs): Promise<number> {
+  const failOn = stringFlag(args, "fail-on") ?? "newly-dead";
+  if (failOn !== "newly-dead" && failOn !== "never") {
+    throw new UsageError(`invalid --fail-on value: ${failOn}; expected newly-dead or never`);
+  }
+  // analyzePair rejects unknown flags; consume this one first so the shared
+  // analyzer does not need to know about delta-only policy.
+  args.values.delete("fail-on");
   const pair = await analyzePair(root, args);
   try {
     if (booleanFlag(args, "json")) writeJson(pair.delta);
     else renderDelta(pair.delta);
+    if (failOn === "never") return ExitCode.OK;
     return pair.delta.newlyDead.length > 0 || pair.delta.newlyDeadFiles.length > 0
       ? ExitCode.FINDINGS : ExitCode.OK;
   } finally { pair.cleanup(); }
+}
+
+interface StoredPlan {
+  schemaVersion: "1.0";
+  createdAt: string;
+  baseRef: string | null;
+  baseCommit: string;
+  headCommit: string;
+  headDirty: boolean;
+  tier: VerificationTier;
+  plan: Plan;
+}
+
+function planArtifactPath(root: string, id: string): string {
+  return join(root, ".shrike", "plans", `${id}.json`);
+}
+
+function storePlan(
+  root: string,
+  pair: AnalysisPair,
+  plan: Plan,
+  tier: VerificationTier,
+): string {
+  const artifact: StoredPlan = {
+    schemaVersion: "1.0",
+    createdAt: new Date().toISOString(),
+    baseRef: pair.baseRef,
+    baseCommit: pair.baseCommit,
+    headCommit: pair.headCommit,
+    headDirty: pair.dirty,
+    tier,
+    plan,
+  };
+  mkdirSync(join(root, ".shrike", "plans"), { recursive: true });
+  const path = planArtifactPath(root, plan.id);
+  writeFileSync(path, `${JSON.stringify(artifact, null, 2)}\n`);
+  return path;
+}
+
+function readStoredPlan(root: string, id: string): StoredPlan {
+  if (!/^plan_[A-Za-z0-9]+$/.test(id)) {
+    throw new UsageError("plan id must look like plan_<id>");
+  }
+  const path = planArtifactPath(root, id);
+  if (!existsSync(path)) {
+    throw new CliError(
+      ExitCode.COULD_NOT_RUN,
+      "plan-not-found",
+      `plan ${id} was not found at .shrike/plans/${id}.json; run \`shrike plan --base <ref>\` first`,
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    throw new CliError(
+      ExitCode.COULD_NOT_RUN,
+      "plan-invalid",
+      `plan ${id} could not be parsed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const artifact = parsed as Partial<StoredPlan>;
+  if (
+    typeof parsed !== "object" || parsed === null ||
+    artifact.schemaVersion !== "1.0" ||
+    typeof artifact.baseCommit !== "string" ||
+    typeof artifact.headCommit !== "string" ||
+    typeof artifact.plan !== "object" || artifact.plan === null ||
+    !Array.isArray(artifact.plan.batches)
+  ) {
+    throw new CliError(ExitCode.COULD_NOT_RUN, "plan-invalid", `plan ${id} does not match the stored-plan contract`);
+  }
+  return artifact as StoredPlan;
+}
+
+function baselineConfigHash(checks: CheckSpec[]): string {
+  const normalized = checks.map((check) => ({
+    name: check.name,
+    command: check.command,
+    cwd: check.cwd ?? null,
+    timeoutMs: check.timeoutMs ?? null,
+    reruns: check.reruns ?? null,
+    required: check.required ?? true,
+  }));
+  return `sha256:${createHash("sha256").update(JSON.stringify(normalized)).digest("hex")}`;
+}
+
+/**
+ * Reuse a baseline only when it belongs to this head commit and this exact
+ * check set. Anything else is discarded, never compared against.
+ */
+async function loadOrCaptureBaseline(
+  root: string,
+  workingRoot: string,
+  head: string,
+  checks: CheckSpec[],
+  config: ShrikeConfig,
+): Promise<Baseline> {
+  let path: string;
+  try {
+    path = resolveInside(root, config.verification.baselinePath);
+  } catch (error) {
+    throw new ConfigError(
+      `verification.baselinePath must stay inside the repository: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const configHash = baselineConfigHash(checks);
+  if (existsSync(path)) {
+    try {
+      const parsed = JSON.parse(readFileSync(path, "utf8")) as Baseline;
+      if (
+        parsed.schemaVersion === "1.0" &&
+        parsed.head === head &&
+        parsed.configHash === configHash &&
+        Array.isArray(parsed.checks)
+      ) {
+        return parsed;
+      }
+    } catch {
+      // A corrupt baseline is discarded and rebuilt.
+    }
+  }
+  const baseline = await captureBaseline({
+    head,
+    specs: checks,
+    cwd: workingRoot,
+    configHash,
+  });
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(baseline, null, 2)}\n`);
+  return baseline;
 }
 
 async function planCommand(root: string, args: ParsedArgs): Promise<number> {
@@ -272,6 +442,7 @@ async function planCommand(root: string, args: ParsedArgs): Promise<number> {
     const plan = await requestEngine<Plan>("plan", { snapshot: pair.head, delta: pair.delta, config: engineConfig(config) });
     mkdirSync(join(root, ".shrike"), { recursive: true });
     writeFileSync(join(root, ".shrike", "last-plan.json"), `${JSON.stringify(plan, null, 2)}\n`);
+    storePlan(root, pair, plan, config.verification.tier);
     if (booleanFlag(args, "json")) writeJson(plan);
     else renderPlan(plan);
     return plan.totals.symbols > 0 ? ExitCode.FINDINGS : ExitCode.OK;
@@ -279,14 +450,21 @@ async function planCommand(root: string, args: ParsedArgs): Promise<number> {
 }
 
 async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
-  rejectUnknownFlags(args, ["json", "base", "help", "allow-dirty", "pr", "in-place", "verify", "receipt", "dry-run", "no-checks", "build", "require-build-evidence"]);
+  rejectUnknownFlags(args, [
+    "json", "base", "help", "allow-dirty", "pr", "in-place", "verify", "receipt",
+    "dry-run", "no-checks", "build", "require-build-evidence", "run-build",
+    "build-command", "no-client-boundary-leaks", "tier",
+  ]);
   if (booleanFlag(args, "no-checks")) {
     throw new UsageError("--no-checks is not supported: a verified deletion requires at least one project check");
   }
-  if (isDirty(root)) throw new UsageError("prune requires a clean working tree");
-  const pair = await analyzePair(root, args);
   const config = await loadConfig(root);
+  const allowDirty = booleanFlag(args, "allow-dirty") || config.verification.allowDirty;
+  if (isDirty(root) && !allowDirty) throw new UsageError("prune requires a clean working tree");
+  const tier = parseTier(stringFlag(args, "tier"), config.verification.tier);
+  const pair = await analyzePair(root, args, { allowDirty: config.verification.allowDirty });
   const plan = await requestEngine<Plan>("plan", { snapshot: pair.head, delta: pair.delta, config: engineConfig(config) });
+  storePlan(root, pair, plan, tier);
   const receiptBuild = toReceiptBuild(pair.build);
   const make = (
     batch: BatchLike,
@@ -307,8 +485,11 @@ async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
     else renderPlan(plan);
     return ExitCode.FINDINGS;
   }
-  const branch = `shrike/cleanup-${plan.id.replace(/^plan_/, "")}`;
-  const useWorktree = !booleanFlag(args, "in-place");
+  const branch = `${config.pr.branchPrefix}-${plan.id.replace(/^plan_/, "")}`;
+  const useWorktree = config.verification.mode === "worktree" && !booleanFlag(args, "in-place");
+  if (pair.dirty && useWorktree) {
+    throw new UsageError("worktree verification requires a clean tree; use --in-place with --allow-dirty");
+  }
   const worktree = useWorktree ? createBranchWorktree(root, branch, pair.headCommit) : null;
   const workingRoot = worktree?.directory ?? root;
   const worktreeDirectory = worktree?.directory ?? null;
@@ -318,7 +499,7 @@ async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
   let activeRecovery: RecoveryReference | null = null;
   try {
     if (!useWorktree) ensureBranch(root, branch);
-    const checks = config.checks.length > 0 ? config.checks : detectRepositoryChecks(workingRoot);
+    const checks = config.checks.length > 0 ? config.checks : detectRepositoryChecks(workingRoot, { tier });
     if (checks.length === 0) {
       throw new CliError(
         ExitCode.COULD_NOT_RUN,
@@ -326,7 +507,7 @@ async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
         "no verification checks were found; configure checks or add typecheck/lint/test scripts",
       );
     }
-    const baseline = await captureBaseline({ head: pair.headCommit, specs: checks, cwd: workingRoot });
+    const baseline = await loadOrCaptureBaseline(root, workingRoot, pair.headCommit, checks, config);
     const checksEnabled = true;
     let outcome: string = "verified";
     let hadRejection = false;
@@ -483,7 +664,7 @@ async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
       }
       return ExitCode.REVERT_FAILED;
     }
-    if (booleanFlag(args, "pr")) openPullRequest(root, branch, plan, receipts);
+    if (booleanFlag(args, "pr")) openPullRequest(root, branch, plan, receipts, config);
     if (booleanFlag(args, "json")) writeJson({ plan, outcome, receipts, branch, worktree: worktreeDirectory });
     else {
       writeHuman(`Shrike: ${formatCount(plan.totals.symbols, "symbol")} removed on ${branch}.`);
@@ -522,7 +703,7 @@ function makeReceipt(
     head: { commit: pair.headCommit, graphHash: pair.head.graphHash, dirty: pair.dirty },
     plan: { id: plan.id, hash: plan.deltaHash },
     batch: { id: batch.id, symbols: batch.symbols, files: batch.files, linesRemoved: batch.lines, patches: [patchPath || `.shrike/patches/${batch.id}.patch`] },
-    checks: toReceiptChecks(checks),
+    checks: toReceiptChecks(checks, { root }),
     outcome: outcome as never,
     rejected,
     policy: {
@@ -658,8 +839,14 @@ function execGitDiff(root: string): string {
   } catch { return ""; }
 }
 
-function openPullRequest(root: string, branch: string, plan: Plan, receiptPaths: string[]): void {
-  const base = plan.base.ref ?? "main";
+function openPullRequest(
+  root: string,
+  branch: string,
+  plan: Plan,
+  receiptPaths: string[],
+  config: ShrikeConfig,
+): void {
+  const base = config.pr.base ?? plan.base.ref ?? "main";
   const receipts = receiptPaths.map((path) => readReceipt(path));
   const batches = receipts.map((receipt) => ({
     id: receipt.batch.id,
@@ -684,7 +871,9 @@ function openPullRequest(root: string, branch: string, plan: Plan, receiptPaths:
     rejected,
     receipts,
   });
-  const title = `Shrike: remove ${plan.totals.symbols} dead symbols`;
+  const title = config.pr.title === "Shrike: verified cleanup"
+    ? `Shrike: remove ${plan.totals.symbols} dead symbols`
+    : config.pr.title;
   const remote = spawnSync("git", ["rev-parse", "--verify", `origin/${branch}`], { cwd: root, encoding: "utf8" });
   if (remote.status === 0) {
     const ancestor = spawnSync("git", ["merge-base", "--is-ancestor", `origin/${branch}`, "HEAD"], { cwd: root, encoding: "utf8" });
@@ -693,31 +882,168 @@ function openPullRequest(root: string, branch: string, plan: Plan, receiptPaths:
       return;
     }
   }
+  const draft = config.pr.draft ? ["--draft"] : [];
   const push = spawnSync("git", ["push", "-u", "origin", branch], { cwd: root, encoding: "utf8" });
   if (push.status !== 0) {
-    writeStderr(`Could not push ${branch}; open the PR manually: gh pr create --draft --head ${branch} --base ${base}`);
+    writeStderr(`Could not push ${branch}; open the PR manually: gh pr create ${draft.join(" ")} --head ${branch} --base ${base}`);
     return;
   }
-  const gh = spawnSync("gh", ["pr", "create", "--draft", "--head", branch, "--base", base, "--title", title, "--body", body], { cwd: root, encoding: "utf8" });
+  const gh = spawnSync(
+    "gh",
+    ["pr", "create", ...draft, "--head", branch, "--base", base, "--title", title, "--body", body],
+    { cwd: root, encoding: "utf8" },
+  );
   if (gh.status !== 0) {
-    writeStderr(`gh unavailable or failed; open the PR manually: gh pr create --draft --head ${branch} --base ${base}`);
+    writeStderr(`gh unavailable or failed; open the PR manually: gh pr create ${draft.join(" ")} --head ${branch} --base ${base}`);
     return;
   }
   const url = gh.stdout.trim();
+  if (config.pr.labels.length > 0) {
+    for (const label of config.pr.labels) {
+      const result = spawnSync("gh", ["pr", "edit", url, "--add-label", label], { cwd: root, encoding: "utf8" });
+      if (result.status !== 0) writeStderr(`Could not add label ${label} to ${url}.`);
+    }
+  }
   writeHuman(url);
+  if (!config.pr.commentReceipt) return;
   for (const receipt of receipts) {
     const comment = spawnSync("gh", ["pr", "comment", url, "--body", renderReceiptComment(receipt)], { cwd: root, encoding: "utf8" });
     if (comment.status !== 0) writeStderr(`Could not post receipt ${receipt.id} to the PR.`);
   }
 }
 
+function parseTier(value: string | undefined, fallback: VerificationTier): VerificationTier {
+  if (value === undefined) return fallback;
+  if (value === "fast" || value === "standard" || value === "full") return value;
+  throw new UsageError(`invalid check tier: ${value}; expected fast, standard, or full`);
+}
+
 async function verifyCommand(root: string, args: ParsedArgs): Promise<number> {
   const id = stringFlag(args, "plan") ?? args.positionals[0];
   if (!id) throw new UsageError("verify requires --plan <id> or a receipt id");
-  const receipt = readReceipt(join(root, ".shrike", "receipts", `${id}.json`));
-  if (booleanFlag(args, "json")) writeJson(receipt);
-  else writeHuman(`Receipt ${receipt.id}: ${receipt.outcome}`);
-  return receipt.outcome === "verified" ? ExitCode.OK : ExitCode.VERIFICATION_FAILED;
+  // Receipt IDs remain accepted for `shrike verify <rcpt_...>` so an existing
+  // receipt can be inspected after the fact. A plan ID re-runs verification.
+  if (id.startsWith("rcpt_")) {
+    const receipt = readReceipt(join(root, ".shrike", "receipts", `${id}.json`));
+    if (booleanFlag(args, "json")) writeJson(receipt);
+    else writeHuman(`Receipt ${receipt.id}: ${receipt.outcome}`);
+    return receipt.outcome === "verified" ? ExitCode.OK : ExitCode.VERIFICATION_FAILED;
+  }
+  rejectUnknownFlags(args, ["plan", "json", "help", "in-place", "allow-dirty", "quiet", "tier"]);
+  const artifact = readStoredPlan(root, id);
+  const config = await loadConfig(root);
+  const allowDirty = booleanFlag(args, "allow-dirty") || config.verification.allowDirty;
+  if (isDirty(root) && !allowDirty) {
+    throw new UsageError("verify requires a clean working tree");
+  }
+  if (artifact.headDirty) {
+    throw new CliError(
+      ExitCode.COULD_NOT_RUN,
+      "dirty-plan",
+      `plan ${artifact.plan.id} was computed on a dirty tree; commit the changes and re-plan before verifying`,
+    );
+  }
+  const current = headCommit(root);
+  if (current !== artifact.headCommit) {
+    throw new CliError(
+      ExitCode.COULD_NOT_RUN,
+      "plan-head-mismatch",
+      `plan ${artifact.plan.id} targets ${artifact.headCommit.slice(0, 12)}, but HEAD is ${current.slice(0, 12)}`,
+    );
+  }
+  const tier = parseTier(stringFlag(args, "tier"), artifact.tier ?? config.verification.tier);
+  const pairArgs: ParsedArgs = {
+    positionals: [],
+    values: new Map([["base", artifact.baseRef ?? artifact.baseCommit]]),
+  };
+  const pair = await analyzePair(root, pairArgs, { allowDirty: config.verification.allowDirty });
+  const receipts: string[] = [];
+  try {
+    if (pair.baseCommit !== artifact.baseCommit) {
+      throw new CliError(
+        ExitCode.COULD_NOT_RUN,
+        "plan-base-mismatch",
+        `plan ${artifact.plan.id} targets base ${artifact.baseCommit.slice(0, 12)}, but the merge base is ${pair.baseCommit.slice(0, 12)}`,
+      );
+    }
+    const checks = config.checks.length > 0
+      ? config.checks
+      : detectRepositoryChecks(root, { tier });
+    if (checks.length === 0) {
+      throw new CliError(
+        ExitCode.COULD_NOT_RUN,
+        "no-checks",
+        "no verification checks were found; configure checks or add typecheck/lint/test scripts",
+      );
+    }
+    const worktree = createWorktree(root, artifact.headCommit, "verify");
+    try {
+      const baseline = await loadOrCaptureBaseline(
+        root,
+        worktree.directory,
+        artifact.headCommit,
+        checks,
+        config,
+      );
+      const compare = async (): Promise<ComparedCheck[]> => {
+        const after = await runChecks(checks, { cwd: worktree.directory });
+        return after.map((result: CheckResult) => {
+          const base = baseline.checks.find((check) => check.name === result.name);
+          return {
+            ...result,
+            baselineStatus: base?.status ?? "missing",
+            baselineSignature: base?.signature ?? null,
+            classification: classifyCheck(result, base),
+          };
+        });
+      };
+      const receiptBuild = toReceiptBuild(pair.build);
+      const make = (
+        batch: BatchLike,
+        compared: ComparedCheck[],
+        outcome: string,
+        patchPath: string,
+        rejected: ReceiptRejection[] = [],
+      ) => makeReceipt(root, pair, artifact.plan, batch, compared, outcome, patchPath, rejected, undefined, receiptBuild);
+      let outcome = "verified";
+      let hadRejection = false;
+      for (const batch of artifact.plan.batches) {
+        restoreAll(worktree.directory);
+        const lines = applySymbols(worktree.directory, pair.head, batch.symbols);
+        if (lines === 0) continue;
+        const patchPath = writePatch(root, worktree.directory, batch.id);
+        const compared = await compare();
+        const blocking = blockingChecks(compared);
+        if (blocking.length > 0) {
+          restoreAll(worktree.directory);
+          const receipt = make(batch, compared, "rejected", patchPath, rejectionsFor(batch.symbols, batch.files, blocking, "re-verification regression"));
+          receipts.push(writeReceipt(root, receipt));
+          outcome = "rejected";
+          hadRejection = true;
+          if (!booleanFlag(args, "json") && !booleanFlag(args, "quiet")) {
+            writeHuman(`Rejected ${batch.id}: ${blocking.map((check) => check.name).join(", ")} failed; changes reverted.`);
+          }
+          continue;
+        }
+        commitAll(worktree.directory, `shrike: verify ${batch.id}`);
+        const receipt = make(batch, compared, "verified", patchPath);
+        receipts.push(writeReceipt(root, receipt));
+        if (!booleanFlag(args, "json") && !booleanFlag(args, "quiet")) {
+          writeHuman(`Verified ${batch.id}: ${batch.symbols.length} symbols, ${batch.files.length} files.`);
+        }
+      }
+      if (booleanFlag(args, "json")) {
+        writeJson({ plan: artifact.plan, outcome, receipts });
+      } else {
+        writeHuman(`Shrike: re-verification ${outcome}; ${formatCount(receipts.length, "receipt")}.`);
+      }
+      return hadRejection ? ExitCode.VERIFICATION_FAILED : ExitCode.OK;
+    } finally {
+      worktree.cleanup();
+    }
+  } finally {
+    pair.cleanup();
+  }
 }
 
 function receiptCommand(root: string, args: ParsedArgs): number {
@@ -768,10 +1094,19 @@ async function proofCommand(root: string, args: ParsedArgs): Promise<number> {
 }
 
 async function evidenceCommand(root: string, args: ParsedArgs): Promise<number> {
-  rejectUnknownFlags(args, ["json", "build", "require-build-evidence", "help"]);
-  const loaded = loadBuildEvidence(root, stringFlag(args, "build"));
+  rejectUnknownFlags(args, [
+    "json", "build", "require-build-evidence", "help", "run-build",
+    "build-command", "no-client-boundary-leaks",
+  ]);
+  const loaded = loadBuildEvidence(root, stringFlag(args, "build"), {
+    runBuild: booleanFlag(args, "run-build"),
+    buildCommand: stringFlag(args, "build-command"),
+  });
   if (loaded.error) {
     throw new CliError(ExitCode.COULD_NOT_RUN, "build-evidence", loaded.error);
+  }
+  if (booleanFlag(args, "no-client-boundary-leaks")) {
+    loaded.evidence.clientBoundaryLeaks = false;
   }
   const config = await loadConfig(root);
   const snapshot = await analyze(root, config);
@@ -780,10 +1115,13 @@ async function evidenceCommand(root: string, args: ParsedArgs): Promise<number> 
     build: loaded.evidence,
   });
   if (booleanFlag(args, "require-build-evidence") && !["full", "partial"].includes(result.status)) {
+    const reason = loaded.failure
+      ? `build failed: ${loaded.failure}`
+      : `status is ${result.status}`;
     throw new CliError(
       ExitCode.COULD_NOT_RUN,
       "build-evidence-required",
-      `build evidence is required but status is ${result.status}`,
+      `build evidence is required but ${reason}`,
     );
   }
   const payload = {
@@ -793,6 +1131,8 @@ async function evidenceCommand(root: string, args: ParsedArgs): Promise<number> 
       source: loaded.evidence.source,
       version: loaded.evidence.version,
       snapshotHash: loaded.evidence.snapshotHash,
+      unknownRecords: loaded.evidence.unknownRecords,
+      ...(loaded.failure ? { failure: loaded.failure } : {}),
     },
   };
   if (booleanFlag(args, "json")) writeJson(payload);
@@ -961,9 +1301,10 @@ async function runCli(root: string, argv: string[]): Promise<{ code: number; std
   });
 }
 
-function cacheCommand(root: string, args: ParsedArgs): number {
+async function cacheCommand(root: string, args: ParsedArgs): Promise<number> {
   const action = args.positionals[0];
-  const cacheDir = join(root, ".shrike", "cache");
+  const config = await loadConfig(root);
+  const cacheDir = cacheDirectory(root, config);
   if (action === "clean") {
     rmSync(cacheDir, { recursive: true, force: true });
     if (booleanFlag(args, "json")) writeJson({ cleaned: cacheDir });
@@ -1039,10 +1380,14 @@ All read-only commands support --json. Exit codes: 0 clean, 1 findings,
 }
 
 main(process.argv.slice(2))
-  .then((code) => process.exit(code))
+  // Set the code instead of calling process.exit(): exiting immediately can
+  // truncate large JSON documents still draining to a pipe.
+  .then((code) => {
+    process.exitCode = code;
+  })
   .catch((error: unknown) => {
     const cliError = isCliError(error) ? error : new CliError(ExitCode.COULD_NOT_RUN, "internal", error instanceof Error ? error.message : String(error));
     writeStderr(`shrike: ${cliError.message}`);
     if (process.argv.includes("--json")) writeJsonError({ code: cliError.code, message: cliError.message, exitCode: cliError.exitCode, details: cliError.details });
-    process.exit(cliError.exitCode);
+    process.exitCode = cliError.exitCode;
   });

@@ -4,10 +4,14 @@
 > document, plan, prompt, or implementation disagrees with this file, this file
 > wins until it is amended in the same change.
 >
-> **Status:** design complete · implementation not started
+> **Status:** implementation complete for local phases 0–4 and distribution
+> surfaces; external launch, design-partner, publish, and real-app acceptance
+> items are blocked on credentials or participants (see
+> [`TRACKER.md`](TRACKER.md))
 > **Authored:** 2026-11-20
 > **Working directory:** `/home/mark/code/projects/shrike`
-> **Working name:** Shrike · **CLI binary:** `shrike` · **Package name:** TBD in
+> **Working name:** Shrike · **CLI binary:** `shrike` · **Package name:** local
+> package is `shrike`; registry availability is blocked in
 > [`PLAN-5`](plans/PLAN-5-distribution-and-launch.md)
 > **Tracker:** [`TRACKER.md`](TRACKER.md)
 > **Start here:** [`plans/PLAN-0-foundations.md`](plans/PLAN-0-foundations.md)
@@ -1055,40 +1059,41 @@ verified PR, not the parser.
 ## 25. Open decisions
 
 These are tracked and owned by a plan. Resolved items state the decision; every
-other item must not be silently decided in code.
+other item must not be silently decided in code. Blocked items require an
+external app, credential, or participant and are not silently marked done.
 
-| ID | Question | Owner |
+| ID | Question | Resolution |
 |---|---|---|
-| Q-001 | Does the Rust engine own the CLI? | Resolved: no; TypeScript host |
-| Q-002 | Worktree by default, or in-place with snapshots? | PLAN-3 |
-| Q-003 | How are public-package exports marked? | PLAN-2 |
-| Q-004 | Which check tiers are required vs advisory? | PLAN-3 |
-| Q-005 | Does the receipt sign with a key, or only content-address? | PLAN-3 |
-| Q-006 | How is a design partner's repo isolated during a trial? | PLAN-5 |
-| Q-007 | Is the package name `shrike` available, or is a rename needed? | PLAN-5 |
-| Q-008 | What is the minimum Next.js version for build-graph evidence? | PLAN-4 |
-| Q-009 | Is the snapshot format stable across minor versions? | PLAN-1 |
-| Q-010 | How are monorepo workspace boundaries represented? | PLAN-2 |
-| Q-011 | Persistent engine process or one shot per command? | PLAN-1 |
-| Q-012 | Should test-only and Storybook entries count by default? | PLAN-2 |
-| Q-013 | How is a public API detected outside `package.json` exports? | PLAN-2 |
-| Q-014 | Is the `next analyze export` schema documented per version? | PLAN-4 |
-| Q-015 | How are Turbopack virtual modules represented? | PLAN-4 |
-| Q-016 | Does Shrike run `next build` itself, or only consume a snapshot? | PLAN-4 |
-| Q-017 | Which hook event is right in Claude Code, Cursor, and OpenCode? | PLAN-5 |
-| Q-018 | Does the Action need a GitHub App or a token? | PLAN-5 |
-| Q-019 | Per-edit or task-end hook? | PLAN-5 |
-| Q-020 | How large must the labeled set be before publishing precision? | PLAN-6 |
-| Q-021 | Publish per-repository results or only aggregates? | PLAN-5 |
-| Q-022 | How are design-partner labels kept confidential? | PLAN-5 |
-| Q-023 | Native binary or WASM? | PLAN-1: native first |
-| Q-024 | Which platforms are supported at first? | PLAN-5 |
-| Q-025 | How is a feature removal distinguished from a rename? | PLAN-2 |
-| Q-026 | How are affected-only tests selected? | PLAN-3 |
-| Q-027 | Is the client-reference manifest available across Next.js versions? | PLAN-4 |
-| Q-028 | Pricing and packaging | Not in v1; free CLI + design partners |
-| Q-029 | How is the blast-radius threshold configured? | PLAN-2 |
-| Q-030 | Do receipts include a human-readable summary and a machine JSON? | PLAN-3 |
+| Q-001 | Does the Rust engine own the CLI? | Resolved: no. The Rust engine owns analysis; the TypeScript host owns the CLI, config, checks, receipts, and PR flow. |
+| Q-002 | Worktree by default, or in-place with snapshots? | Resolved: worktree by default; in-place is explicit and requires a clean tree unless `verification.allowDirty`. |
+| Q-003 | How are public-package exports marked? | Resolved: package entry/exports, `.d.ts` files, and configured `publicApi` globs are public; their exports seed entries and are never deletion candidates. |
+| Q-004 | Which check tiers are required vs advisory? | Resolved: fast = typecheck + lint, standard = + test, full = + build; default standard. Configured checks replace discovery and are required unless `required: false`. |
+| Q-005 | Does the receipt sign with a key, or only content-address? | Resolved: content-address first (SHA-256 in this implementation). Signing is deferred and optional when added. |
+| Q-006 | How is a design partner's repo isolated during a trial? | Resolved: the trial kit is read-only, makes no network calls, writes only `.shrike/`, and runs no project scripts. Prune uses a worktree and the partner's checks. |
+| Q-007 | Is the package name `shrike` available, or is a rename needed? | Blocked: npm name availability and publish dry-run require registry credentials. The local tarball gate passes. |
+| Q-008 | What is the minimum Next.js version for build-graph evidence? | Resolved: 16.4+ is full; 16.1–16.3 is partial; older versions are unsupported and degrade to static analysis. |
+| Q-009 | Is the snapshot format stable across minor versions? | Resolved: the protocol/snapshot `1.0` contract is checked; a mismatch fails closed and invalidates the cache. Additive tolerance applies to build evidence, not the engine snapshot. |
+| Q-010 | How are monorepo workspace boundaries represented? | Resolved: workspace packages are discovered from `package.json` workspaces and `pnpm-workspace.yaml`; package entries and exports resolve across workspaces. |
+| Q-011 | Persistent engine process or one shot per command? | Resolved: one shot per command. Each request is a fresh process with a timeout; there is no persistent daemon. |
+| Q-012 | Should test-only and Storybook entries count by default? | Resolved: yes under the default local policy (`testEntries: true`); production policy excludes test-only entries. |
+| Q-013 | How is a public API detected outside `package.json` exports? | Resolved: configured `publicApi` globs, declaration files, and a package entry surface. No broader inference. |
+| Q-014 | Is the `next analyze export` schema documented per version? | Resolved: no per-version schema is assumed. The parser tolerates additive fields and records unknown record families; the version guard decides capability. |
+| Q-015 | How are Turbopack virtual modules represented? | Resolved: loader, `turbopack://`, `file://`, absolute, and query forms normalize to source paths; unjoined virtual modules stay `unknown` and never confirm deletion. |
+| Q-016 | Does Shrike run `next build` itself, or only consume a snapshot? | Resolved: it consumes a snapshot by default; `--run-build` is opt-in and evidence is never required. |
+| Q-017 | Which hook event is right in Claude Code, Cursor, and OpenCode? | Resolved: Claude `Stop`, Cursor `afterFileEdit` + `stop`, OpenCode `session.idle`. |
+| Q-018 | Does the Action need a GitHub App or a token? | Resolved: no App. It uses the workflow's `GITHUB_TOKEN` through `git`/`gh`; prune refuses fork PRs. |
+| Q-019 | Per-edit or task-end hook? | Resolved: task-end is the default; Cursor also gets `afterFileEdit` for fast feedback. The hook is advisory, non-blocking, and never applies a deletion. |
+| Q-020 | How large must the labeled set be before publishing precision? | Blocked: 10–20 labeled real repositories are required; no precision number is published before that. |
+| Q-021 | Publish per-repository results or only aggregates? | Deferred: receipts stay local/CI until the labeled set exists; publication then requires partner consent. |
+| Q-022 | How are design-partner labels kept confidential? | Resolved for the trial: no source upload, local reports, and a private triage template. Aggregate publication requires explicit permission. |
+| Q-023 | Native binary or WASM? | Resolved: native first. WASM remains a fallback if native distribution fails. |
+| Q-024 | Which platforms are supported at first? | Planned: Linux x64/arm64, macOS x64/arm64, Windows x64. The local packaging gate covers the launcher; registry publication is blocked. |
+| Q-025 | How is a feature removal distinguished from a rename? | Resolved: conservatively. The delta reports only symbols present in both graphs that were live at base and are dead at head; a removed or renamed symbol is not a deletion candidate, so a rename cannot become a false orphan. |
+| Q-026 | How are affected-only tests selected? | Deferred: start with full project checks. Affected-only selection is added only after measuring real check cost. |
+| Q-027 | Is the client-reference manifest available across Next.js versions? | Resolved: it is optional evidence; when present it adds `certain` build edges, and when absent static reachability remains authoritative. |
+| Q-028 | Pricing and packaging | Resolved for v1: free CLI and design-partner trials; no hosted product or paid tier. |
+| Q-029 | How is the blast-radius threshold configured? | Resolved: `batchPolicy.maxSymbols` (50), `maxFiles` (10), `maxLiveGraphPercent` (5), and `allowOversized` (false) in config; oversized batches split or refuse. |
+| Q-030 | Do receipts include a human-readable summary and a machine JSON? | Resolved: every batch writes schema-validated JSON under `.shrike/receipts/`; the PR body and per-receipt comments are the human Markdown summaries. |
 
 ---
 

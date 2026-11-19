@@ -190,10 +190,11 @@ the measurement and the optimization attempt before the target changes.
 
 ### 4.5 Regression policy
 
-- `bench.yml` runs on `main`, not on every PR.
+- `nightly.yml` runs on `main`, not on every PR.
 - A > 20% regression on a budgeted workload fails the job.
 - A regression is investigated or the budget is amended with a reason.
-- Benchmark results are stored as raw JSON under `benchmarks/reports/`.
+- Benchmark results are uploaded as a raw JSON artifact and recorded in
+  [`../TRACKER.md`](../TRACKER.md) §5.
 
 ### 4.6 What not to benchmark
 

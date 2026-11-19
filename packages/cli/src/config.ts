@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { baseEnvironment } from "@shrike/verifier";
 import { ConfigError } from "./errors.ts";
 
 export interface CheckConfig {
@@ -11,12 +12,41 @@ export interface CheckConfig {
   timeoutMs?: number;
   reruns?: number;
   required?: boolean;
+  tier?: VerificationTier;
+  cwd?: string;
+}
+
+export type VerificationTier = "fast" | "standard" | "full";
+export type VerificationMode = "worktree" | "in-place";
+
+export interface VerificationConfig {
+  mode: VerificationMode;
+  allowDirty: boolean;
+  tier: VerificationTier;
+  baselinePath: string;
+}
+
+export interface BuildConfig {
+  evidence: boolean;
+  snapshot: string;
+  requireEvidence: boolean;
+}
+
+export interface PrConfig {
+  draft: boolean;
+  labels: string[];
+  branchPrefix: string;
+  commentReceipt: boolean;
+  base: string | null;
+  title: string;
 }
 
 export interface ShrikeConfig {
+  schemaVersion: "1.0";
   include: string[];
   ignore: string[];
   tsconfig: string | null;
+  cacheDir: string;
   entryPolicy: "local" | "production";
   testEntries: boolean;
   includeGenerated: boolean;
@@ -30,16 +60,20 @@ export interface ShrikeConfig {
   };
   entryAdapters: string[];
   checks: CheckConfig[];
-  pr: { draft: boolean; base: string | null };
+  pr: PrConfig;
+  verification: VerificationConfig;
+  build: BuildConfig;
 }
 
 export const DEFAULT_CONFIG: ShrikeConfig = {
+  schemaVersion: "1.0",
   include: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs"],
   ignore: [
     "node_modules/**", ".git/**", ".next/**", ".shrike/**", "dist/**", "build/**",
     "out/**", "coverage/**", ".turbo/**", ".vercel/**", "*.min.js", "*.generated.*",
   ],
   tsconfig: "tsconfig.json",
+  cacheDir: ".shrike/cache",
   entryPolicy: "local",
   testEntries: true,
   includeGenerated: false,
@@ -48,7 +82,25 @@ export const DEFAULT_CONFIG: ShrikeConfig = {
   batchPolicy: { maxSymbols: 50, maxFiles: 10, maxLiveGraphPercent: 5, allowOversized: false },
   entryAdapters: ["next-app", "next-pages", "react", "packages", "tests", "configs"],
   checks: [],
-  pr: { draft: true, base: null },
+  pr: {
+    draft: true,
+    labels: ["shrike", "cleanup"],
+    branchPrefix: "shrike/cleanup",
+    commentReceipt: true,
+    base: null,
+    title: "Shrike: verified cleanup",
+  },
+  verification: {
+    mode: "worktree",
+    allowDirty: false,
+    tier: "standard",
+    baselinePath: ".shrike/baseline.json",
+  },
+  build: {
+    evidence: false,
+    snapshot: ".next/analyze.jsonl",
+    requireEvidence: false,
+  },
 };
 
 const CONFIG_FILES = ["shrike.config.ts", "shrike.config.js", "shrike.config.mjs", "shrike.config.json"];
@@ -65,8 +117,11 @@ export function mergeConfig(input: Partial<ShrikeConfig> = {}): ShrikeConfig {
   return {
     ...DEFAULT_CONFIG,
     ...input,
+    schemaVersion: "1.0",
     batchPolicy: { ...DEFAULT_CONFIG.batchPolicy, ...(input.batchPolicy ?? {}) },
     pr: { ...DEFAULT_CONFIG.pr, ...(input.pr ?? {}) },
+    verification: { ...DEFAULT_CONFIG.verification, ...(input.verification ?? {}) },
+    build: { ...DEFAULT_CONFIG.build, ...(input.build ?? {}) },
     include: input.include ?? DEFAULT_CONFIG.include,
     ignore: input.ignore ?? DEFAULT_CONFIG.ignore,
     checks: input.checks ?? DEFAULT_CONFIG.checks,
@@ -96,7 +151,7 @@ function loadExecutableConfig(path: string, root: string): Partial<ShrikeConfig>
       encoding: "utf8",
       timeout: Number.isFinite(timeout) && timeout > 0 ? timeout : 5_000,
       env: {
-        ...process.env,
+        ...baseEnvironment(),
         SHRIKE_CONFIG_URL: pathToFileURL(path).href,
         SHRIKE_CONFIG_OUTPUT: output,
       },
@@ -158,8 +213,21 @@ export async function loadConfig(root: string): Promise<ShrikeConfig> {
 
 /** The payload shape accepted by the Rust engine's analyze/scan commands. */
 export function engineConfig(config: ShrikeConfig): Record<string, unknown> {
-  const { checks: _checks, pr: _pr, ...rest } = config;
+  const {
+    checks: _checks,
+    pr: _pr,
+    verification: _verification,
+    build: _build,
+    cacheDir: _cacheDir,
+    schemaVersion: _schemaVersion,
+    ...rest
+  } = config;
   return rest;
+}
+
+/** Resolve the configured cache directory to an absolute host path. */
+export function cacheDirectory(root: string, config: ShrikeConfig): string {
+  return config.cacheDir.startsWith("/") ? config.cacheDir : join(root, config.cacheDir);
 }
 
 export function repoRoot(cwd = process.cwd()): string {

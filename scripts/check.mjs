@@ -8,6 +8,7 @@ const root = resolve(new URL("..", import.meta.url).pathname);
 const steps = [
   ["schemas", ["scripts/check-schemas.mjs"]],
   ["receipts", ["scripts/check-receipts.mjs"]],
+  ["package", ["scripts/check-package.mjs"]],
   ["corpus", ["scripts/check-corpus.mjs"]],
   ["fixtures", ["scripts/run-fixtures.mjs", "--engine"]],
   ["corpus-engine", ["scripts/corpus-runner.mjs"]],
