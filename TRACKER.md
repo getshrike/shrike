@@ -35,11 +35,14 @@ demonstrated and the evidence is linked here.
   hooks, action, and MCP server are implemented. Phase 4 (Next.js build
   evidence) now has discovery, JSONL/object ingestion, a version guard, join
   coverage, route/byte attribution, receipt population, `--require-build-evidence`,
-  and build-edge feedback into reachability. The remaining phase 4 items are
-  depth work (bounded-memory streaming, suffix/module-ID matching, client/server
-  verdicts, stale/build-failed statuses, corpus evidence mode) and are listed as
-  `in-progress` below. External launch, design-partner, publish, and real-app
-  acceptance items are `blocked` on credentials or participants, not on code.
+  and build-edge feedback into reachability. The must-not-report corpus now runs
+  every case as its own project in both static and build-evidence modes from a
+  clean cache (250 cases, zero protected symbols reported). The remaining phase 4
+  items are depth work (bounded-memory streaming, suffix/module-ID matching,
+  client/server verdicts, unknown sizes, server-action manifest edges, stale/
+  build-failed statuses) and are listed as `in-progress` below. External launch,
+  design-partner, publish, and real-app acceptance items are `blocked` on
+  credentials or participants, not on code.
 - **Prior prototype:** not a dependency. The old tree was removed; a backup
   exists outside the repository only as a safety net. No code, schema, or fixture
   from it is reused.
@@ -167,7 +170,7 @@ demonstrated and the evidence is linked here.
 | 4.12 | Proxy/middleware/metadata | `done` | Entry and matcher semantics; never dead | `crates/shrike-graph/src/entries.rs`; corpus proxy/middleware/metadata cases |
 | 4.13 | Fallback matrix | `in-progress` | Missing/stale/parse-error/unsupported → static-only with status | `full`, `partial`, `low-coverage`, `none`, `unsupported`, and `malformed` are emitted; `stale` and `build-failed` remain open because Shrike consumes a snapshot rather than running a build |
 | 4.14 | Receipt integration | `done` | Build evidence status and hash recorded | every prune receipt carries source, snapshot hash, version, and status; `absent` is explicit; `--require-build-evidence` fails closed; `packages/cli/test/build-evidence.test.mjs` |
-| 4.15 | Corpus with/without evidence | `in-progress` | Green in both modes | corpus is green without evidence; the evidence-mode runner and suppressed-candidate report remain open |
+| 4.15 | Corpus with/without evidence | `done` | Green in both modes | `scripts/corpus-runner.mjs` analyzes all 250 cases per-project in static and `augment-build` modes from a clean cache; 0 protected symbols reported and 8/8 remaining candidates suppressed by evidence |
 | 4.16 | Docs update | `done` | `docs/06` matches behavior | `docs/06-build-graph-and-nextjs.md` implementation status and fallback notes updated |
 
 ### Phase 5 — Distribution and launch
@@ -362,6 +365,7 @@ not commitments; commitments are in the plans.
 | 2026-11-20 | Expanded the must-not-report corpus to 250 entries and recorded benchmark actuals | `fixtures/must-not-report/`, `TRACKER.md` |
 | 2026-11-20 | Implemented build-evidence discovery, JSONL/object ingestion, version guard, join coverage, route/byte attribution, and receipt population | `packages/cli/src/build.ts`, `crates/shrike-evidence/`, `fixtures/build/`, `packages/cli/test/build-evidence.test.mjs` |
 | 2026-11-20 | Added build-edge feedback: build-live modules seed a liveness closure over known edges; build evidence can only suppress, never delete | `crates/shrike-evidence/`, `crates/shrike-engine/`, `packages/cli/src/main.ts` |
+| 2026-11-20 | Fixed root-package self-reference resolution and dynamic imports inside function bodies; made snapshot caches resolver-aware; corpus runner now analyzes each case independently in static and evidence modes | `crates/shrike-resolve/`, `crates/shrike-syntax/`, `crates/shrike-engine/`, `scripts/corpus-runner.mjs` |
 
 ---
 
@@ -379,7 +383,7 @@ implementation starts; design-package validation is recorded below.
 | 2026-11-20 | 0.9, 3.1–3.16 | `pnpm -r typecheck` | OK: agent, action, receipts, testkit, verifier, cli |
 | 2026-11-20 | 0.9, 3.14 | `pnpm test:node` | OK: 28 Node tests (engine failures, MCP, hooks, recovery, receipts) |
 | 2026-11-20 | 0.8 | `cargo fmt --check`; `cargo clippy --workspace --all-targets -- -D warnings` | OK |
-| 2026-11-20 | 0.11, 2.13 | `node scripts/check-corpus.mjs`; `node scripts/corpus-runner.mjs` | OK: 250 entries; 0 protected symbols in 13 candidates |
+| 2026-11-20 | 0.11, 2.13, 4.15 | `node scripts/check-corpus.mjs`; `node scripts/corpus-runner.mjs` | OK: 250 entries; 0 protected symbols in 8 candidates; evidence mode suppressed 8/8 candidates from a clean cache |
 | 2026-11-20 | 0.12, 2.13 | `node scripts/delta-fixtures.mjs` | OK: 14 delta scenarios |
 | 2026-11-20 | 0.13, 3.6 | `node scripts/verify-fixtures.mjs` | OK: 6 verification scenarios |
 | 2026-11-20 | 3.10–3.11 | `node scripts/check-receipts.mjs` | OK: 3 generated receipts, 2 schema examples, committed/local receipts |
@@ -390,6 +394,7 @@ implementation starts; design-package validation is recorded below.
 | 2026-11-20 | 4.9 | `cargo test -p shrike-evidence` | OK: 7 tests, including build liveness closure and low-coverage non-augmentation |
 | 2026-11-20 | 4.1–4.16 | `node scripts/check.mjs` | OK: build fixture joins `low-coverage`, coverage 0.714, 2,600 matched bytes; all gates green |
 | 2026-11-20 | 0.8, 3.14 | `cargo fmt --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `pnpm -r typecheck`; `pnpm test:node` | OK: 38 Node tests; no clippy warnings |
+| 2026-11-20 | 2.4, 4.15, 6.8 | `cargo test -p shrike-resolve`; `node scripts/corpus-runner.mjs`; `node scripts/check.mjs` | OK: root-package self-reference regression test; 250/250 corpus cases green in both modes; all local gates green |
 
 ---
 

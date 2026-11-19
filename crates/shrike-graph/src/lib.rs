@@ -186,6 +186,19 @@ pub fn build_snapshot(
         .map(|summary| summary.path.clone())
         .collect();
     let resolver = Resolver::new(root, &paths, config);
+    build_snapshot_with_resolver(summaries, config, resolver)
+}
+
+/// Build a snapshot using a resolver the caller already constructed. Callers
+/// that key caches on the resolver hash use this to avoid resolving twice.
+#[must_use]
+pub fn build_snapshot_with_resolver(
+    mut summaries: Vec<FileSummary>,
+    config: &EngineConfig,
+    resolver: Resolver,
+) -> GraphSnapshot {
+    summaries.sort_by(|a, b| a.path.cmp(&b.path));
+    summaries.dedup_by(|a, b| a.path == b.path);
     let mut builder = Builder::new(config, summaries, resolver);
     builder.build();
     builder.finish()
