@@ -2,6 +2,7 @@
 
 > **Parent:** [MASTER_PROMPT.md](../MASTER_PROMPT.md) · **Tracker:** [TRACKER.md](../TRACKER.md)
 > **Status:** canonical · Authored 2026-11-20
+> **Implementation status (2026-11-20):** implemented in `crates/shrike-delta` and `packages/cli/src/main.ts`; exercised by `fixtures/delta/` and `scripts/e2e-prune.mjs`. The CLI reports the delta and exits 1 on findings.
 
 ---
 

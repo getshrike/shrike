@@ -17,12 +17,12 @@ export interface ReceiptTool {
 export interface ReceiptBase {
   ref: string;
   commit: string;
-  graphHash?: string;
+  graphHash: string;
 }
 
 export interface ReceiptHead {
   commit: string;
-  graphHash?: string;
+  graphHash: string;
   dirty?: boolean;
 }
 
@@ -35,7 +35,15 @@ export interface ReceiptBuild {
   source: string;
   snapshotHash: string;
   version: string;
-  status: "full" | "partial" | "none";
+  status:
+    | "full"
+    | "partial"
+    | "low-coverage"
+    | "stale"
+    | "malformed"
+    | "unsupported"
+    | "absent"
+    | "build-failed";
 }
 
 export interface ReceiptBatch {
@@ -46,41 +54,58 @@ export interface ReceiptBatch {
   patches: string[];
 }
 
+export type ReceiptCheckStatus = "pass" | "fail" | "timeout" | "skipped" | "error";
+export type ReceiptBaselineStatus = ReceiptCheckStatus | "unknown";
+export type ReceiptClassification =
+  | "pass"
+  | "improvement"
+  | "known-failure"
+  | "new-failure"
+  | "fail"
+  | "timeout"
+  | "flaky"
+  | "skipped";
+
 export interface ReceiptCheck {
   name: string;
   command: string;
-  status: string;
-  baselineStatus?: string;
+  status: ReceiptCheckStatus;
+  baselineStatus: ReceiptBaselineStatus;
   durationMs: number;
   reruns: number;
-  classification?: string;
-  signature?: string;
-  baselineSignature?: string;
   required?: boolean;
+  classification?: ReceiptClassification;
+  failureSignature?: string;
 }
 
 export interface ReceiptRejection {
   symbols: string[];
-  check?: string;
-  signature?: string;
-  reason: string;
+  files?: string[];
+  check: string;
+  signature: string;
+  reason?: string;
 }
 
 export interface ReceiptPolicy {
-  entryPolicy?: "local" | "production";
-  includeGenerated?: boolean;
-  maxSymbols?: number;
-  maxFiles?: number;
+  entryPolicy: "local" | "production" | "ci";
+  maxSymbols: number;
+  maxFiles: number;
+  allowOversized: boolean;
   maxLiveGraphPercent?: number;
-  allowOversized?: boolean;
 }
 
 export interface ReceiptEnvironment {
   node: string;
   packageManager: string;
   platform: string;
+  os?: string;
   arch?: string;
-  ci?: boolean;
+  shrike?: string;
+}
+
+export interface ReceiptRecovery {
+  snapshotPath: string;
+  restoreCommand: string;
 }
 
 export interface Receipt {
@@ -98,8 +123,9 @@ export interface Receipt {
   checks: ReceiptCheck[];
   outcome: ReceiptOutcome;
   rejected: ReceiptRejection[];
-  policy?: ReceiptPolicy;
+  policy: ReceiptPolicy;
   environment: ReceiptEnvironment;
+  recovery?: ReceiptRecovery;
 }
 
 /** Input accepted by `buildReceipt`; id, hash, and timestamp are derived. */
@@ -113,8 +139,9 @@ export interface ReceiptInput {
   checks: ReceiptCheck[];
   outcome: ReceiptOutcome;
   rejected?: ReceiptRejection[];
-  policy?: ReceiptPolicy;
+  policy: ReceiptPolicy;
   environment: ReceiptEnvironment;
+  recovery?: ReceiptRecovery;
   createdAt?: string;
 }
 

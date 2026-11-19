@@ -88,6 +88,11 @@ pub fn build_plan(
         reverse.entry(&edge.target).or_default().push(&edge.source);
     }
     let candidates: BTreeSet<&str> = snapshot.candidates.iter().map(String::as_str).collect();
+    let by_key: BTreeMap<&str, &shrike_graph::SymbolRecord> = snapshot
+        .symbols
+        .iter()
+        .map(|symbol| (symbol.key.as_str(), symbol))
+        .collect();
     let mut queue: Vec<String> = delta_symbols.iter().cloned().collect();
     while let Some(symbol) = queue.pop() {
         if let Some(dependents) = reverse.get(symbol.as_str()) {
@@ -101,7 +106,7 @@ pub fn build_plan(
 
     let mut by_file: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for key in selected {
-        if let Some(symbol) = snapshot.symbol(&key) {
+        if let Some(symbol) = by_key.get(key.as_str()) {
             by_file.entry(symbol.file.clone()).or_default().push(key);
         }
     }
@@ -126,7 +131,7 @@ pub fn build_plan(
             files.dedup();
             let lines: u32 = symbols
                 .iter()
-                .filter_map(|key| snapshot.symbol(key))
+                .filter_map(|key| by_key.get(key.as_str()).copied())
                 .map(|symbol| symbol.lines)
                 .sum();
             batches.push(PlanBatch {

@@ -3,6 +3,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -196,6 +197,86 @@ export function installOpenCodeHook(root: string): InstallResult {
     changed: pluginChanged || configChanged,
     files: [configPath, pluginPath],
   };
+}
+
+/** Remove only Shrike-managed entries from a Claude Code settings file. */
+export function uninstallClaudeHook(root: string): InstallResult {
+  const path = join(root, ".claude", "settings.json");
+  if (!existsSync(path)) return { path, changed: false, files: [] };
+  const existing = readJsonObject(path);
+  const settings: Record<string, unknown> = { ...existing };
+  const hooks = isRecord(settings.hooks) ? { ...settings.hooks } : {};
+  const stop = Array.isArray(hooks.Stop) ? hooks.Stop : [];
+  const filtered = stop.filter((entry) => !isShrikeHookEntry(entry));
+  if (filtered.length === 0) delete hooks.Stop;
+  else hooks.Stop = filtered;
+  if (Object.keys(hooks).length === 0) delete settings.hooks;
+  else settings.hooks = hooks;
+  const changed = writeJsonIfChanged(path, settings, existing);
+  return { path, changed, files: [path] };
+}
+
+/** Remove only Shrike-managed entries from a Cursor hooks file. */
+export function uninstallCursorHook(root: string): InstallResult {
+  const path = join(root, ".cursor", "hooks.json");
+  if (!existsSync(path)) return { path, changed: false, files: [] };
+  const existing = readJsonObject(path);
+  const config: Record<string, unknown> = { ...existing };
+  const hooks = isRecord(config.hooks) ? { ...config.hooks } : {};
+  for (const event of ["afterFileEdit", "stop"] as const) {
+    if (!Array.isArray(hooks[event])) continue;
+    const filtered = (hooks[event] as unknown[]).filter((entry) => !isShrikeHookEntry(entry));
+    if (filtered.length === 0) delete hooks[event];
+    else hooks[event] = filtered;
+  }
+  if (Object.keys(hooks).length === 0) delete config.hooks;
+  else config.hooks = hooks;
+  const changed = writeJsonIfChanged(path, config, existing);
+  return { path, changed, files: [path] };
+}
+
+/** Remove the OpenCode plugin and its registration. */
+export function uninstallOpenCodeHook(root: string): InstallResult {
+  const pluginPath = join(root, ".opencode", "plugins", "shrike-hook.js");
+  const configPath = join(root, "opencode.json");
+  let pluginChanged = false;
+  if (existsSync(pluginPath)) {
+    const current = readFileSync(pluginPath, "utf8");
+    if (current.includes(OPENCODE_PLUGIN_MARKER)) {
+      rmSync(pluginPath, { force: true });
+      pluginChanged = true;
+    }
+  }
+  let configChanged = false;
+  if (existsSync(configPath)) {
+    const existing = readJsonObject(configPath);
+    const config: Record<string, unknown> = { ...existing };
+    if (Array.isArray(config.plugin)) {
+      const filtered = config.plugin.filter(
+        (item) => item !== "./.opencode/plugins/shrike-hook.js",
+      );
+      if (filtered.length === 0) delete config.plugin;
+      else config.plugin = filtered;
+      configChanged = writeJsonIfChanged(configPath, config, existing);
+    }
+  }
+  return {
+    path: configPath,
+    changed: pluginChanged || configChanged,
+    files: [configPath, pluginPath],
+  };
+}
+
+/** Remove one supported hook target. */
+export function uninstallHook(root: string, target: HookTarget): InstallResult {
+  switch (target) {
+    case "claude":
+      return uninstallClaudeHook(root);
+    case "cursor":
+      return uninstallCursorHook(root);
+    case "opencode":
+      return uninstallOpenCodeHook(root);
+  }
 }
 
 /** Install one supported hook target. */

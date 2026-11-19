@@ -76,10 +76,21 @@ export async function requestEngine<T = unknown>(
   child.stderr.on("data", (chunk: string) => { stderr += chunk; });
   child.stdin.write(`${JSON.stringify(request)}\n`);
   child.stdin.end();
+  const configured = Number(process.env.SHRIKE_ENGINE_TIMEOUT_MS ?? 60_000);
+  const timeoutMs = Number.isFinite(configured) && configured > 0 ? configured : 60_000;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    child.kill("SIGKILL");
+  }, timeoutMs);
   const exitCode = await new Promise<number | null>((resolveExit) => {
     child.on("close", (code) => resolveExit(code));
     child.on("error", () => resolveExit(null));
   });
+  clearTimeout(timer);
+  if (timedOut) {
+    throw new EngineUnavailableError(`engine timed out after ${timeoutMs}ms`);
+  }
   const line = stdout.split("\n").find((value) => value.trim().length > 0);
   if (!line) {
     throw new EngineUnavailableError(

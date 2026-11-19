@@ -2,6 +2,7 @@
 
 > **Parent:** [MASTER_PROMPT.md](../MASTER_PROMPT.md) · **Tracker:** [TRACKER.md](../TRACKER.md)
 > **Status:** canonical · Authored 2026-11-20
+> **Implementation status (2026-11-20):** implemented in `crates/shrike-graph`, `shrike-delta`, and `shrike-plan`; exercised by the 14 delta fixtures and `scripts/e2e-prune.mjs`. Impact currently reports files, lines, and symbols; route/byte impact is phase 4 work.
 
 ---
 

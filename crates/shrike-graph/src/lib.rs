@@ -165,6 +165,10 @@ struct Builder<'a> {
     export_alls: BTreeMap<String, Vec<String>>,
     package_of: BTreeMap<String, String>,
     public_files: BTreeSet<String>,
+    file_generated: BTreeMap<String, bool>,
+    file_public: BTreeSet<String>,
+    file_lines: BTreeMap<String, u32>,
+    file_parse_ok: BTreeSet<String>,
 }
 
 /// Build a snapshot from already parsed summaries.
@@ -208,6 +212,10 @@ impl<'a> Builder<'a> {
             export_alls: BTreeMap::new(),
             package_of: BTreeMap::new(),
             public_files: BTreeSet::new(),
+            file_generated: BTreeMap::new(),
+            file_public: BTreeSet::new(),
+            file_lines: BTreeMap::new(),
+            file_parse_ok: BTreeSet::new(),
         }
     }
 
@@ -253,6 +261,13 @@ impl<'a> Builder<'a> {
                     == Some(summary.path.as_str());
             if public_api {
                 self.public_files.insert(summary.path.clone());
+                self.file_public.insert(summary.path.clone());
+            }
+            self.file_generated.insert(summary.path.clone(), generated);
+            self.file_lines
+                .insert(summary.path.clone(), summary.line_count);
+            if summary.parse_status == ParseStatus::Ok {
+                self.file_parse_ok.insert(summary.path.clone());
             }
             self.files.push(FileRecord {
                 path: summary.path.clone(),
@@ -299,11 +314,11 @@ impl<'a> Builder<'a> {
             return key;
         }
         let generated = self
-            .files
-            .iter()
-            .find(|file| file.path == summary.path)
-            .is_some_and(|file| file.generated);
-        let public_api = self.public_files.contains(&summary.path) && exported;
+            .file_generated
+            .get(&summary.path)
+            .copied()
+            .unwrap_or(false);
+        let public_api = self.file_public.contains(&summary.path) && exported;
         let record = SymbolRecord {
             key: key.clone(),
             name: name.to_string(),
@@ -1060,9 +1075,10 @@ impl<'a> Builder<'a> {
             symbol.lines = if symbol.span.line == 0 {
                 1
             } else {
-                let file = self.files.iter().find(|file| file.path == symbol.file);
-                file.map_or(1, |file| file.lines.saturating_sub(symbol.span.line) + 1)
-                    .min(1)
+                self.file_lines
+                    .get(&symbol.file)
+                    .map_or(1, |lines| lines.saturating_sub(symbol.span.line) + 1)
+                    .max(1)
             };
         }
         let (live, witnesses, mut proofs) = self.reachability();
@@ -1073,15 +1089,11 @@ impl<'a> Builder<'a> {
             .filter(|symbol| symbol.kind != "module" && symbol.kind != "re-export")
             .filter(|symbol| !symbol.entry && !symbol.public_api && !symbol.generated)
             .filter(|symbol| !self.config.include_generated || !symbol.generated)
-            .filter(|symbol| {
-                self.files
-                    .iter()
-                    .find(|file| file.path == symbol.file)
-                    .is_some_and(|file| file.parse_status == ParseStatus::Ok)
-            })
+            .filter(|symbol| self.file_parse_ok.contains(&symbol.file))
             .map(|symbol| symbol.key.clone())
             .collect();
-        proofs.retain(|proof| candidates.contains(&proof.symbol));
+        let candidate_set: BTreeSet<&str> = candidates.iter().map(String::as_str).collect();
+        proofs.retain(|proof| candidate_set.contains(proof.symbol.as_str()));
         let sccs = self.sccs();
         let modules = self.modules.clone();
         let diagnostics = self.diagnostics.clone();

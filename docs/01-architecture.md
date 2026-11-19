@@ -398,7 +398,7 @@ byte for byte.
 | Dynamic edge is unknown | Add an `unknown` edge; block the candidate set |
 | Engine binary missing | Fail closed; exit 4 |
 | Engine protocol error or crash | Fail closed; exit 4 |
-| Config cannot load | Fail closed; exit 4 |
+| Config cannot load | Fail closed; exit 2 (configuration error) |
 | Check command missing | Fail closed; exit 4 |
 | Check times out | Classify as `timeout`; fail the batch |
 | Verifier crashes | Fail closed; leave the worktree; print its path; exit 4 |

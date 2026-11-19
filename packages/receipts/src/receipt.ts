@@ -18,6 +18,7 @@ import type {
   ReceiptInput,
   ReceiptVerification,
 } from "./types.ts";
+import { asValidReceipt, validateReceipt } from "./validate.ts";
 
 /** Build a receipt and derive its content hash and id. */
 export function buildReceipt(input: ReceiptInput): Receipt {
@@ -28,12 +29,17 @@ export function buildReceipt(input: ReceiptInput): Receipt {
     rejected: input.rejected ?? [],
   };
   const contentHash = receiptContentHash(payload);
-  return {
+  const receipt: Receipt = {
     ...payload,
     id: receiptId(contentHash),
     createdAt: createdAt ?? new Date().toISOString(),
     contentHash,
   };
+  const validation = validateReceipt(receipt);
+  if (!validation.ok) {
+    throw new TypeError(`invalid receipt: ${validation.problems.join("; ")}`);
+  }
+  return receipt;
 }
 
 /** Recompute the content hash and id, reporting any mismatch. */
@@ -78,6 +84,7 @@ export function receiptPath(root: string, id: string): string {
 
 /** Write a receipt to `.shrike/receipts/<id>.json`. */
 export function writeReceipt(root: string, receipt: Receipt): string {
+  asValidReceipt(receipt);
   const directory = receiptsDir(root);
   mkdirSync(directory, { recursive: true });
   const path = receiptPath(root, receipt.id);
@@ -85,20 +92,14 @@ export function writeReceipt(root: string, receipt: Receipt): string {
   return path;
 }
 
-/** Read and minimally validate one receipt file. */
+/** Read and validate one receipt file against the published contract. */
 export function readReceipt(path: string): Receipt {
   const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new TypeError(`receipt is not an object: ${path}`);
+  try {
+    return asValidReceipt(parsed);
+  } catch (error) {
+    throw new TypeError(`${error instanceof Error ? error.message : String(error)}: ${path}`);
   }
-  const record = parsed as Record<string, unknown>;
-  if (record.schemaVersion !== "1.0") {
-    throw new TypeError(`receipt has an unsupported schemaVersion: ${path}`);
-  }
-  if (typeof record.id !== "string" || typeof record.contentHash !== "string") {
-    throw new TypeError(`receipt is missing id or contentHash: ${path}`);
-  }
-  return parsed as Receipt;
 }
 
 /** List receipt files, newest name order is lexicographic and deterministic. */
@@ -113,14 +114,14 @@ export function listReceipts(root: string): string[] {
 /** Environment block for a receipt. */
 export function captureEnvironment(options: {
   packageManager?: string;
-  ci?: boolean;
 } = {}): ReceiptEnvironment {
   return {
     node: process.version,
     packageManager: options.packageManager ?? "unknown",
     platform: process.platform,
+    os: process.platform,
     arch: process.arch,
-    ci: options.ci ?? Boolean(process.env.CI),
+    shrike: "1.0.0",
   };
 }
 
@@ -143,14 +144,15 @@ export function toReceiptChecks(
     const result: ReceiptCheck = {
       name: check.name,
       command: check.command,
-      status: check.status,
-      durationMs: check.durationMs,
-      reruns: check.reruns,
+      status: check.status as ReceiptCheck["status"],
+      baselineStatus: (check.baselineStatus ?? "unknown") as ReceiptCheck["baselineStatus"],
+      durationMs: Math.max(0, Math.round(check.durationMs)),
+      reruns: Math.max(0, Math.trunc(check.reruns)),
     };
-    if (check.baselineStatus !== undefined) result.baselineStatus = check.baselineStatus;
-    if (check.classification !== undefined) result.classification = check.classification;
-    if (check.signature) result.signature = check.signature;
-    if (check.baselineSignature) result.baselineSignature = check.baselineSignature;
+    if (check.classification !== undefined) {
+      result.classification = check.classification as ReceiptCheck["classification"];
+    }
+    if (check.signature) result.failureSignature = check.signature;
     if (check.required !== undefined) result.required = check.required;
     return result;
   });
