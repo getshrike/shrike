@@ -1,7 +1,7 @@
 # Shrike 1.0 — Tracker
 
 > **Canonical design:** [`MASTER_PROMPT.md`](MASTER_PROMPT.md)
-> **Status:** implementation complete for phases 0–4 and the local distribution/hardening surfaces; external launch, design-partner, publish, and real-app acceptance items are blocked
+> **Status:** implementation complete for phases 0–4 and the local distribution/hardening surfaces; external launch, design-partner, publish, and external partner-app acceptance items are blocked
 > **Last updated:** 2026-11-20
 
 This tracker is authoritative for Shrike 1.0 status. A phase is not done because
@@ -46,8 +46,8 @@ demonstrated and the evidence is linked here.
   build-evidence modes from a clean cache (250 cases, zero protected symbols
   reported), and eleven `fixtures/build-graph/` scenarios cover the join,
   fallback, and boundary matrix. External launch, design-partner, publish, and
-  real-app acceptance items are `blocked` on credentials or participants, not on
-  code.
+  external partner-app acceptance items are `blocked` on credentials or
+  participants, not on code.
 - **Prior prototype:** not a dependency. The old tree was removed; a backup
   exists outside the repository only as a safety net. No code, schema, or fixture
   from it is reused.
@@ -154,7 +154,7 @@ demonstrated and the evidence is linked here.
 | 3.14 | Exit codes | `done` | 0/1/2/3/4/5 covered | `packages/cli/test/contracts.test.mjs`; `scripts/e2e-prune.mjs` (0/1/2/3/4/5) |
 | 3.15 | Flaky handling | `done` | Rerun, classify, record; no false regression | `packages/verifier/src/bisect.ts`; verification flaky fixture |
 | 3.16 | Failure drill | `done` | Broken deletion reverted; tree clean | `scripts/e2e-prune.mjs` rejected/revert-failure scenarios |
-| 3.17 | Real-app end-to-end | `done` | 3 batches verified with typecheck, lint, test, build | local Next.js 16.4.2 app: three prune runs verified one batch each — `GithubIcon` (1 symbol/1 file, `rcpt_23f8e477a6adf4917c6c4b65`), `ProjectPreview`+`AspectRatio` (2/2, `rcpt_4ce568b572bba51b588629dc`), `ProjectDetail`+`case-studies` cascade (6/2, `rcpt_6e4dbb4b8dfcce8472c37813`); every receipt records typecheck/lint/test/build `pass`; cleanup branches `shrike/cleanup-af9525ce0356`, `shrike/cleanup-4f6605ee0411`, `shrike/cleanup-e9dd25485094` |
+| 3.17 | Real-app end-to-end | `done` | 3 batches verified with typecheck, lint, test, build | local Next.js 16.4.2 app: three required prune runs verified one batch each — `GithubIcon` (1 symbol/1 file, `rcpt_23f8e477a6adf4917c6c4b65`), `ProjectPreview`+`AspectRatio` (2/2, `rcpt_4ce568b572bba51b588629dc`), `ProjectDetail`+`case-studies` cascade (6/2, `rcpt_6e4dbb4b8dfcce8472c37813`); every receipt records typecheck/lint/test/build `pass`; cleanup branches `shrike/cleanup-af9525ce0356`, `shrike/cleanup-4f6605ee0411`, `shrike/cleanup-e9dd25485094`; a fourth timed batch (`Skills`, 3/1, `rcpt_6aaae39709dc7d9ca920f3a4`) measured a 109.6 s full prune |
 | 3.18 | Docs update | `done` | `docs/05` matches behavior | `docs/05-verified-deletion.md`; this file |
 
 ### Phase 4 — Build graph and Next.js
@@ -228,10 +228,10 @@ demonstrated and the evidence is linked here.
 | 10,000-file warm scan | ≤ 2 s | 1.37 s (1.47 s p95) | 2026-11-20 | cache hit; 22,018 symbols |
 | 10,000-file peak RSS | ≤ 600 MB | 231 MB | 2026-11-20 | harness `/proc/<pid>/status` VmHWM |
 | Delta (1,000 files, warm) | ≤ 1 s | 346 ms (408 ms p95) | 2026-11-20 | base/head snapshots; 1 newly dead symbol; 7 measured runs |
-| Fast path (delta + typecheck + lint) | ≤ 60 s | 55 s hard timeout | 2026-11-20 | `shrike hook run`; no real-app timing yet |
-| Full receipt | ≤ 10 min | not measured | — | requires a real app |
+| Fast path (delta + typecheck + lint) | ≤ 60 s | 19.7 s (24.2 s first run) | 2026-11-20 | `shrike hook run` on Next.js 16.4.2 app; delta + discovered typecheck/lint; checks `pass` |
+| Full receipt | ≤ 10 min | 109.6 s (1.8 min) | 2026-11-20 | `shrike prune` on Next.js 16.4.2 app; baseline + typecheck/lint/test/build + one verified batch |
 | Must-not-report false positives | 0 | 0 | 2026-11-20 | 250 entries; 8 candidates, 0 protected symbols |
-| Batches verified without edits | ≥ 80% | 1/1 synthetic | 2026-11-20 | e2e verified batch; no partner data |
+| Batches verified without edits | ≥ 80% | 4/4 real batches | 2026-11-20 | `GithubIcon`, `ProjectPreview`+`AspectRatio`, `ProjectDetail`+`case-studies`, `Skills`; an earlier cascade attempt exposed a deletion bug that was fixed and regression-tested |
 | PRs with orphan-delta hit | ≥ 30% | no real sample | — | blocked on labeled set |
 | Design partners merged | ≥ 3 | 0 | 2026-11-20 | blocked: no partners yet |
 | Receipts with complete check record | 100% | 100% of fixture suite | 2026-11-20 | verified receipts require at least one check |
@@ -378,6 +378,7 @@ not commitments; commitments are in the plans.
 | 2026-11-20 | Fixed trigger attribution to name the changed edge owner (the caller) and classify a deleted route file as `removed-route`; added trigger file/kind fixture assertions and recorded a real Next.js 16.4 app delta trial | `crates/shrike-delta/src/lib.rs`, `scripts/run-fixtures.mjs`, `fixtures/delta/`, `TRACKER.md` |
 | 2026-11-20 | Taught the build-evidence parser the real Next.js 16.4 Turbopack record families and path scheme; excluded dependency/framework/asset modules from join coverage; added route and byte attribution from `part` records; the local reference app now joins at full coverage | `packages/cli/src/build.ts`, `crates/shrike-evidence/src/lib.rs`, `packages/cli/test/build-evidence.test.mjs`, `docs/06-build-graph-and-nextjs.md`, `TRACKER.md` |
 | 2026-11-20 | Fixed cascaded deletion: a file whose every symbol is deleted and whose module is not live is now removed whole, so a component and its exclusive helper do not leave dangling imports; added a prune e2e cascade scenario and verified three real batches on a Next.js 16.4.2 app | `packages/cli/src/main.ts`, `scripts/e2e-prune.mjs`, `docs/05-verified-deletion.md`, `TRACKER.md` |
+| 2026-11-20 | Recorded real-app fast-path and full-receipt measurements; a fourth real batch (`Skills`) verified and the full prune completed in 109.6 s | `TRACKER.md` |
 
 ---
 
@@ -426,6 +427,7 @@ implementation starts; design-package validation is recorded below.
 | 2026-11-20 | Final gates | `pnpm -r typecheck`; `node scripts/lint.mjs`; `pnpm test:node`; `cargo fmt --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo test --workspace`; `node scripts/check.mjs`; `node scripts/check-docs.mjs`; `node scripts/check-links.mjs` | OK: all packages typecheck; lint; 83 Node tests; fmt; clippy with `-D warnings`; workspace tests; fixture matrix (14 delta, 6 verification, 1 build, 11 build-graph); 13 docs, 7 plans, 111 IDs; 115 links |
 | 2026-11-20 | 3.16, 3.17 | `node scripts/e2e-prune.mjs` | OK: verified, rejected, bisected, revert-failure, and cascade-deletion scenarios pass; the cascade case proves a component and its exclusive helper are removed together without dangling imports |
 | 2026-11-20 | 3.17 | `shrike prune --base main` on a local Next.js 16.4.2 app, three feature branches | OK: 3/3 batches verified; each receipt records typecheck, lint, test, and build `pass` — `GithubIcon` (1 symbol/1 file), `ProjectPreview`+`AspectRatio` (2/2), `ProjectDetail`+`case-studies` (6/2); cleanup branches retained |
+| 2026-11-20 | 6.5, 3.17 | `shrike hook run` twice and timed `shrike prune` on the local Next.js 16.4.2 app | OK: fast path 24.2 s first run, 19.7 s second, checks `pass`; full prune 109.6 s; `Skills` batch (3 symbols/1 file) verified with typecheck/lint/test/build `pass` |
 | 2026-11-20 | Final gates (cascade fix) | `pnpm -r typecheck`; `node scripts/lint.mjs`; `pnpm test:node`; `cargo fmt --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo test --workspace`; `node scripts/check.mjs`; `node scripts/check-docs.mjs`; `node scripts/check-links.mjs` | OK: all packages typecheck; lint; 83 Node tests; fmt; clippy; workspace tests; 5 prune e2e scenarios (including cascade); fixture matrix (14 delta, 6 verification, 1 build, 11 build-graph); 250 corpus cases; 13 docs, 7 plans, 111 IDs; 115 links |
 
 ---
