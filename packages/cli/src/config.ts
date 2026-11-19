@@ -1,4 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ConfigError } from "./errors.ts";
@@ -71,23 +73,87 @@ export function mergeConfig(input: Partial<ShrikeConfig> = {}): ShrikeConfig {
   };
 }
 
-export async function loadConfig(root: string): Promise<ShrikeConfig> {
-  const path = findConfigPath(root);
-  if (!path) return mergeConfig();
+/**
+ * Evaluate an executable config in a child process.
+ *
+ * `shrike.config.ts` is project code. Running it in-process would let it block
+ * the CLI, crash the host, or read process state. The child boundary enforces a
+ * hard timeout and keeps a malformed config from taking the verifier down.
+ */
+function loadExecutableConfig(path: string, root: string): Partial<ShrikeConfig> {
+  const directory = mkdtempSync(join(tmpdir(), "shrike-config-"));
+  const output = join(directory, "config.json");
+  const timeout = Number(process.env.SHRIKE_CONFIG_TIMEOUT_MS ?? 5_000);
+  const script = `
+    import { writeFileSync } from "node:fs";
+    const loaded = await import(process.env.SHRIKE_CONFIG_URL);
+    const value = loaded.default ?? loaded.config ?? {};
+    writeFileSync(process.env.SHRIKE_CONFIG_OUTPUT, JSON.stringify(value));
+  `;
   try {
-    if (path.endsWith(".json")) {
-      return mergeConfig(JSON.parse(readFileSync(path, "utf8")) as Partial<ShrikeConfig>);
+    const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+      cwd: root,
+      encoding: "utf8",
+      timeout: Number.isFinite(timeout) && timeout > 0 ? timeout : 5_000,
+      env: {
+        ...process.env,
+        SHRIKE_CONFIG_URL: pathToFileURL(path).href,
+        SHRIKE_CONFIG_OUTPUT: output,
+      },
+    });
+    if (result.error) {
+      const code = (result.error as NodeJS.ErrnoException).code;
+      if (code === "ETIMEDOUT") {
+        throw new ConfigError(`config evaluation timed out after ${timeout}ms: ${path}`);
+      }
+      throw new ConfigError(`could not evaluate ${path}: ${result.error.message}`);
     }
-    const module = (await import(`${pathToFileURL(path).href}?t=${Date.now()}`)) as {
-      default?: Partial<ShrikeConfig>;
-      config?: Partial<ShrikeConfig>;
-    };
-    return mergeConfig(module.default ?? module.config ?? {});
+    if (result.signal) {
+      throw new ConfigError(`config evaluation was terminated (${result.signal}): ${path}`);
+    }
+    if (result.status !== 0) {
+      const stderr = (result.stderr ?? "").trim().split("\n").slice(-5).join("\n");
+      throw new ConfigError(
+        `config evaluation failed (exit ${String(result.status)}): ${path}`,
+        stderr || undefined,
+      );
+    }
+    if (!existsSync(output)) {
+      throw new ConfigError(`config did not produce a value: ${path}`);
+    }
+    const parsed: unknown = JSON.parse(readFileSync(output, "utf8"));
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      throw new ConfigError(`config must export an object: ${path}`);
+    }
+    return parsed as Partial<ShrikeConfig>;
   } catch (error) {
+    if (error instanceof ConfigError) throw error;
     throw new ConfigError(
       `could not load ${path}: ${error instanceof Error ? error.message : String(error)}`,
     );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
+}
+
+export async function loadConfig(root: string): Promise<ShrikeConfig> {
+  const path = findConfigPath(root);
+  if (!path) return mergeConfig();
+  if (path.endsWith(".json")) {
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        throw new ConfigError(`config must be an object: ${path}`);
+      }
+      return mergeConfig(parsed as Partial<ShrikeConfig>);
+    } catch (error) {
+      if (error instanceof ConfigError) throw error;
+      throw new ConfigError(
+        `could not load ${path}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  return mergeConfig(loadExecutableConfig(path, root));
 }
 
 /** The payload shape accepted by the Rust engine's analyze/scan commands. */

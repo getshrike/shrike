@@ -44,10 +44,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p shrike-engine
       - run: node scripts/check-schemas.mjs
+      - run: node scripts/check-receipts.mjs
       - run: node scripts/check-corpus.mjs
       - run: node scripts/verify-fixtures.mjs
       - run: node scripts/run-fixtures.mjs --engine
       - run: node scripts/corpus-runner.mjs
+      - run: node scripts/e2e-prune.mjs
       - name: Determinism
         run: |
           set -euo pipefail

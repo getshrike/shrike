@@ -1,0 +1,78 @@
+{
+  "base": {
+    "commit": "abc123",
+    "graphHash": "sha256:18e855d90a5f37b9cb805c9deb82b94a28341693b27066b9824ddbd93c0ae2aa",
+    "ref": "origin/main"
+  },
+  "batch": {
+    "files": [
+      "src/lib/format.ts"
+    ],
+    "id": "batch_1",
+    "linesRemoved": 18,
+    "patches": [
+      ".shrike/patches/batch_1.patch"
+    ],
+    "symbols": [
+      "src/lib/format.ts#formatInvoice"
+    ]
+  },
+  "checks": [
+    {
+      "baselineStatus": "pass",
+      "classification": "fail",
+      "command": "pnpm test",
+      "durationMs": 1200,
+      "failureSignature": "sha256:b7aa0a460f4d99f338aee0424a83cba69f82bb1d87a20d8adec0684d41fa9d27",
+      "name": "test",
+      "required": true,
+      "reruns": 1,
+      "status": "fail"
+    }
+  ],
+  "contentHash": "sha256:9200af5e7837ae980ce589bb200817671c1eb1fe5190542ee922d2fa8c0b55ac",
+  "createdAt": "2026-11-20T00:00:00.000Z",
+  "environment": {
+    "arch": "x64",
+    "node": "v24.0.0",
+    "os": "linux",
+    "packageManager": "pnpm@12.18.0",
+    "platform": "linux",
+    "shrike": "1.0.0"
+  },
+  "head": {
+    "commit": "def456",
+    "dirty": false,
+    "graphHash": "sha256:a6fe1b9095c0437787684c7a81cf24df56174389b7e5da965aaa55b8d4e4e4a2"
+  },
+  "id": "rcpt_9200af5e7837ae980ce589bb",
+  "outcome": "rejected",
+  "plan": {
+    "hash": "sha256:4c8d160f557bad43dc6f9f118ee0a5ce4ea9bd11b125287e4ab962350bd73cae",
+    "id": "plan_fixture"
+  },
+  "policy": {
+    "allowOversized": false,
+    "entryPolicy": "local",
+    "maxFiles": 10,
+    "maxSymbols": 50
+  },
+  "rejected": [
+    {
+      "check": "test",
+      "files": [
+        "src/lib/format.ts"
+      ],
+      "reason": "invoice fixture failed after removal",
+      "signature": "sha256:b7aa0a460f4d99f338aee0424a83cba69f82bb1d87a20d8adec0684d41fa9d27",
+      "symbols": [
+        "src/lib/format.ts#formatInvoice"
+      ]
+    }
+  ],
+  "schemaVersion": "1.0",
+  "tool": {
+    "name": "shrike",
+    "version": "1.0.0"
+  }
+}

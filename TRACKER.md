@@ -1,7 +1,7 @@
 # Shrike 1.0 — Tracker
 
 > **Canonical design:** [`MASTER_PROMPT.md`](MASTER_PROMPT.md)
-> **Status:** design complete · implementation not started
+> **Status:** implementation complete for phases 0–3 and the local distribution surfaces; phase 4 evidence is partial; external launch items are blocked
 > **Last updated:** 2026-11-20
 
 This tracker is authoritative for Shrike 1.0 status. A phase is not done because
@@ -30,8 +30,13 @@ demonstrated and the evidence is linked here.
 - **Design package:** complete and validated in this repository. The root contains
   the master prompt, 13 design docs, 7 plans, 9 prompts, 8 research documents, and
   6 JSON Schemas. Link, task-ID, decision-ID, and schema-structure checks pass.
-- **Implementation:** not started. Begin at
-  [`plans/PLAN-0-foundations.md`](plans/PLAN-0-foundations.md).
+- **Implementation:** phases 0–3 are complete and exercised by the Rust,
+  Node, fixture, corpus, and prune e2e gates. The CLI, verifier, receipts,
+  hooks, action, and MCP server are implemented. Phase 4 (Next.js build
+  evidence) has a working join but not yet the full JSONL/route/byte/feedback
+  contract; the remaining items are listed as `in-progress` below. External
+  launch, design-partner, publish, and real-app acceptance items are `blocked`
+  on credentials or participants, not on code.
 - **Prior prototype:** not a dependency. The old tree was removed; a backup
   exists outside the repository only as a safety net. No code, schema, or fixture
   from it is reused.
@@ -42,13 +47,13 @@ demonstrated and the evidence is linked here.
 
 | Phase | Plan | Status | Exit gate |
 |---|---|---|---|
-| 0 | [Foundations](plans/PLAN-0-foundations.md) | `planned` | Contract, schemas, fixtures, CI green |
-| 1 | [Rust engine](plans/PLAN-1-rust-engine.md) | `planned` | Engine builds, fixtures pass, budgets met |
-| 2 | [Graph and delta](plans/PLAN-2-graph-and-delta.md) | `planned` | Orphan delta correct; corpus clean |
-| 3 | [Verification and receipts](plans/PLAN-3-verification-and-receipts.md) | `planned` | End-to-end verified deletion PR + receipt |
-| 4 | [Build graph and Next.js](plans/PLAN-4-build-graph-and-nextjs.md) | `planned` | Build evidence joined; byte impact reported |
-| 5 | [Distribution and launch](plans/PLAN-5-distribution-and-launch.md) | `planned` | Hook + Action + 3 design partners |
-| 6 | [Hardening and scale](plans/PLAN-6-hardening-and-scale.md) | `planned` | 1.0 release: corpus, security, scale, docs |
+| 0 | [Foundations](plans/PLAN-0-foundations.md) | `done` | Contract, schemas, fixtures, CI green |
+| 1 | [Rust engine](plans/PLAN-1-rust-engine.md) | `done` | Engine builds, fixtures pass, budgets met |
+| 2 | [Graph and delta](plans/PLAN-2-graph-and-delta.md) | `done` | Orphan delta correct; corpus clean |
+| 3 | [Verification and receipts](plans/PLAN-3-verification-and-receipts.md) | `done` | End-to-end verified deletion PR + receipt |
+| 4 | [Build graph and Next.js](plans/PLAN-4-build-graph-and-nextjs.md) | `in-progress` | Build evidence join works; JSONL, routes, bytes, feedback, receipt integration pending |
+| 5 | [Distribution and launch](plans/PLAN-5-distribution-and-launch.md) | `in-progress` | Hooks + Action + MCP done; design partners and publish blocked |
+| 6 | [Hardening and scale](plans/PLAN-6-hardening-and-scale.md) | `in-progress` | Corpus, scale, benchmarks done; labeled set and release blocked |
 
 ---
 
@@ -58,147 +63,147 @@ demonstrated and the evidence is linked here.
 
 | ID | Task | Status | Acceptance | Evidence |
 |---|---|---|---|---|
-| 0.1 | Confirm greenfield layout | `planned` | Root `crates/`, `packages/`, `schemas/`, `fixtures/`, `benchmarks/`, `scripts/` named; no legacy dependency | `docs/02-folder-structure.md` |
-| 0.2 | Write engine/host protocol | `planned` | Versioned JSON; valid, malformed, timeout, crash, partial-result cases | `docs/01-architecture.md` §6; fixtures |
-| 0.3 | Write `GraphSnapshot` schema | `planned` | Files, symbols, modules, entries, edges, certainty, hashes, version | `schemas/graph-snapshot.schema.json` |
-| 0.4 | Write `Delta` schema | `planned` | Newly dead symbols/files; witness; trigger; cascade; batches | `schemas/delta.schema.json` |
-| 0.5 | Write `DeletionPlan` schema | `planned` | Batches, impact, blast radius, patches | `schemas/deletion-plan.schema.json` |
-| 0.6 | Write `Receipt` schema | `planned` | Batch, checks, baseline status, outcome, rejected, environment | `schemas/receipt.schema.json` |
-| 0.7 | Write `Config` schema | `planned` | Include/ignore, entries, checks, policy, build evidence | `schemas/config.schema.json` |
-| 0.8 | Scaffold Rust workspace | `planned` | `cargo test`, `cargo clippy`, `cargo fmt --check` green | CI log |
-| 0.9 | Scaffold TypeScript packages | `planned` | `pnpm test`, `pnpm typecheck`, `pnpm lint` green | CI log |
-| 0.10 | Build fixture harness | `planned` | Temp repos, fixture checkout, snapshot assertions | `packages/testkit/` |
-| 0.11 | Build must-not-report corpus | `planned` | ≥ 100 entries from framework docs and real apps | `fixtures/must-not-report/` |
-| 0.12 | Build delta fixtures | `planned` | Nine scenarios from `docs/04` §11 | `fixtures/delta/` |
-| 0.13 | Build verification fixtures | `planned` | Apply, bisect, revert, flaky, known-failure | `fixtures/verification/` |
-| 0.14 | Wire CI | `planned` | Rust, Node, schemas, corpus, fixtures, bench smoke | `.github/workflows/` |
-| 0.15 | Record decisions and tracker | `planned` | D-001…D-018 recorded; phase tables match plans | `TRACKER.md` §6 |
+| 0.1 | Confirm greenfield layout | `done` | Root `crates/`, `packages/`, `schemas/`, `fixtures/`, `benchmarks/`, `scripts/` named; no legacy dependency | `crates/`, `packages/`, `schemas/`, `fixtures/`, `benchmarks/`, `scripts/` |
+| 0.2 | Write engine/host protocol | `done` | Versioned JSON; valid, malformed, timeout, crash, partial-result cases | `crates/shrike-protocol/`; `packages/cli/test/contracts.test.mjs` |
+| 0.3 | Write `GraphSnapshot` schema | `done` | Files, symbols, modules, entries, edges, certainty, hashes, version | `schemas/graph-snapshot.schema.json`; `scripts/check-schemas.mjs` |
+| 0.4 | Write `Delta` schema | `done` | Newly dead symbols/files; witness; trigger; cascade; batches | `schemas/delta.schema.json`; `fixtures/delta/` |
+| 0.5 | Write `DeletionPlan` schema | `done` | Batches, impact, blast radius, patches | `schemas/deletion-plan.schema.json`; `fixtures/delta/` |
+| 0.6 | Write `Receipt` schema | `done` | Batch, checks, baseline status, outcome, rejected, environment | `schemas/receipt.schema.json`; `fixtures/receipts/` |
+| 0.7 | Write `Config` schema | `done` | Include/ignore, entries, checks, policy, build evidence | `schemas/config.schema.json`; `packages/cli/src/config.ts` |
+| 0.8 | Scaffold Rust workspace | `done` | `cargo test`, `cargo clippy`, `cargo fmt --check` green | `cargo fmt --check`; `cargo clippy --workspace --all-targets`; `cargo test --workspace` |
+| 0.9 | Scaffold TypeScript packages | `done` | `pnpm test`, `pnpm typecheck`, `pnpm lint` green | `pnpm -r typecheck`; `pnpm test:node`; `node scripts/lint.mjs` |
+| 0.10 | Build fixture harness | `done` | Temp repos, fixture checkout, snapshot assertions | `packages/testkit/`; `scripts/e2e-prune.mjs` |
+| 0.11 | Build must-not-report corpus | `done` | ≥ 100 entries from framework docs and real apps | `fixtures/must-not-report/` (250 entries, 21 categories) |
+| 0.12 | Build delta fixtures | `done` | Nine scenarios from `docs/04` §11 | `fixtures/delta/` (14 scenarios); `node scripts/delta-fixtures.mjs` |
+| 0.13 | Build verification fixtures | `done` | Apply, bisect, revert, flaky, known-failure | `fixtures/verification/` (6 scenarios); `node scripts/verify-fixtures.mjs` |
+| 0.14 | Wire CI | `done` | Rust, Node, schemas, corpus, fixtures, bench smoke | `.github/workflows/ci.yml`; `.github/workflows/benchmark.yml` |
+| 0.15 | Record decisions and tracker | `done` | D-001…D-018 recorded; phase tables match plans | this file §6; `docs/12-decision-log.md` |
 
 ### Phase 1 — Rust engine
 
 | ID | Task | Status | Acceptance | Evidence |
 |---|---|---|---|---|
-| 1.1 | `shrike-core`: IDs, interners, spans, errors | `planned` | Deterministic IDs and stable serialization | unit tests |
-| 1.2 | `shrike-protocol`: envelope and codec | `planned` | Line-delimited JSON; versioned; malformed fails closed | contract tests |
-| 1.3 | `shrike-syntax`: parse + per-file summary | `planned` | Imports, exports, re-exports, JSX, directives, dynamic forms | fixture tests |
-| 1.4 | `shrike-syntax`: semantic scopes/symbols/references | `planned` | `oxc_semantic` facts captured; no AST retention | fixture tests |
-| 1.5 | `shrike-resolve`: resolver | `planned` | Relative, alias, workspace, package exports, barrel; unresolved recorded | graph fixtures |
-| 1.6 | `shrike-graph`: snapshot + module graph | `planned` | Files, modules, symbols, edges, entries, hashes | unit tests |
-| 1.7 | Entry adapters: Next.js App Router | `planned` | Pages, layouts, routes, metadata, server actions, client boundaries | `next-app` fixture |
-| 1.8 | Entry adapters: Pages Router + React | `planned` | Pages, API routes, `_app`, `_document`, data functions, React roots | `next-pages` fixture |
-| 1.9 | Reachability + witnesses | `planned` | Every live symbol has a shortest witness; every dead symbol has a proof trace | invariant tests |
-| 1.10 | Dynamic-edge abstraction | `planned` | Literal, template, glob, namespace, string-keyed, unknown | dynamic-edge fixtures |
-| 1.11 | SCC condensation | `planned` | Cycles treated as units; no partial-cycle deletion | graph fixtures |
-| 1.12 | Snapshot cache + warm path | `planned` | Content-addressed; warm scan skips unchanged files; atomic writes | cache tests |
-| 1.13 | `shrike-engine` binary + commands | `planned` | `snapshot`, `delta`, `plan`, `proof`, `evidence`, `version` | contract tests |
-| 1.14 | Determinism harness | `planned` | Two runs and different thread counts produce byte-identical snapshots | CI log |
-| 1.15 | Performance harness | `planned` | 1k/10k cold, warm, peak RSS recorded against budgets | `benchmarks/` |
-| 1.16 | Fail-closed errors | `planned` | Missing binary, malformed response, timeout, crash all exit 4 | integration test |
-| 1.17 | CLI integration: `scan`, `proof` | `planned` | Output matches fixture oracle; exit codes correct | integration test |
+| 1.1 | `shrike-core`: IDs, interners, spans, errors | `done` | Deterministic IDs and stable serialization | `crates/shrike-core/src/`; `cargo test -p shrike-core` |
+| 1.2 | `shrike-protocol`: envelope and codec | `done` | Line-delimited JSON; versioned; malformed fails closed | `crates/shrike-protocol/src/`; `cargo test -p shrike-protocol` |
+| 1.3 | `shrike-syntax`: parse + per-file summary | `done` | Imports, exports, re-exports, JSX, directives, dynamic forms | `crates/shrike-syntax/src/`; `cargo test -p shrike-syntax` |
+| 1.4 | `shrike-syntax`: semantic scopes/symbols/references | `done` | Binding, declaration, and reference facts captured with `oxc_parser`/AST; no AST retention | `crates/shrike-syntax/src/`; `cargo test -p shrike-syntax` |
+| 1.5 | `shrike-resolve`: resolver | `done` | Relative, alias, workspace, package exports, barrel; unresolved recorded | `crates/shrike-resolve/src/`; resolver fixtures |
+| 1.6 | `shrike-graph`: snapshot + module graph | `done` | Files, modules, symbols, edges, entries, hashes | `crates/shrike-graph/src/`; `cargo test -p shrike-graph` |
+| 1.7 | Entry adapters: Next.js App Router | `done` | Pages, layouts, routes, metadata, server actions, client boundaries | `crates/shrike-graph/src/entries.rs`; `fixtures/delta/removed-route` |
+| 1.8 | Entry adapters: Pages Router + React | `done` | Pages, API routes, `_app`, `_document`, data functions, React roots | `crates/shrike-graph/src/entries.rs`; pages/react fixtures |
+| 1.9 | Reachability + witnesses | `done` | Every live symbol has a shortest witness; every dead symbol has a proof trace | `crates/shrike-graph/src/`; witness/proof tests |
+| 1.10 | Dynamic-edge abstraction | `done` | Literal, template, glob, namespace, string-keyed, unknown | `crates/shrike-syntax/src/`; `fixtures/delta/dynamic` |
+| 1.11 | SCC condensation | `done` | Cycles treated as units; no partial-cycle deletion | `crates/shrike-graph/src/`; `fixtures/delta/cycle` |
+| 1.12 | Snapshot cache + warm path | `done` | Content-addressed; warm scan skips unchanged files; atomic writes | `crates/shrike-engine/src/lib.rs`; `benchmarks/harness.mjs` |
+| 1.13 | `shrike-engine` binary + commands | `done` | `snapshot`, `delta`, `plan`, `proof`, `evidence`, `version` | `crates/shrike-engine/src/lib.rs`; `packages/cli/src/engine.ts` |
+| 1.14 | Determinism harness | `done` | Two runs and different thread counts produce byte-identical snapshots | `.github/workflows/ci.yml` determinism step; `benchmarks/harness.mjs` |
+| 1.15 | Performance harness | `done` | 1k/10k cold, warm, peak RSS recorded against budgets | `benchmarks/README.md`; this file §5 |
+| 1.16 | Fail-closed errors | `done` | Missing binary, malformed response, timeout, crash all exit 4 | `packages/cli/test/contracts.test.mjs` (missing, malformed, crash, timeout) |
+| 1.17 | CLI integration: `scan`, `proof` | `done` | Output matches fixture oracle; exit codes correct | `packages/cli/src/main.ts`; `scripts/e2e-prune.mjs` |
 
 ### Phase 2 — Graph and delta
 
 | ID | Task | Status | Acceptance | Evidence |
 |---|---|---|---|---|
-| 2.1 | Base snapshot acquisition | `planned` | Merge-base worktree or archive; read-only; cached | fixture test |
-| 2.2 | Head snapshot | `planned` | Commit or dirty tree; `dirty` flag | fixture test |
-| 2.3 | Comparability gate | `planned` | Refuses incomparable inputs with a named reason | unit test |
-| 2.4 | Live-set diff | `planned` | `live(base) − live(head)`; no pre-existing debt | fixture test |
-| 2.5 | Witness lookup | `planned` | Lost witness path present for every delta item | fixture test |
-| 2.6 | Trigger attribution | `planned` | Names the changed file/symbol that removed the edge | fixture test |
-| 2.7 | Cascade closure | `planned` | Exclusive ownership; stop conditions; unknown blocks | fixture test |
-| 2.8 | Batch conflict graph | `planned` | No shared files/SCC/order within a batch | unit test |
-| 2.9 | Blast-radius guard | `planned` | Batch over limit is split or refused with a reason | unit test |
-| 2.10 | Impact estimation | `planned` | Files, lines, symbols, routes; no double counting | fixture test |
-| 2.11 | `shrike delta` | `planned` | JSON + human output; schema-valid | integration test |
-| 2.12 | `shrike plan` | `planned` | Batches with impact and blast radius | integration test |
-| 2.13 | Delta fixtures + corpus | `planned` | Nine scenarios; zero corpus findings | fixture suite |
-| 2.14 | Monorepo handling | `planned` | Workspace boundaries respected | monorepo fixture |
-| 2.15 | Determinism | `planned` | Byte-identical output across runs and thread counts | CI log |
-| 2.16 | Real-app delta | `planned` | A synthetic feature removal produces untouched-file orphans | report |
-| 2.17 | Docs update | `planned` | `docs/04` matches behavior | review |
+| 2.1 | Base snapshot acquisition | `done` | Merge-base worktree or archive; read-only; cached | `packages/cli/src/main.ts` `analyzePair`; `scripts/e2e-prune.mjs` |
+| 2.2 | Head snapshot | `done` | Commit or dirty tree; `dirty` flag | `packages/cli/src/main.ts`; `fixtures/delta/dirty` |
+| 2.3 | Comparability gate | `done` | Refuses incomparable inputs with a named reason | `crates/shrike-delta/src/`; `fixtures/delta/` |
+| 2.4 | Live-set diff | `done` | `live(base) − live(head)`; no pre-existing debt | `crates/shrike-delta/src/`; `node scripts/delta-fixtures.mjs` |
+| 2.5 | Witness lookup | `done` | Lost witness path present for every delta item | `crates/shrike-graph/src/`; `shrike proof` |
+| 2.6 | Trigger attribution | `done` | Names the changed file/symbol that removed the edge | `crates/shrike-delta/src/`; delta fixture oracles |
+| 2.7 | Cascade closure | `done` | Exclusive ownership; stop conditions; unknown blocks | `crates/shrike-delta/src/`; `fixtures/delta/` |
+| 2.8 | Batch conflict graph | `done` | No shared files/SCC/order within a batch | `crates/shrike-plan/src/`; plan tests |
+| 2.9 | Blast-radius guard | `done` | Batch over limit is split or refused with a reason | `crates/shrike-plan/src/`; batch cap tests |
+| 2.10 | Impact estimation | `in-progress` | Files, lines, and symbols reported; route/byte impact pending phase 4 | `crates/shrike-delta/src/`; plan totals |
+| 2.11 | `shrike delta` | `done` | JSON + human output; schema-valid | `packages/cli/src/main.ts`; `scripts/e2e-prune.mjs` |
+| 2.12 | `shrike plan` | `done` | Batches with impact and blast radius | `packages/cli/src/main.ts`; `scripts/e2e-prune.mjs` |
+| 2.13 | Delta fixtures + corpus | `done` | Nine scenarios; zero corpus findings | `node scripts/delta-fixtures.mjs`; `node scripts/corpus-runner.mjs` |
+| 2.14 | Monorepo handling | `done` | Workspace boundaries respected | `crates/shrike-resolve/src/`; `fixtures/delta/monorepo` |
+| 2.15 | Determinism | `done` | Byte-identical output across runs and thread counts | `node scripts/delta-fixtures.mjs`; determinism CI step |
+| 2.16 | Real-app delta | `blocked` | A synthetic feature removal produces untouched-file orphans | blocked: needs a real application/PR; synthetic removal is covered by `fixtures/delta/removed-caller` |
+| 2.17 | Docs update | `done` | `docs/04` matches behavior | `docs/04-whole-graph-delta.md`; this file |
 
 ### Phase 3 — Verification and receipts
 
 | ID | Task | Status | Acceptance | Evidence |
 |---|---|---|---|---|
-| 3.1 | Verifier package scaffold | `planned` | Public API, errors, config | unit tests |
-| 3.2 | Baseline capture | `planned` | Commit, checks, signatures, environment recorded | fixture test |
-| 3.3 | Check discovery | `planned` | `package.json` scripts + config; explicit commands win | unit test |
-| 3.4 | Worktree mode | `planned` | Create, apply, verify, remove; clean tree required | integration test |
-| 3.5 | In-place mode | `planned` | Snapshot, apply, verify, restore; dirty-tree refusal | integration test |
-| 3.6 | Compare/classification | `planned` | pass, improvement, known-failure, new-failure, fail, flaky, timeout | unit test |
-| 3.7 | Batch apply | `planned` | Independent batches verified separately | integration test |
-| 3.8 | Bisection | `planned` | Minimal failing set isolated and reverted | failure drill |
-| 3.9 | Revert/recovery | `planned` | Clean restore or exit 5 with recovery path | failure drill |
-| 3.10 | Receipt writer | `planned` | Schema-valid; content-addressed; reproducible | schema test |
-| 3.11 | Receipt validation | `planned` | Every fixture receipt validates | CI log |
-| 3.12 | PR renderer | `planned` | Markdown summary, per-batch table, rejected list | snapshot test |
-| 3.13 | Per-batch commits + draft PR | `planned` | One commit per verified batch; draft by default | integration test |
-| 3.14 | Exit codes | `planned` | 0/1/2/3/4/5 covered | CLI test |
-| 3.15 | Flaky handling | `planned` | Rerun, classify, record; no false regression | integration test |
-| 3.16 | Failure drill | `planned` | Broken deletion reverted; tree clean | CI log |
-| 3.17 | Real-app end-to-end | `planned` | 3 batches verified with typecheck, lint, test, build | receipt |
-| 3.18 | Docs update | `planned` | `docs/05` matches behavior | review |
+| 3.1 | Verifier package scaffold | `done` | Public API, errors, config | `packages/verifier/src/`; `cargo test --workspace` |
+| 3.2 | Baseline capture | `done` | Commit, checks, signatures, environment recorded | `packages/verifier/src/checks.ts`; `scripts/e2e-prune.mjs` |
+| 3.3 | Check discovery | `done` | `package.json` scripts + config; explicit commands win | `packages/verifier/src/checks.ts`; `packages/cli/test/contracts.test.mjs` |
+| 3.4 | Worktree mode | `done` | Create, apply, verify, remove; clean tree required | `packages/cli/src/git.ts`; `scripts/e2e-prune.mjs` |
+| 3.5 | In-place mode | `done` | Snapshot, apply, verify, restore; dirty-tree refusal | `packages/cli/src/main.ts` (`--in-place`); prune clean-tree guard |
+| 3.6 | Compare/classification | `done` | pass, improvement, known-failure, new-failure, fail, flaky, timeout | `packages/verifier/src/compare.ts`; verification fixtures |
+| 3.7 | Batch apply | `done` | Independent batches verified separately | `packages/cli/src/main.ts`; `scripts/e2e-prune.mjs` |
+| 3.8 | Bisection | `done` | Minimal failing set isolated and reverted | `packages/verifier/src/bisect.ts`; `scripts/e2e-prune.mjs` bisected batch |
+| 3.9 | Revert/recovery | `done` | Clean restore or exit 5 with recovery path | `packages/cli/src/recovery.ts`; exit-5 e2e scenario |
+| 3.10 | Receipt writer | `done` | Schema-valid; content-addressed; reproducible | `packages/receipts/src/receipt.ts`; `fixtures/receipts/` |
+| 3.11 | Receipt validation | `done` | Every fixture receipt validates | `packages/receipts/test/validate.test.mjs`; `node scripts/check-receipts.mjs` |
+| 3.12 | PR renderer | `done` | Markdown summary, per-batch table, rejected list | `packages/receipts/src/render.ts`; PR body/comment renderers |
+| 3.13 | Per-batch commits + draft PR | `done` | One commit per verified batch; draft by default | `packages/cli/src/main.ts`; `scripts/e2e-prune.mjs` |
+| 3.14 | Exit codes | `done` | 0/1/2/3/4/5 covered | `packages/cli/test/contracts.test.mjs`; `scripts/e2e-prune.mjs` (0/1/2/3/4/5) |
+| 3.15 | Flaky handling | `done` | Rerun, classify, record; no false regression | `packages/verifier/src/bisect.ts`; verification flaky fixture |
+| 3.16 | Failure drill | `done` | Broken deletion reverted; tree clean | `scripts/e2e-prune.mjs` rejected/revert-failure scenarios |
+| 3.17 | Real-app end-to-end | `blocked` | 3 batches verified with typecheck, lint, test, build | blocked: needs a real app and three verified batches; synthetic e2e is green |
+| 3.18 | Docs update | `done` | `docs/05` matches behavior | `docs/05-verified-deletion.md`; this file |
 
 ### Phase 4 — Build graph and Next.js
 
 | ID | Task | Status | Acceptance | Evidence |
 |---|---|---|---|---|
-| 4.1 | Snapshot discovery | `planned` | Finds the snapshot; runs export only with `--build` | integration test |
-| 4.2 | Version guard | `planned` | 16.4+ full; 16.1–16.3 partial; older unsupported | unit test |
-| 4.3 | JSONL parser | `planned` | Streaming; tolerates additive fields | fixture test |
-| 4.4 | Module index | `planned` | Path and ID lookup; normalized | unit test |
-| 4.5 | Module-to-file join | `planned` | ≥ 90% coverage on a real app; unresolved recorded | integration test |
-| 4.6 | Presence/absence | `planned` | Client/server distinction; suppress on presence | fixture test |
-| 4.7 | Route attribution | `planned` | Per-route membership; shared chunks attributed once | integration test |
-| 4.8 | Byte impact | `planned` | Per-route and total; no double counting | integration test |
-| 4.9 | Build-edge feedback | `planned` | Adds certain edges; suppresses false positives | fixture test |
-| 4.10 | Server actions | `planned` | Client-reference manifest considered; conservative fallback | fixture test |
-| 4.11 | Client boundaries | `planned` | `"use client"` entry semantics; leak diagnostic | fixture test |
-| 4.12 | Proxy/middleware/metadata | `planned` | Entry and matcher semantics; never dead | fixture test |
-| 4.13 | Fallback matrix | `planned` | Missing/stale/parse-error/unsupported → static-only with status | integration test |
-| 4.14 | Receipt integration | `planned` | Build evidence status and hash recorded | schema test |
-| 4.15 | Corpus with/without evidence | `planned` | Green in both modes | corpus report |
-| 4.16 | Docs update | `planned` | `docs/06` matches behavior | review |
+| 4.1 | Snapshot discovery | `in-progress` | Finds the snapshot; runs export only with `--build` | partial: `shrike evidence --build <path>` reads an explicit snapshot; discovery and build execution are not implemented |
+| 4.2 | Version guard | `in-progress` | 16.4+ full; 16.1–16.3 partial; older unsupported | partial: version is carried in build evidence; the version guard is not enforced |
+| 4.3 | JSONL parser | `in-progress` | Streaming; tolerates additive fields | partial: JSON evidence objects are parsed; streaming JSONL is not implemented |
+| 4.4 | Module index | `in-progress` | Path and ID lookup; normalized | partial: exact path/symbol matching; loader/query/suffix normalization is not implemented |
+| 4.5 | Module-to-file join | `in-progress` | ≥ 90% coverage on a real app; unresolved recorded | partial: joined/unmatched counts; coverage thresholds are not computed |
+| 4.6 | Presence/absence | `in-progress` | Client/server distinction; suppress on presence | partial: membership join only; presence/absence verdicts are not applied to candidates |
+| 4.7 | Route attribution | `in-progress` | Per-route membership; shared chunks attributed once | partial: route records are accepted; per-candidate route attribution is not reported |
+| 4.8 | Byte impact | `in-progress` | Per-route and total; no double counting | partial: no byte fields or per-route/shared accounting yet |
+| 4.9 | Build-edge feedback | `planned` | Adds certain edges; suppresses false positives | planned: build edges are not fed back into reachability |
+| 4.10 | Server actions | `in-progress` | Client-reference manifest considered; conservative fallback | partial: `use server` exports are static entries; client-reference edges are not joined |
+| 4.11 | Client boundaries | `in-progress` | `"use client"` entry semantics; leak diagnostic | partial: static `use client` semantics; build-layer leak diagnostics are not implemented |
+| 4.12 | Proxy/middleware/metadata | `done` | Entry and matcher semantics; never dead | `crates/shrike-graph/src/entries.rs`; corpus proxy/middleware/metadata cases |
+| 4.13 | Fallback matrix | `in-progress` | Missing/stale/parse-error/unsupported → static-only with status | partial: `full`/`partial`/`none` join statuses; `--require-build-evidence` and the full matrix are pending |
+| 4.14 | Receipt integration | `planned` | Build evidence status and hash recorded | planned: the receipt schema has a build field, but prune does not populate it |
+| 4.15 | Corpus with/without evidence | `in-progress` | Green in both modes | partial: corpus is green without evidence; the evidence mode is not wired into the corpus runner |
+| 4.16 | Docs update | `in-progress` | `docs/06` matches behavior | partial: `docs/06` describes the target, not the current subset |
 
 ### Phase 5 — Distribution and launch
 
 | ID | Task | Status | Acceptance | Evidence |
 |---|---|---|---|---|
-| 5.1 | Claude Code hook | `planned` | Install, run, uninstall; idempotent | integration test |
-| 5.2 | Cursor hook | `planned` | Same fast path | integration test |
-| 5.3 | OpenCode hook | `planned` | Same fast path | integration test |
-| 5.4 | Fast-path budget | `planned` | ≤ 60 s or delta-only | benchmark |
-| 5.5 | Hook output + brief | `planned` | One-screen summary + JSON `CleanupBrief` | snapshot test |
-| 5.6 | Hook safety | `planned` | No source upload; `.shrike/` only; timeout | security test |
-| 5.7 | GitHub Action | `planned` | Opens a draft PR on a test repo | CI log |
-| 5.8 | PR template + receipt comment | `planned` | Per-batch commits; receipt link; rejected list | snapshot test |
-| 5.9 | MCP wrapper | `planned` | 4 tools; no mutation | protocol test |
-| 5.10 | Package naming + publish dry run | `planned` | Name available; tarball contents verified | registry |
-| 5.11 | Landing test | `planned` | Two positionings; qualified sign-ups measured | report |
-| 5.12 | Teardown content | `planned` | 10 public Next.js repos; before/after receipts | published post |
-| 5.13 | Design-partner kit | `planned` | One-command trial; read-only first | doc |
-| 5.14 | Design partners | `planned` | 3 teams; at least 1 merged PR each | tracker |
-| 5.15 | Launch | `planned` | Post, demo, receipt screenshots | URL |
-| 5.16 | Docs update | `planned` | `docs/07` matches behavior | review |
+| 5.1 | Claude Code hook | `done` | Install, run, uninstall; idempotent | `packages/agent/src/hooks.ts`; `packages/cli/test/contracts.test.mjs` |
+| 5.2 | Cursor hook | `done` | Same fast path | `packages/agent/src/hooks.ts`; `packages/cli/test/contracts.test.mjs` |
+| 5.3 | OpenCode hook | `done` | Same fast path | `packages/agent/src/hooks.ts`; `packages/cli/test/contracts.test.mjs` |
+| 5.4 | Fast-path budget | `done` | ≤ 60 s or delta-only | `shrike hook run` 55 s timeout; `packages/cli/src/main.ts` |
+| 5.5 | Hook output + brief | `done` | One-screen summary + JSON `CleanupBrief` | `packages/agent/src/brief.ts`; `.shrike/brief.json` contract test |
+| 5.6 | Hook safety | `done` | No source upload; `.shrike/` only; timeout | hook writes `.shrike/` only; prompt-injection sanitization; contract test |
+| 5.7 | GitHub Action | `in-progress` | Opens a draft PR on a test repo | partial: `packages/action/` supports delta/prune and refuses forks; no external test repo run |
+| 5.8 | PR template + receipt comment | `done` | Per-batch commits; receipt link; rejected list | `packages/receipts/src/render.ts`; `scripts/e2e-prune.mjs` per-batch commits |
+| 5.9 | MCP wrapper | `done` | 4 tools; no mutation | `packages/cli/src/main.ts` MCP server; four-tool contract test |
+| 5.10 | Package naming + publish dry run | `blocked` | Name available; tarball contents verified | blocked: npm scope availability and publish dry run require registry credentials |
+| 5.11 | Landing test | `blocked` | Two positionings; qualified sign-ups measured | blocked: landing test requires participants |
+| 5.12 | Teardown content | `blocked` | 10 public Next.js repos; before/after receipts | blocked: public repo teardown requires publishing and review |
+| 5.13 | Design-partner kit | `in-progress` | One-command trial; read-only first | partial: README and hook install are the trial path; no packaged partner kit |
+| 5.14 | Design partners | `blocked` | 3 teams; at least 1 merged PR each | blocked: requires design partners |
+| 5.15 | Launch | `blocked` | Post, demo, receipt screenshots | blocked: requires launch channel and demo assets |
+| 5.16 | Docs update | `in-progress` | `docs/07` matches behavior | partial: `docs/07` needs a final pass after distribution work |
 
 ### Phase 6 — Hardening and scale
 
 | ID | Task | Status | Acceptance | Evidence |
 |---|---|---|---|---|
-| 6.1 | Corpus expansion | `planned` | ≥ 250 must-not-report entries | corpus report |
-| 6.2 | Labeled set | `planned` | 10–20 real repositories with labels | dataset |
-| 6.3 | Calibration report | `planned` | Per-rule precision + calibration curve | report |
-| 6.4 | Monorepo scale | `planned` | 10k+ files; workspace boundaries correct | benchmark |
-| 6.5 | 10k performance | `planned` | All budgets met on reference hardware | benchmark |
-| 6.6 | Security review | `planned` | Trust boundaries, redaction, injection tests | review |
-| 6.7 | Supply chain | `planned` | Signed binaries, checksums, provenance, audit | release log |
-| 6.8 | Failure injection | `planned` | Crash, timeout, corrupted cache, failed revert | CI log |
-| 6.9 | Docs and README final | `planned` | Every claim reproducible; links valid | review |
-| 6.10 | Release candidate | `planned` | 1.0.0-rc.1 on npm + GitHub | registry |
-| 6.11 | 1.0 release | `planned` | Tagged, signed, published | registry |
-| 6.12 | Opt-in telemetry | `deferred` | Not in v1; revisit after adoption | — |
+| 6.1 | Corpus expansion | `done` | ≥ 250 must-not-report entries | `fixtures/must-not-report/` (250 entries, 21 categories) |
+| 6.2 | Labeled set | `blocked` | 10–20 real repositories with labels | blocked: needs 10–20 labeled real repositories |
+| 6.3 | Calibration report | `blocked` | Per-rule precision + calibration curve | blocked: calibration needs the labeled set |
+| 6.4 | Monorepo scale | `done` | 10k+ files; workspace boundaries correct | `benchmarks/harness.mjs` 10k run; monorepo fixture |
+| 6.5 | 10k performance | `done` | All budgets met on reference hardware | this file §5; `benchmarks/README.md` |
+| 6.6 | Security review | `in-progress` | Trust boundaries, redaction, injection tests | partial: path guards, config isolation, sanitization; no external security review |
+| 6.7 | Supply chain | `blocked` | Signed binaries, checksums, provenance, audit | blocked: signed binaries and provenance require release infrastructure |
+| 6.8 | Failure injection | `in-progress` | Crash, timeout, corrupted cache, failed revert | partial: crash/timeout/revert tests exist; cache-corruption injection is pending |
+| 6.9 | Docs and README final | `in-progress` | Every claim reproducible; links valid | partial: README and tracker updated; final reproducible-claim pass pending |
+| 6.10 | Release candidate | `blocked` | 1.0.0-rc.1 on npm + GitHub | blocked: npm release requires credentials |
+| 6.11 | 1.0 release | `blocked` | Tagged, signed, published | blocked: release requires credentials and external validation |
+| 6.12 | Opt-in telemetry | `deferred` | Not in v1; revisit after adoption | deferred by D-016 |
 
 ---
 
@@ -206,19 +211,19 @@ demonstrated and the evidence is linked here.
 
 | Metric | Target | Actual | Date | Notes |
 |---|---|---|---|---|
-| 1,000-file cold scan | ≤ 1.5 s | TBD | — | Rust engine |
-| 1,000-file warm scan | ≤ 400 ms | TBD | — | Rust engine |
-| 10,000-file cold scan | ≤ 6 s | TBD | — | Rust engine |
-| 10,000-file warm scan | ≤ 2 s | TBD | — | Rust engine |
-| 10,000-file peak RSS | ≤ 600 MB | TBD | — | Rust engine |
-| Delta (1,000 files, warm) | ≤ 1 s | TBD | — | — |
-| Fast path (delta + typecheck + lint) | ≤ 60 s | TBD | — | Hook |
-| Full receipt | ≤ 10 min | TBD | — | CI |
-| Must-not-report false positives | 0 | TBD | — | Corpus |
-| Batches verified without edits | ≥ 80% | TBD | — | Design partners |
-| PRs with orphan-delta hit | ≥ 30% | TBD | — | Design partners |
-| Design partners merged | ≥ 3 | TBD | — | Month one |
-| Receipts with complete check record | 100% | TBD | — | Schema |
+| 1,000-file cold scan | ≤ 1.5 s | 285 ms | 2026-11-20 | release engine; `benchmarks/harness.mjs` |
+| 1,000-file warm scan | ≤ 400 ms | 213 ms | 2026-11-20 | cache hit; byte-identical snapshot |
+| 10,000-file cold scan | ≤ 6 s | 2.23 s | 2026-11-20 | release engine; 10,001 files |
+| 10,000-file warm scan | ≤ 2 s | 1.29 s | 2026-11-20 | cache hit; 22,018 symbols |
+| 10,000-file peak RSS | ≤ 600 MB | 229 MB | 2026-11-20 | `/usr/bin/time -v` |
+| Delta (1,000 files, warm) | ≤ 1 s | not measured | — | delta path shares the snapshot cache |
+| Fast path (delta + typecheck + lint) | ≤ 60 s | 55 s hard timeout | 2026-11-20 | `shrike hook run`; no real-app timing yet |
+| Full receipt | ≤ 10 min | not measured | — | requires a real app |
+| Must-not-report false positives | 0 | 0 | 2026-11-20 | 250 entries; 13 candidates, 0 protected symbols |
+| Batches verified without edits | ≥ 80% | 1/1 synthetic | 2026-11-20 | e2e verified batch; no partner data |
+| PRs with orphan-delta hit | ≥ 30% | no real sample | — | blocked on labeled set |
+| Design partners merged | ≥ 3 | 0 | 2026-11-20 | blocked: no partners yet |
+| Receipts with complete check record | 100% | 100% of fixture suite | 2026-11-20 | verified receipts require at least one check |
 
 The tracker records actuals, not projections. A target is not a result.
 
@@ -348,6 +353,10 @@ not commitments; commitments are in the plans.
 | 2026-11-20 | Added JSON Schemas for protocol, snapshot, delta, plan, receipt, config | `schemas/` |
 | 2026-11-20 | Added schema validator and validated the design package end to end | `scripts/validate-schemas.mjs`, `TRACKER.md` |
 | 2026-11-20 | Reconciled D-017/D-018 and the 0.15 acceptance with the decision log | `TRACKER.md`, `docs/12` |
+| 2026-11-20 | Implemented the Rust engine, TypeScript host, CLI, verifier, receipts, hooks, action, MCP server, schemas, fixtures, benchmarks, and CI | `crates/`, `packages/`, `schemas/`, `fixtures/`, `benchmarks/`, `.github/` |
+| 2026-11-20 | Added content-addressed recovery snapshots, `shrike recover`, exit 5, and revert-failure receipts | `packages/cli/src/recovery.ts`, `scripts/e2e-prune.mjs` |
+| 2026-11-20 | Added engine timeout, config child-process isolation, four-tool MCP contract, and receipt structural validation | `packages/cli/src/engine.ts`, `packages/cli/src/config.ts`, `packages/receipts/src/validate.ts` |
+| 2026-11-20 | Expanded the must-not-report corpus to 250 entries and recorded benchmark actuals | `fixtures/must-not-report/`, `TRACKER.md` |
 
 ---
 
@@ -358,13 +367,21 @@ implementation starts; design-package validation is recorded below.
 
 | Date | Phase | Evidence | Result |
 |---|---|---|---|
-| 2026-11-20 | Design package | `node scripts/check-links.mjs` | OK: 46 Markdown files; all relative links resolve |
-| 2026-11-20 | Design package | `node scripts/check-docs.mjs` | OK: 7 plans, 111 task IDs, 18 decisions, 44 linked files; tracker is consistent |
-| 2026-11-20 | Design package | `node scripts/validate-schemas.mjs` | OK: 6 schemas, 6 unique `$id` values, 35 local refs; structure valid |
-| 2026-11-20 | 1.1–1.4 | `cargo test -p shrike-core -p shrike-protocol -p shrike-syntax` | OK: 13 core + 1 protocol + 6 syntax tests |
-| 2026-11-20 | 2.1–2.4 | `cargo test --workspace` | OK: all Rust crates compile; graph/delta/plan/evidence/receipt tests pass |
-| 2026-11-20 | 2.5 | `printf '{"protocolVersion":"1.0","id":"1","command":"ping","payload":{}}\n' \| cargo run -q -p shrike-engine` | OK: `{"ok":true,"result":{"version":"1.0.0","protocolVersion":"1.0"}}` |
-| 2026-11-20 | 1.5 | `cargo check -p shrike-resolve` | OK: relative, tsconfig paths/baseUrl, workspace package, framework alias resolution |
+| 2026-11-20 | Design package | `node scripts/check-links.mjs` | OK: 111 Markdown files; all relative links resolve |
+| 2026-11-20 | Design package | `node scripts/check-docs.mjs` | OK: 13 docs, 7 plans, 111 task IDs; tracker is consistent |
+| 2026-11-20 | Design package | `node scripts/validate-schemas.mjs` | OK: 6 schemas, 6 unique `$id` values; structure valid |
+| 2026-11-20 | 1.1–1.17 | `cargo test --workspace` | OK: all Rust crate tests pass |
+| 2026-11-20 | 0.9, 3.1–3.16 | `pnpm -r typecheck` | OK: agent, action, receipts, testkit, verifier, cli |
+| 2026-11-20 | 0.9, 3.14 | `pnpm test:node` | OK: 28 Node tests (engine failures, MCP, hooks, recovery, receipts) |
+| 2026-11-20 | 0.8 | `cargo fmt --check`; `cargo clippy --workspace --all-targets -- -D warnings` | OK |
+| 2026-11-20 | 0.11, 2.13 | `node scripts/check-corpus.mjs`; `node scripts/corpus-runner.mjs` | OK: 250 entries; 0 protected symbols in 13 candidates |
+| 2026-11-20 | 0.12, 2.13 | `node scripts/delta-fixtures.mjs` | OK: 14 delta scenarios |
+| 2026-11-20 | 0.13, 3.6 | `node scripts/verify-fixtures.mjs` | OK: 6 verification scenarios |
+| 2026-11-20 | 3.10–3.11 | `node scripts/check-receipts.mjs` | OK: 3 generated receipts, 2 schema examples, committed/local receipts |
+| 2026-11-20 | 3.4–3.16 | `node scripts/e2e-prune.mjs` | OK: verified, rejected, bisected, revert-failure/recovery |
+| 2026-11-20 | 1.15, 6.4–6.5 | `node benchmarks/harness.mjs` | OK: 1k/10k budgets met; deterministic snapshots |
+| 2026-11-20 | 0.14 | `node scripts/check.mjs` | OK: schemas, receipts, corpus, delta, verification, build, prune e2e |
+| 2026-11-20 | 4.1–4.15 | `shrike evidence --build fixtures/build/analyze.json` | Partial: join status and unmatched entries; JSONL/routes/bytes/feedback pending |
 
 ---
 

@@ -10,9 +10,12 @@ reviewable cleanup PR: independent deletion batches, the project's own checks ru
 against a baseline, failures bisected and reverted, and a portable receipt that
 records exactly what was removed and what was verified.
 
-This repository is the **complete design and execution package** for Shrike 1.0.
-Implementation has not started. The first executable step is
-[`plans/PLAN-0-foundations.md`](plans/PLAN-0-foundations.md).
+This repository contains the **design and working implementation** of Shrike
+1.0. The Rust engine, TypeScript host, CLI, verifier, receipts, hooks, GitHub
+Action, and MCP server are implemented. Phase 4 (Next.js build-graph evidence)
+has a working join; the full JSONL/route/byte/feedback contract is still in
+progress. External launch items (design partners, npm publish, signed releases)
+are tracked as blocked in [`TRACKER.md`](TRACKER.md).
 
 ---
 
@@ -40,7 +43,7 @@ proof**.
 | **Whole-graph PR orphan delta** | Compares the merge-base graph to the PR head and reports code that became dead anywhere in the repo, including files the PR never touched | Changed-file audits cannot see this; current-state scanners cannot attribute it |
 | **Verified deletion batches** | Applies each closure-complete batch in isolation, runs the project's checks against a baseline, bisects failures, and reverts only the culprit | Advisory tools stop at "safe to delete"; Shrike produces a reviewable PR |
 | **Portable receipt** | Emits a content-addressed JSON proof: graph hashes, witnesses, patches, checks, baseline status, build evidence, outcome | A receipt is auditable and shareable; a score is not |
-| **Build-graph evidence** | Joins `next analyze export` data to report route and byte impact and to catch dynamic edges the static graph missed | Optional confirmation, never a hard dependency |
+| **Build-graph evidence** | Joins build evidence to confirm presence and, as the phase-4 contract lands, report route and byte impact and catch dynamic edges the static graph missed | Optional confirmation, never a hard dependency |
 | **Rust speed and determinism** | Parses and indexes 10,000 files in seconds with bounded memory; identical input produces byte-identical output | Fast enough for a post-agent hook; deterministic enough for CI |
 
 The wedge is not "we find dead code." It is:
@@ -61,7 +64,12 @@ The wedge is not "we find dead code." It is:
 | Agent prompts | Complete — [`prompts/`](prompts/) |
 | Research | Complete — [`research/`](research/) |
 | Schemas | Complete and validated — [`schemas/`](schemas/) |
-| Implementation | **Not started** — begin at [`PLAN-0`](plans/PLAN-0-foundations.md) |
+| Rust engine | Implemented — `cargo test --workspace` |
+| TypeScript host | Implemented — `pnpm -r typecheck`, `pnpm test:node` |
+| Fixtures and corpus | 14 delta, 6 verification, 250 must-not-report entries |
+| Verified deletion | Implemented — `node scripts/e2e-prune.mjs` |
+| Build-graph evidence | Partial — join works; JSONL/routes/bytes/feedback pending |
+| External launch | Blocked on partners and credentials — see [`TRACKER.md`](TRACKER.md) |
 
 The full status, decisions, metrics, and evidence log live in
 [`TRACKER.md`](TRACKER.md).
@@ -100,16 +108,42 @@ The full status, decisions, metrics, and evidence log live in
 ├── prompts/                  # role prompts for implementation and review agents
 ├── research/                 # dated research, competitor matrix, sources
 ├── schemas/                  # JSON Schemas for protocol, snapshots, plans, receipts
-├── fixtures/                 # planned fixture corpus (documented)
-├── benchmarks/               # planned benchmark corpus and harness (documented)
-├── crates/                   # planned Rust workspace (documented)
-├── packages/                 # planned TypeScript packages (documented)
-└── scripts/                  # planned repository automation (documented)
+├── fixtures/                 # delta, verification, build, receipt, and corpus fixtures
+├── benchmarks/               # deterministic 1k/10k benchmark generator and harness
+├── crates/                   # Rust workspace: core, protocol, syntax, resolve, graph, delta, plan, evidence, receipt, engine
+├── packages/                 # TypeScript host: cli, verifier, receipts, agent, action, testkit
+└── scripts/                  # repository automation and contract gates
 ```
 
 The `crates/`, `packages/`, `fixtures/`, `benchmarks/`, and `scripts/` directories
-currently contain design READMEs. They become code in
-[`PLAN-0`](plans/PLAN-0-foundations.md) and [`PLAN-1`](plans/PLAN-1-rust-engine.md).
+contain working code and are exercised by `.github/workflows/ci.yml`.
+
+---
+
+## Quick start
+
+```bash
+# Build the Rust engine
+cargo build --release -p shrike-engine
+
+# Run the local gates
+pnpm install
+pnpm -r typecheck
+pnpm test:node
+cargo test --workspace
+node scripts/check.mjs
+
+# Use the CLI from a repository
+node /path/to/shrike/packages/cli/src/main.ts scan --json
+node /path/to/shrike/packages/cli/src/main.ts delta --base origin/main --json
+node /path/to/shrike/packages/cli/src/main.ts prune --base origin/main --json
+```
+
+`prune` defaults to a branch worktree under `.shrike/worktrees/`, writes a
+receipt per batch under `.shrike/receipts/`, and never commits to `main`.
+`--in-place` is explicit opt-in. Exit codes are `0` clean, `1` findings,
+`2` usage/config, `3` verification failed, `4` could not run, and `5` revert
+failed.
 
 ---
 

@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 export function git(root: string, args: string[], allowFailure = false): string {
@@ -14,7 +13,11 @@ export function git(root: string, args: string[], allowFailure = false): string 
 }
 
 export function isDirty(root: string): boolean {
-  return git(root, ["status", "--porcelain"], true).length > 0;
+  // Shrike's own artifacts are never part of the project's review surface.
+  return git(root, ["status", "--porcelain"], true)
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .some((line) => !line.slice(3).startsWith(".shrike/"));
 }
 
 export function headCommit(root: string): string {
@@ -42,10 +45,23 @@ export interface Worktree {
   cleanup: () => void;
 }
 
+function worktreeDirectory(root: string, label: string): string {
+  const directory = join(root, ".shrike", "worktrees");
+  mkdirSync(directory, { recursive: true });
+  // Stale registrations are metadata-only; prune before adding a new one.
+  git(root, ["worktree", "prune"], true);
+  return mkdtempSync(join(directory, `${label}-`));
+}
+
 /** Create a detached worktree for a commit. */
 export function createWorktree(root: string, commit: string, label: string): Worktree {
-  const directory = mkdtempSync(join(tmpdir(), `shrike-${label}-`));
-  git(root, ["worktree", "add", "--detach", directory, commit]);
+  const directory = worktreeDirectory(root, label);
+  try {
+    git(root, ["worktree", "add", "--detach", directory, commit]);
+  } catch (error) {
+    rmSync(directory, { recursive: true, force: true });
+    throw error;
+  }
   return {
     directory,
     cleanup: () => {
@@ -61,10 +77,15 @@ export function createWorktree(root: string, commit: string, label: string): Wor
 
 /** Create a new branch in a temporary worktree (default prune mode). */
 export function createBranchWorktree(root: string, branch: string, commit: string): Worktree {
-  const directory = mkdtempSync(join(tmpdir(), `shrike-${branch.replace(/[^a-zA-Z0-9]+/g, "-")}-`));
+  const directory = worktreeDirectory(root, branch.replace(/[^a-zA-Z0-9]+/g, "-"));
   const exists = git(root, ["rev-parse", "--verify", branch], true);
-  if (exists) git(root, ["worktree", "add", directory, branch]);
-  else git(root, ["worktree", "add", "-b", branch, directory, commit]);
+  try {
+    if (exists) git(root, ["worktree", "add", directory, branch]);
+    else git(root, ["worktree", "add", "-b", branch, directory, commit]);
+  } catch (error) {
+    rmSync(directory, { recursive: true, force: true });
+    throw error;
+  }
   return {
     directory,
     cleanup: () => {

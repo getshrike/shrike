@@ -2,6 +2,7 @@
 
 > **Parent:** [MASTER_PROMPT.md](../MASTER_PROMPT.md) · **Tracker:** [TRACKER.md](../TRACKER.md)
 > **Status:** canonical · Authored 2026-11-20
+> **Implementation status (2026-11-20):** Claude Code, Cursor, and OpenCode hooks, the GitHub Action, the PR/receipt renderers, and the four-tool read-only MCP server are implemented. npm publishing, signed releases, landing tests, and design-partner trials are blocked on credentials or participants.
 
 ---
 

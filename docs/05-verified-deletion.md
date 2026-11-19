@@ -2,6 +2,7 @@
 
 > **Parent:** [MASTER_PROMPT.md](../MASTER_PROMPT.md) · **Tracker:** [TRACKER.md](../TRACKER.md)
 > **Status:** canonical · Authored 2026-11-20
+> **Implementation status (2026-11-20):** implemented in `packages/verifier`, `packages/receipts`, and `packages/cli`. Worktree mode is the default, `--in-place` is explicit, failed batches bisect and revert, and exit 5 writes a recovery snapshot plus `shrike recover`. Configuration load errors are exit 2; missing checks, engine failures, and incomparable snapshots fail closed with exit 4.
 
 ---
 

@@ -2,6 +2,7 @@
 
 > **Parent:** [MASTER_PROMPT.md](../MASTER_PROMPT.md) · **Tracker:** [TRACKER.md](../TRACKER.md)
 > **Status:** canonical · Authored 2026-11-20
+> **Implementation status (2026-11-20): partial.** `shrike evidence --build <path>` joins a simplified JSON evidence file to the snapshot and reports `full`/`partial`/`none` with unmatched entries. Streaming JSONL ingestion, version guard, route/byte attribution, build-edge feedback, `--require-build-evidence`, and receipt population remain open and are tracked in `TRACKER.md` phase 4.
 
 ---
 

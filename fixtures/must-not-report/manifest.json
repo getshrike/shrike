@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 120,
+  "count": 250,
   "entries": [
     {
       "id": "page-entry-1",
@@ -1895,6 +1895,2026 @@
         {
           "symbol": "src/impl.tsx#default",
           "reason": "default re-export is followed"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-1",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-2",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-3",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-4",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-5",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-6",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-7",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-8",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-9",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-10",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-11",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-12",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-13",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-14",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-15",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-16",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-17",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-18",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-19",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "parallel-routes-exp-20",
+      "category": "parallel-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/@modal/(.)photo/[id]/page.tsx#default",
+          "reason": "parallel-route slot page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-1",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-2",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-3",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-4",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-5",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-6",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-7",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-8",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-9",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-10",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-11",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-12",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-13",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-14",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-15",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-16",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-17",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-18",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-19",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "intercepting-routes-exp-20",
+      "category": "intercepting-routes",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/feed/(..)photo/[id]/page.tsx#default",
+          "reason": "intercepting-route page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-1",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-2",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-3",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-4",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-5",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-6",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-7",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-8",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-9",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-10",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-11",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-12",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-13",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-14",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-15",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-16",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-17",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-18",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-19",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "route-groups-exp-20",
+      "category": "route-groups",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/(marketing)/about/page.tsx#default",
+          "reason": "route-group page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-1",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-2",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-3",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-4",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-5",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-6",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-7",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-8",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-9",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-10",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-11",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-12",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-13",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-14",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-15",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-16",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-17",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-18",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-19",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "use-cache-exp-20",
+      "category": "use-cache",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/data.ts#getData",
+          "reason": "use-cache function is imported by a page entry"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-1",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-2",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-3",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-4",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-5",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-6",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-7",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-8",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-9",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-10",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-11",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-12",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-13",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-14",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-15",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-16",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-17",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-18",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-19",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "monorepo-client-exp-20",
+      "category": "monorepo-client-boundary",
+      "files": [
+        "apps",
+        "packages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "packages/ui/src/Button.tsx#Button",
+          "reason": "client-boundary component is imported across a workspace"
+        }
+      ]
+    },
+    {
+      "id": "generated-client-exp-1",
+      "category": "generated-clients",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/generated/client.ts#generatedClient",
+          "reason": "generated client is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "generated-client-exp-2",
+      "category": "generated-clients",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/generated/client.ts#generatedClient",
+          "reason": "generated client is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "generated-client-exp-3",
+      "category": "generated-clients",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/generated/client.ts#generatedClient",
+          "reason": "generated client is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "generated-client-exp-4",
+      "category": "generated-clients",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/generated/client.ts#generatedClient",
+          "reason": "generated client is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "generated-client-exp-5",
+      "category": "generated-clients",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/generated/client.ts#generatedClient",
+          "reason": "generated client is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "generated-client-exp-6",
+      "category": "generated-clients",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/generated/client.ts#generatedClient",
+          "reason": "generated client is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "generated-client-exp-7",
+      "category": "generated-clients",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/generated/client.ts#generatedClient",
+          "reason": "generated client is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "generated-client-exp-8",
+      "category": "generated-clients",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/generated/client.ts#generatedClient",
+          "reason": "generated client is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "generated-client-exp-9",
+      "category": "generated-clients",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/generated/client.ts#generatedClient",
+          "reason": "generated client is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "generated-client-exp-10",
+      "category": "generated-clients",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/generated/client.ts#generatedClient",
+          "reason": "generated client is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "barrel-exp-1",
+      "category": "barrel",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#thing",
+          "reason": "barrel export is followed to its implementation"
+        }
+      ]
+    },
+    {
+      "id": "barrel-exp-2",
+      "category": "barrel",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#thing",
+          "reason": "barrel export is followed to its implementation"
+        }
+      ]
+    },
+    {
+      "id": "barrel-exp-3",
+      "category": "barrel",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#thing",
+          "reason": "barrel export is followed to its implementation"
+        }
+      ]
+    },
+    {
+      "id": "barrel-exp-4",
+      "category": "barrel",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#thing",
+          "reason": "barrel export is followed to its implementation"
+        }
+      ]
+    },
+    {
+      "id": "barrel-exp-5",
+      "category": "barrel",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#thing",
+          "reason": "barrel export is followed to its implementation"
+        }
+      ]
+    },
+    {
+      "id": "default-reexport-exp-1",
+      "category": "default-reexport",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.tsx#default",
+          "reason": "default re-export is followed"
+        }
+      ]
+    },
+    {
+      "id": "default-reexport-exp-2",
+      "category": "default-reexport",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.tsx#default",
+          "reason": "default re-export is followed"
+        }
+      ]
+    },
+    {
+      "id": "default-reexport-exp-3",
+      "category": "default-reexport",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.tsx#default",
+          "reason": "default re-export is followed"
+        }
+      ]
+    },
+    {
+      "id": "default-reexport-exp-4",
+      "category": "default-reexport",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.tsx#default",
+          "reason": "default re-export is followed"
+        }
+      ]
+    },
+    {
+      "id": "default-reexport-exp-5",
+      "category": "default-reexport",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.tsx#default",
+          "reason": "default re-export is followed"
+        }
+      ]
+    },
+    {
+      "id": "dynamic-import-exp-1",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/feature.ts#feature",
+          "reason": "literal dynamic import is a certain edge"
+        }
+      ]
+    },
+    {
+      "id": "dynamic-import-exp-2",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/feature.ts#feature",
+          "reason": "literal dynamic import is a certain edge"
+        }
+      ]
+    },
+    {
+      "id": "dynamic-import-exp-3",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/feature.ts#feature",
+          "reason": "literal dynamic import is a certain edge"
+        }
+      ]
+    },
+    {
+      "id": "dynamic-import-exp-4",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/feature.ts#feature",
+          "reason": "literal dynamic import is a certain edge"
+        }
+      ]
+    },
+    {
+      "id": "dynamic-import-exp-5",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/feature.ts#feature",
+          "reason": "literal dynamic import is a certain edge"
+        }
+      ]
+    },
+    {
+      "id": "namespace-exp-1",
+      "category": "namespace",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/lib.ts#value",
+          "reason": "namespace import is followed"
+        }
+      ]
+    },
+    {
+      "id": "namespace-exp-2",
+      "category": "namespace",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/lib.ts#value",
+          "reason": "namespace import is followed"
+        }
+      ]
+    },
+    {
+      "id": "namespace-exp-3",
+      "category": "namespace",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/lib.ts#value",
+          "reason": "namespace import is followed"
+        }
+      ]
+    },
+    {
+      "id": "namespace-exp-4",
+      "category": "namespace",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/lib.ts#value",
+          "reason": "namespace import is followed"
+        }
+      ]
+    },
+    {
+      "id": "namespace-exp-5",
+      "category": "namespace",
+      "files": [
+        "app",
+        "src",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/lib.ts#value",
+          "reason": "namespace import is followed"
         }
       ]
     }

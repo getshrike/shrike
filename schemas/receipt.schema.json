@@ -90,7 +90,12 @@
     "hash": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$",
-      "description": "Receipt hashes are sha256:hex."
+      "description": "Receipt content hashes are sha256:hex."
+    },
+    "graphHash": {
+      "type": "string",
+      "pattern": "^(?:sha256|blake3):[0-9a-f]{64}$",
+      "description": "Engine graph, snapshot, and plan hashes are blake3:hex; older fixtures may use sha256:hex."
     },
     "filePath": {
       "type": "string",
@@ -117,7 +122,7 @@
       "properties": {
         "ref": { "type": "string", "minLength": 1 },
         "commit": { "type": "string", "minLength": 1 },
-        "graphHash": { "$ref": "#/$defs/hash" }
+        "graphHash": { "$ref": "#/$defs/graphHash" }
       }
     },
     "head": {
@@ -126,7 +131,7 @@
       "required": ["commit", "graphHash"],
       "properties": {
         "commit": { "type": "string", "minLength": 1 },
-        "graphHash": { "$ref": "#/$defs/hash" }
+        "graphHash": { "$ref": "#/$defs/graphHash" }
       }
     },
     "plan": {
@@ -135,7 +140,7 @@
       "required": ["id", "hash"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "hash": { "$ref": "#/$defs/hash" }
+        "hash": { "$ref": "#/$defs/graphHash" }
       }
     },
     "build": {
