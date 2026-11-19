@@ -4,15 +4,26 @@
   "private": true,
   "type": "module",
   "description": "Verified dead-code cleanup: whole-graph orphan delta, verified deletion batches, and portable receipts.",
+  "license": "MIT",
   "bin": {
-    "shrike": "./src/main.ts"
+    "shrike": "./bin/shrike.mjs"
   },
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./config": "./src/config.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "default": "./dist/config.js"
+    }
   },
   "files": [
-    "src"
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "node --test",

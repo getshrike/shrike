@@ -2,7 +2,7 @@
 
 > **Parent:** [MASTER_PROMPT.md](../MASTER_PROMPT.md) · **Tracker:** [TRACKER.md](../TRACKER.md)
 > **Status:** canonical · Authored 2026-11-20
-> **Implementation status (2026-11-20): implemented for the master-prompt contract; a few depth items remain.** `shrike evidence` discovers `.next/analyze/*.json[l]`, `.shrike/build/*.json[l]`, or `next-analyze/*.json[l]`, or reads an explicit `--build <path>`. Evidence may be one JSON object or JSONL; malformed input fails closed with exit 4. The join reports coverage (`full` ≥ 0.95, `partial` ≥ 0.80, `low-coverage` < 0.80, `unsupported` below Next.js 16.1, `none` when absent), per-route membership, matched/shared/route-local bytes, and unmatched entries. `augment-build` seeds build-live modules and symbols and follows known static edges, so build evidence can only add liveness; `prune --build` records source, snapshot hash, version, and status in every receipt; `--require-build-evidence` turns unavailable or low-confidence evidence into exit 4. Not yet implemented: bounded-memory streaming for very large exports, stale-snapshot detection, client/server layer verdicts, and the client-boundary leak diagnostic. Those are tracked as partial or planned in [`TRACKER.md`](../TRACKER.md) phase 4.
+> **Implementation status (2026-11-20): implemented for the master-prompt contract; local acceptance is green.** `shrike evidence` discovers `.next/analyze/*.json[l]`, `.shrike/build/*.json[l]`, or `next-analyze/*.json[l]`, or reads an explicit `--build <path>`. JSONL is streamed in bounded chunks; one JSON object is also accepted. Malformed input fails closed with exit 4, and unknown record families are counted rather than guessed. The join reports coverage (`full` ≥ 0.95, `partial` ≥ 0.80, `low-coverage` < 0.80, `unsupported` below Next.js 16.1, `none` when absent), per-route membership, matched/shared/route-local bytes, missing-size counts (`bytes.unknown`, `bytes.partial`, `unknownSizes`), per-candidate `present`/`server-only`/`absent`/`unknown` verdicts, build edges from client-reference records, and a `client-boundary-leak` warning. Loader prefixes, query strings, `turbopack://` paths, module IDs, and longest-suffix matches are normalized by the host and engine. Source hashes in `fileHashes` mark stale evidence; `--run-build` records `build-failed` instead of crashing; `--require-build-evidence` turns unavailable, stale, unsupported, or low-confidence evidence into exit 4. `augment-build` seeds build-live modules and symbols and follows known static edges, so build evidence can only add liveness. `prune --build` records source, snapshot hash, version, and status in every receipt. The eleven `fixtures/build-graph/` scenarios and the corpus evidence mode run in `node scripts/run-fixtures.mjs`. A real reference-app run remains a release gate; the local fixture and unit evidence is complete.
 
 ---
 
@@ -293,17 +293,19 @@ entry, because it can be changed without touching the file.
 | Condition | Status | Behavior |
 |---|---|---|
 | Snapshot exists, version 16.4+, coverage ≥ 0.95 | `full` | Confirm, suppress, attribute bytes |
-| Snapshot exists, version 16.1–16.3 | `partial` | Presence and routes; bytes marked partial |
+| Snapshot exists, version 16.1–16.3 | `partial` | Presence and routes; `bytes.partial` is set |
 | Snapshot exists, coverage 0.80–0.95 | `partial` | Confirm only with source proof; suppress on presence |
 | Snapshot exists, coverage < 0.80 | `low-coverage` | Suppress only; do not confirm |
-| Snapshot missing and `--build` absent | `absent` | Static-only; explain how to produce one |
-| Snapshot missing and `--build` present | `build-failed` | Static-only; record the build error; fail the receipt if the user required evidence |
-| Snapshot stale | `stale` | Static-only; explain the mismatch |
+| Snapshot missing and no evidence path | `none` | Static-only; receipts record `absent`; explain how to produce one |
+| `--run-build` command fails | `build-failed` | Static-only; record the error; fail closed only when evidence is required |
+| Explicit `--build` path missing | error | Exit 4; no partial evidence is invented |
+| Snapshot stale | `stale` | Static-only; explain the source-hash mismatch |
 | Snapshot unparseable | `malformed` | Static-only; record the line and the error |
 | Next.js < 16.1 | `unsupported` | Static-only; no warning spam |
 
-`--require-build-evidence` turns `absent`, `stale`, `malformed`, and
-`unsupported` into exit 4. The default is static-only with a recorded status.
+`--require-build-evidence` turns `none`, `stale`, `malformed`, `unsupported`,
+`low-coverage`, and `build-failed` into exit 4. The default is static-only with a
+recorded status.
 
 ---
 
@@ -374,26 +376,32 @@ Full schema: [`../schemas/graph-snapshot.schema.json`](../schemas/graph-snapshot
 | `build-graph/server-action/` | Server action is never confirmed dead from absence |
 | `build-graph/client-boundary/` | Layer mismatch diagnostic |
 
-Each fixture contains a real `next analyze export` output (trimmed), the static
-graph, and the expected evidence join.
+Each scenario contains a trimmed `next analyze export` output and expected
+evidence join. The scenarios share `fixtures/build-graph/source/` as their static
+graph; `scripts/run-fixtures.mjs` analyzes it once and checks every join,
+augmentation, and host-level fallback (`missing`, `stale`, `malformed`). The
+`build-graph/next-16.4/` scenario is the full reference join; `shared-chunk/`
+proves byte arithmetic; `dynamic-edge/` and `server-action/` prove build-edge
+liveness; `client-boundary/` proves the warning diagnostic.
 
 ---
 
 ## 12. Acceptance criteria
 
-- [ ] `next analyze export` JSONL streams without loading the whole file.
-- [ ] Module join coverage is reported and ≥ 0.90 on the reference app.
-- [ ] A module present in a client chunk suppresses deletion.
-- [ ] A module absent from every chunk confirms, but never authorizes, deletion.
-- [ ] Bytes are reported per route and shared, with no double counting.
-- [ ] A build edge suppresses a false positive and is recorded.
-- [ ] Version guard degrades cleanly for 16.1–16.3 and 15.x.
-- [ ] Missing, stale, malformed, and low-coverage snapshots are statuses, not
+- [x] `next analyze export` JSONL streams without loading the whole file.
+- [ ] Module join coverage is reported and ≥ 0.90 on the reference app
+      (release gate: requires the real app run).
+- [x] A module present in a client chunk suppresses deletion.
+- [x] A module absent from every chunk confirms, but never authorizes, deletion.
+- [x] Bytes are reported per route and shared, with no double counting.
+- [x] A build edge suppresses a false positive and is recorded.
+- [x] Version guard degrades cleanly for 16.1–16.3 and 15.x.
+- [x] Missing, stale, malformed, and low-coverage snapshots are statuses, not
       crashes.
-- [ ] `--require-build-evidence` exits 4 when evidence is unavailable.
-- [ ] Server actions and client boundaries are conservative.
-- [ ] The must-not-report corpus is green with and without build evidence.
-- [ ] The receipt records the build status, version, and hash.
+- [x] `--require-build-evidence` exits 4 when evidence is unavailable.
+- [x] Server actions and client boundaries are conservative.
+- [x] The must-not-report corpus is green with and without build evidence.
+- [x] The receipt records the build status, version, and hash.
 
 ---
 

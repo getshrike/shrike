@@ -13,20 +13,30 @@
     "bytes": {
       "matched": 2600,
       "shared": 600,
-      "totalRoute": 2000
+      "totalRoute": 2000,
+      "unknown": 2,
+      "partial": true
     },
+    "unknownSizes": [
+      "app/layout.tsx#default",
+      "app/page.tsx#default"
+    ],
     "routes": [
       {
         "route": "/",
         "files": 3,
         "symbols": 2,
-        "bytes": 2000
+        "bytes": 2000,
+        "runtime": null,
+        "unknown": 2
       },
       {
         "route": "/about",
         "files": 1,
         "symbols": 0,
-        "bytes": 0
+        "bytes": 0,
+        "runtime": null,
+        "unknown": 0
       }
     ]
   }

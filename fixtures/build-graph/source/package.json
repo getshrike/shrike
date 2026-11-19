@@ -1,0 +1,8 @@
+{
+  "name": "shrike-build-graph-fixture",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "next": "16.4.0"
+  }
+}

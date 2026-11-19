@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
+import { isAbsolute, join } from "node:path";
 import { capOutput, failureSignature, normalizeOutput } from "./normalize.ts";
 import type {
   CheckResult,
@@ -11,6 +12,51 @@ import type {
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const MAX_CAPTURE_BYTES = 1_048_576;
+
+/**
+ * Host variables a project check may inherit.
+ *
+ * Project checks must not receive repository secrets by default. A check that
+ * needs a secret declares it in `CheckSpec.env`. PATH/HOME/temp/locale and the
+ * Windows system variables are required for ordinary tools to start.
+ */
+const SAFE_ENV_KEYS = [
+  "PATH",
+  "Path",
+  "PATHEXT",
+  "HOME",
+  "USERPROFILE",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "SystemRoot",
+  "SYSTEMROOT",
+  "WINDIR",
+  "ComSpec",
+  "COMSPEC",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TERM",
+  "NO_COLOR",
+  "FORCE_COLOR",
+  "CI",
+] as const;
+
+/** Build the default environment for a project check. */
+export function baseEnvironment(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of SAFE_ENV_KEYS) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
 
 function shellForPlatform(): { file: string; args: string[] } {
   if (process.platform === "win32") {
@@ -74,7 +120,9 @@ export function executeCommand(
     try {
       child = spawn(shell.file, [...shell.args, command], {
         cwd: options.cwd,
-        env: { ...process.env, ...options.env },
+        // Inherit only the check-safe host environment. Secrets are passed
+        // explicitly through CheckSpec.env; see docs/09 §2.3.
+        env: { ...baseEnvironment(), ...options.env },
         stdio: ["ignore", "pipe", "pipe"],
         detached: process.platform !== "win32",
         windowsHide: true,
@@ -149,7 +197,11 @@ export async function runCheck(
   spec: CheckSpec,
   options: RunOptions = {},
 ): Promise<CheckResult> {
-  const cwd = spec.cwd ?? options.cwd;
+  const cwd = spec.cwd === undefined
+    ? options.cwd
+    : isAbsolute(spec.cwd)
+      ? spec.cwd
+      : join(options.cwd ?? process.cwd(), spec.cwd);
   const raw = await executeCommand(spec.command, {
     ...options,
     cwd,

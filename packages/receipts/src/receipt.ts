@@ -11,6 +11,7 @@ import {
   receiptId,
   stableStringify,
 } from "./canonical.ts";
+import { redactCommand, type RedactOptions } from "./redact.ts";
 import type {
   Receipt,
   ReceiptCheck,
@@ -139,11 +140,12 @@ export function toReceiptChecks(
     baselineSignature?: string | null;
     required?: boolean;
   }>,
+  redact: RedactOptions = {},
 ): ReceiptCheck[] {
   return checks.map((check) => {
     const result: ReceiptCheck = {
       name: check.name,
-      command: check.command,
+      command: redactCommand(check.command, redact),
       status: check.status as ReceiptCheck["status"],
       baselineStatus: (check.baselineStatus ?? "unknown") as ReceiptCheck["baselineStatus"],
       durationMs: Math.max(0, Math.round(check.durationMs)),

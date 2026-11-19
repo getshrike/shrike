@@ -9,12 +9,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
-name = "anyhow"
-version = "1.0.104"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
-
-[[package]]
 name = "arrayvec"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -784,7 +778,6 @@ name = "shrike-graph"
 version = "1.0.0"
 dependencies = [
  "blake3",
- "rayon",
  "serde",
  "serde_json",
  "shrike-core",
@@ -819,11 +812,9 @@ dependencies = [
 name = "shrike-receipt"
 version = "1.0.0"
 dependencies = [
- "blake3",
  "serde",
  "serde_json",
  "sha2",
- "shrike-core",
 ]
 
 [[package]]
@@ -833,7 +824,6 @@ dependencies = [
  "serde",
  "serde_json",
  "shrike-core",
- "shrike-syntax",
  "tempfile",
 ]
 
@@ -997,10 +987,6 @@ dependencies = [
 [[package]]
 name = "xtask"
 version = "1.0.0"
-dependencies = [
- "anyhow",
- "serde_json",
-]
 
 [[package]]
 name = "zmij"

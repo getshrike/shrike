@@ -1,0 +1,33 @@
+{
+  "source": "next analyze export",
+  "version": "16.4.0",
+  "files": ["app/page.tsx", "lib/dynamic.ts", "lib/helper.ts"],
+  "symbols": [
+    "app/page.tsx#default",
+    "lib/dynamic.ts#Widget",
+    "lib/helper.ts#helper"
+  ],
+  "routes": [
+    {
+      "route": "/",
+      "runtime": "client",
+      "files": ["app/page.tsx"],
+      "symbols": ["app/page.tsx#default"]
+    }
+  ],
+  "clientReferences": [
+    {
+      "from": "app/page.tsx",
+      "to": "lib/dynamic.ts#Widget",
+      "kind": "client-component"
+    }
+  ],
+  "sizes": {
+    "app/page.tsx": 1200,
+    "lib/dynamic.ts": 250,
+    "lib/helper.ts": 200,
+    "app/page.tsx#default": 50,
+    "lib/dynamic.ts#Widget": 50,
+    "lib/helper.ts#helper": 50
+  }
+}

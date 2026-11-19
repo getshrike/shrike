@@ -103,12 +103,34 @@ export async function requestEngine<T = unknown>(
   } catch {
     throw new EngineUnavailableError(`engine returned invalid JSON: ${line.slice(0, 200)}`);
   }
+  if (typeof response !== "object" || response === null) {
+    throw new EngineUnavailableError("engine response was not an object");
+  }
+  if (response.protocolVersion !== "1.0") {
+    throw new EngineUnavailableError(
+      `engine response protocol version ${String(response.protocolVersion)} is not supported; expected 1.0`,
+    );
+  }
   if (response.id !== id) {
     throw new EngineUnavailableError("engine response id did not match the request");
   }
-  if (!response.ok) {
+  if (response.ok === true) {
+    // A partial result is not a proof. An omitted result must fail closed,
+    // exactly like a malformed response.
+    if (!("result" in response) || response.result === undefined) {
+      throw new EngineUnavailableError("engine response omitted the result payload");
+    }
+    return response.result as T;
+  }
+  if (response.ok === false) {
     const error = response.error;
+    if (
+      typeof error !== "object" || error === null ||
+      typeof error.code !== "string" || typeof error.message !== "string"
+    ) {
+      throw new EngineUnavailableError("engine error response omitted its code or message");
+    }
     throw new EngineUnavailableError(`${error.code}: ${error.message}`);
   }
-  return response.result as T;
+  throw new EngineUnavailableError("engine response did not contain a boolean ok field");
 }

@@ -1,7 +1,7 @@
 # Shrike 1.0 — Tracker
 
 > **Canonical design:** [`MASTER_PROMPT.md`](MASTER_PROMPT.md)
-> **Status:** implementation complete for phases 0–3 and the local distribution surfaces; phase 4 evidence is partial; external launch items are blocked
+> **Status:** implementation complete for phases 0–4 and the local distribution/hardening surfaces; external launch, design-partner, publish, and real-app acceptance items are blocked
 > **Last updated:** 2026-11-20
 
 This tracker is authoritative for Shrike 1.0 status. A phase is not done because
@@ -30,19 +30,20 @@ demonstrated and the evidence is linked here.
 - **Design package:** complete and validated in this repository. The root contains
   the master prompt, 13 design docs, 7 plans, 9 prompts, 8 research documents, and
   6 JSON Schemas. Link, task-ID, decision-ID, and schema-structure checks pass.
-- **Implementation:** phases 0–3 are complete and exercised by the Rust,
+- **Implementation:** phases 0–4 are complete and exercised by the Rust,
   Node, fixture, corpus, and prune e2e gates. The CLI, verifier, receipts,
   hooks, action, and MCP server are implemented. Phase 4 (Next.js build
-  evidence) now has discovery, JSONL/object ingestion, a version guard, join
-  coverage, route/byte attribution, receipt population, `--require-build-evidence`,
-  and build-edge feedback into reachability. The must-not-report corpus now runs
-  every case as its own project in both static and build-evidence modes from a
-  clean cache (250 cases, zero protected symbols reported). The remaining phase 4
-  items are depth work (bounded-memory streaming, suffix/module-ID matching,
-  client/server verdicts, unknown sizes, server-action manifest edges, stale/
-  build-failed statuses) and are listed as `in-progress` below. External launch,
-  design-partner, publish, and real-app acceptance items are `blocked` on
-  credentials or participants, not on code.
+  evidence) includes bounded-memory JSONL streaming, module-ID and suffix
+  matching, per-candidate client/server verdicts, unknown-size accounting,
+  server-action/client-reference build edges, the client-boundary leak
+  diagnostic, stale/build-failed statuses, receipt population,
+  `--require-build-evidence`, and build-edge feedback into reachability. The
+  must-not-report corpus runs every case as its own project in both static and
+  build-evidence modes from a clean cache (250 cases, zero protected symbols
+  reported), and eleven `fixtures/build-graph/` scenarios cover the join,
+  fallback, and boundary matrix. External launch, design-partner, publish, and
+  real-app acceptance items are `blocked` on credentials or participants, not on
+  code.
 - **Prior prototype:** not a dependency. The old tree was removed; a backup
   exists outside the repository only as a safety net. No code, schema, or fixture
   from it is reused.
@@ -57,7 +58,7 @@ demonstrated and the evidence is linked here.
 | 1 | [Rust engine](plans/PLAN-1-rust-engine.md) | `done` | Engine builds, fixtures pass, budgets met |
 | 2 | [Graph and delta](plans/PLAN-2-graph-and-delta.md) | `done` | Orphan delta correct; corpus clean |
 | 3 | [Verification and receipts](plans/PLAN-3-verification-and-receipts.md) | `done` | End-to-end verified deletion PR + receipt |
-| 4 | [Build graph and Next.js](plans/PLAN-4-build-graph-and-nextjs.md) | `in-progress` | Build evidence join works; JSONL, routes, bytes, feedback, receipt integration pending |
+| 4 | [Build graph and Next.js](plans/PLAN-4-build-graph-and-nextjs.md) | `done` | Build evidence join, streaming, verdicts, bytes, boundaries, fallbacks, fixtures, and receipts green; real-app coverage is a release gate |
 | 5 | [Distribution and launch](plans/PLAN-5-distribution-and-launch.md) | `in-progress` | Hooks + Action + MCP done; design partners and publish blocked |
 | 6 | [Hardening and scale](plans/PLAN-6-hardening-and-scale.md) | `in-progress` | Corpus, scale, benchmarks done; labeled set and release blocked |
 
@@ -82,7 +83,7 @@ demonstrated and the evidence is linked here.
 | 0.11 | Build must-not-report corpus | `done` | ≥ 100 entries from framework docs and real apps | `fixtures/must-not-report/` (250 entries, 21 categories) |
 | 0.12 | Build delta fixtures | `done` | Nine scenarios from `docs/04` §11 | `fixtures/delta/` (14 scenarios); `node scripts/delta-fixtures.mjs` |
 | 0.13 | Build verification fixtures | `done` | Apply, bisect, revert, flaky, known-failure | `fixtures/verification/` (6 scenarios); `node scripts/verify-fixtures.mjs` |
-| 0.14 | Wire CI | `done` | Rust, Node, schemas, corpus, fixtures, bench smoke | `.github/workflows/ci.yml`; `.github/workflows/benchmark.yml` |
+| 0.14 | Wire CI | `done` | Rust, Node, schemas, corpus, fixtures, bench smoke | `.github/workflows/ci.yml`; `.github/workflows/nightly.yml` |
 | 0.15 | Record decisions and tracker | `done` | D-001…D-018 recorded; phase tables match plans | this file §6; `docs/12-decision-log.md` |
 
 ### Phase 1 — Rust engine
@@ -120,7 +121,7 @@ demonstrated and the evidence is linked here.
 | 2.7 | Cascade closure | `done` | Exclusive ownership; stop conditions; unknown blocks | `crates/shrike-delta/src/`; `fixtures/delta/` |
 | 2.8 | Batch conflict graph | `done` | No shared files/SCC/order within a batch | `crates/shrike-plan/src/`; plan tests |
 | 2.9 | Blast-radius guard | `done` | Batch over limit is split or refused with a reason | `crates/shrike-plan/src/`; batch cap tests |
-| 2.10 | Impact estimation | `in-progress` | Files, lines, and symbols reported; route/byte impact pending phase 4 | `crates/shrike-delta/src/`; plan totals |
+| 2.10 | Impact estimation | `done` | Files, lines, and symbols reported; route/byte impact available | delta/plan report merged-span lines, files, and symbols; `shrike evidence` reports route/shared/matched bytes and `prune` receipts record the build method/hash; `fixtures/build-graph/` and `packages/cli/test/build-evidence.test.mjs` |
 | 2.11 | `shrike delta` | `done` | JSON + human output; schema-valid | `packages/cli/src/main.ts`; `scripts/e2e-prune.mjs` |
 | 2.12 | `shrike plan` | `done` | Batches with impact and blast radius | `packages/cli/src/main.ts`; `scripts/e2e-prune.mjs` |
 | 2.13 | Delta fixtures + corpus | `done` | Nine scenarios; zero corpus findings | `node scripts/delta-fixtures.mjs`; `node scripts/corpus-runner.mjs` |
@@ -158,20 +159,20 @@ demonstrated and the evidence is linked here.
 |---|---|---|---|---|
 | 4.1 | Snapshot discovery | `done` | Finds the snapshot; runs export only with `--build` | `packages/cli/src/build.ts` discovers `.next/analyze`, `.shrike/build`, and `next-analyze`, or reads `--build <path>`; `packages/cli/test/build-evidence.test.mjs` |
 | 4.2 | Version guard | `done` | 16.4+ full; 16.1–16.3 partial; older unsupported | `crates/shrike-evidence/src/lib.rs` capability/status tests; lower package/evidence version wins |
-| 4.3 | JSONL parser | `in-progress` | Streaming; tolerates additive fields | JSON object and JSONL both parse; malformed input fails closed; unknown records are ignored. The file is read whole, so bounded-memory streaming remains open |
-| 4.4 | Module index | `in-progress` | Path and ID lookup; normalized | loader, query, `turbopack://`, absolute, and relative paths normalize; exact path/symbol match. Suffix and module-ID indexes remain open |
+| 4.3 | JSONL parser | `done` | Streaming; tolerates additive fields | `packages/cli/src/build.ts` streams JSONL in 64 KiB chunks with a `StringDecoder`; object/array and JSONL inputs normalize; malformed lines fail closed with line numbers; unknown record families are counted; 10,000-line host test and `fixtures/build-graph/` |
+| 4.4 | Module index | `done` | Path and ID lookup; normalized | loader prefixes, query strings, `turbopack://`, `file://`, absolute, and relative paths normalize; module IDs map to paths; exact path/symbol match then longest suffix; duplicate evidence keys are deterministic; host and Rust tests |
 | 4.5 | Module-to-file join | `done` | ≥ 90% coverage on a real app; unresolved recorded | coverage thresholds `full` ≥ 0.95, `partial` ≥ 0.80, `low-coverage` < 0.80; unmatched listed; `fixtures/build/` |
-| 4.6 | Presence/absence | `in-progress` | Client/server distinction; suppress on presence | membership join and presence-based suppression are wired through `augment-build`; per-candidate `present`/`absent`/`unknown` and client/server verdicts remain open |
+| 4.6 | Presence/absence | `done` | Client/server distinction; suppress on presence | `candidate_verdicts` reports `present`, `server-only`, `absent`, `unknown`, `unsupported`, and `stale` per candidate; client-route presence beats a server layer; `fixtures/build-graph/server-action/` and `client-boundary/` |
 | 4.7 | Route attribution | `done` | Per-route membership; shared chunks attributed once | per-route files/symbols/bytes in `fixtures/build/manifest.json`; shared modules counted once in `bytes.shared` |
-| 4.8 | Byte impact | `in-progress` | Per-route and total; no double counting | `matched`/`shared`/`totalRoute` are reported and tested; missing sizes are treated as zero rather than `unknown` |
+| 4.8 | Byte impact | `done` | Per-route and total; no double counting | `matched`/`shared`/`totalRoute` are reported; missing sizes increment `bytes.unknown`, set `bytes.partial`, and are listed in `unknownSizes`; non-full joins set `bytes.partial`; `fixtures/build-graph/shared-chunk/` and host/Rust tests |
 | 4.9 | Build-edge feedback | `done` | Adds certain edges; suppresses false positives | `augment_snapshot` seeds build-live modules/symbols and follows known edges; `augment-build` engine command; Rust and CLI closure tests |
-| 4.10 | Server actions | `in-progress` | Client-reference manifest considered; conservative fallback | `use server` exports are static entries; client-reference records add liveness through the build join; explicit manifest edges remain open |
-| 4.11 | Client boundaries | `in-progress` | `"use client"` entry semantics; leak diagnostic | static `use client` semantics are implemented; build-layer mismatch/leak diagnostics remain open |
+| 4.10 | Server actions | `done` | Client-reference manifest considered; conservative fallback | `client-reference` records create `kind: "build"`, `certainty: "certain"` edges, seed liveness, and produce `server-only` verdicts; `fixtures/build-graph/server-action/` and Rust/host tests |
+| 4.11 | Client boundaries | `done` | `"use client"` entry semantics; leak diagnostic | static `use client` semantics plus `client-boundary-leak` warning for server-layer files in client routes; opt out with `clientBoundaryLeaks: false` or `--no-client-boundary-leaks`; `fixtures/build-graph/client-boundary/` |
 | 4.12 | Proxy/middleware/metadata | `done` | Entry and matcher semantics; never dead | `crates/shrike-graph/src/entries.rs`; corpus proxy/middleware/metadata cases |
-| 4.13 | Fallback matrix | `in-progress` | Missing/stale/parse-error/unsupported → static-only with status | `full`, `partial`, `low-coverage`, `none`, `unsupported`, and `malformed` are emitted; `stale` and `build-failed` remain open because Shrike consumes a snapshot rather than running a build |
+| 4.13 | Fallback matrix | `done` | Missing/stale/parse-error/unsupported → static-only with status | `full`, `partial`, `low-coverage`, `none`, `unsupported`, `malformed`, `stale`, and `build-failed` are explicit; `--run-build` records failures; missing explicit paths exit 4; `--require-build-evidence` fails closed; `fixtures/build-graph/{missing,stale,malformed}/` |
 | 4.14 | Receipt integration | `done` | Build evidence status and hash recorded | every prune receipt carries source, snapshot hash, version, and status; `absent` is explicit; `--require-build-evidence` fails closed; `packages/cli/test/build-evidence.test.mjs` |
 | 4.15 | Corpus with/without evidence | `done` | Green in both modes | `scripts/corpus-runner.mjs` analyzes all 250 cases per-project in static and `augment-build` modes from a clean cache; 0 protected symbols reported and 8/8 remaining candidates suppressed by evidence |
-| 4.16 | Docs update | `done` | `docs/06` matches behavior | `docs/06-build-graph-and-nextjs.md` implementation status and fallback notes updated |
+| 4.16 | Docs update | `done` | `docs/06` matches behavior | `docs/06-build-graph-and-nextjs.md` implementation status, fallback matrix, fixtures, and acceptance checklist updated for streaming, verdicts, unknown sizes, stale/build-failed, server actions, and client boundaries |
 
 ### Phase 5 — Distribution and launch
 
@@ -183,16 +184,16 @@ demonstrated and the evidence is linked here.
 | 5.4 | Fast-path budget | `done` | ≤ 60 s or delta-only | `shrike hook run` 55 s timeout; `packages/cli/src/main.ts` |
 | 5.5 | Hook output + brief | `done` | One-screen summary + JSON `CleanupBrief` | `packages/agent/src/brief.ts`; `.shrike/brief.json` contract test |
 | 5.6 | Hook safety | `done` | No source upload; `.shrike/` only; timeout | hook writes `.shrike/` only; prompt-injection sanitization; contract test |
-| 5.7 | GitHub Action | `in-progress` | Opens a draft PR on a test repo | partial: `packages/action/` supports delta/prune and refuses forks; no external test repo run |
+| 5.7 | GitHub Action | `blocked` | Opens a draft PR on a test repo | `packages/action/` supports delta/prune, records outputs, and refuses forks; local tests cover delta thresholds, fork refusal, prune outputs, and unknown modes; external test-repo run is blocked on a test repository |
 | 5.8 | PR template + receipt comment | `done` | Per-batch commits; receipt link; rejected list | `packages/receipts/src/render.ts`; `scripts/e2e-prune.mjs` per-batch commits |
 | 5.9 | MCP wrapper | `done` | 4 tools; no mutation | `packages/cli/src/main.ts` MCP server; four-tool contract test |
-| 5.10 | Package naming + publish dry run | `blocked` | Name available; tarball contents verified | blocked: npm scope availability and publish dry run require registry credentials |
+| 5.10 | Package naming + publish dry run | `blocked` | Name available; tarball contents verified | local tarball gate passes (`scripts/check-package.mjs`: launcher, dist, README, license; no source/tests/fixtures); npm scope availability and registry publish dry run remain blocked on credentials |
 | 5.11 | Landing test | `blocked` | Two positionings; qualified sign-ups measured | blocked: landing test requires participants |
 | 5.12 | Teardown content | `blocked` | 10 public Next.js repos; before/after receipts | blocked: public repo teardown requires publishing and review |
-| 5.13 | Design-partner kit | `in-progress` | One-command trial; read-only first | partial: README and hook install are the trial path; no packaged partner kit |
+| 5.13 | Design-partner kit | `done` | One-command trial; read-only first | `design-partner/` ships a read-only `trial.sh` (delta + plan), trust-boundary guide, triage template, and one-command removal; exercised on a synthetic feature branch |
 | 5.14 | Design partners | `blocked` | 3 teams; at least 1 merged PR each | blocked: requires design partners |
 | 5.15 | Launch | `blocked` | Post, demo, receipt screenshots | blocked: requires launch channel and demo assets |
-| 5.16 | Docs update | `in-progress` | `docs/07` matches behavior | partial: `docs/07` needs a final pass after distribution work |
+| 5.16 | Docs update | `done` | `docs/07` matches behavior | `docs/07` updated for actual Action inputs/outputs, hook run, launcher resolution, packaging gate, design-partner kit, and local acceptance evidence |
 
 ### Phase 6 — Hardening and scale
 
@@ -203,10 +204,10 @@ demonstrated and the evidence is linked here.
 | 6.3 | Calibration report | `blocked` | Per-rule precision + calibration curve | blocked: calibration needs the labeled set |
 | 6.4 | Monorepo scale | `done` | 10k+ files; workspace boundaries correct | `benchmarks/harness.mjs` 10k run; monorepo fixture |
 | 6.5 | 10k performance | `done` | All budgets met on reference hardware | this file §5; `benchmarks/README.md` |
-| 6.6 | Security review | `in-progress` | Trust boundaries, redaction, injection tests | partial: path guards, config isolation, sanitization; no external security review |
+| 6.6 | Security review | `done` | Trust boundaries, redaction, injection tests | Internal review in `docs/09` §11; config and verifier child environments are allowlisted; redaction, prompt-injection, render, traversal, fork, dirty-tree, and cache-corruption tests pass; `pnpm audit --prod` clean and `cargo audit` 0 vulnerabilities (1550 advisories, 108 deps); external audit and signed release/launcher checksum remain blocked under 6.7 |
 | 6.7 | Supply chain | `blocked` | Signed binaries, checksums, provenance, audit | blocked: signed binaries and provenance require release infrastructure |
-| 6.8 | Failure injection | `in-progress` | Crash, timeout, corrupted cache, failed revert | partial: crash/timeout/revert tests exist; cache-corruption injection is pending |
-| 6.9 | Docs and README final | `in-progress` | Every claim reproducible; links valid | partial: README and tracker updated; final reproducible-claim pass pending |
+| 6.8 | Failure injection | `done` | Crash, timeout, corrupted cache, failed revert | engine crash/timeout tests; corrupted snapshot and manifest are discarded and rebuilt; `cache verify` reports broken entries; revert-failure/recovery e2e; `packages/cli/test/contracts.test.mjs` |
+| 6.9 | Docs and README final | `done` | Every claim reproducible; links valid | README status, build-graph row, quick start, and MIT license reconciled with the implementation; `node scripts/check-links.mjs` (115 files), `node scripts/check-docs.mjs` (13 docs, 7 plans, 111 task IDs), and `node scripts/check-schemas.mjs` (1231 fixture files) pass |
 | 6.10 | Release candidate | `blocked` | 1.0.0-rc.1 on npm + GitHub | blocked: npm release requires credentials |
 | 6.11 | 1.0 release | `blocked` | Tagged, signed, published | blocked: release requires credentials and external validation |
 | 6.12 | Opt-in telemetry | `deferred` | Not in v1; revisit after adoption | deferred by D-016 |
@@ -217,15 +218,15 @@ demonstrated and the evidence is linked here.
 
 | Metric | Target | Actual | Date | Notes |
 |---|---|---|---|---|
-| 1,000-file cold scan | ≤ 1.5 s | 285 ms | 2026-11-20 | release engine; `benchmarks/harness.mjs` |
-| 1,000-file warm scan | ≤ 400 ms | 213 ms | 2026-11-20 | cache hit; byte-identical snapshot |
-| 10,000-file cold scan | ≤ 6 s | 2.23 s | 2026-11-20 | release engine; 10,001 files |
-| 10,000-file warm scan | ≤ 2 s | 1.29 s | 2026-11-20 | cache hit; 22,018 symbols |
-| 10,000-file peak RSS | ≤ 600 MB | 229 MB | 2026-11-20 | `/usr/bin/time -v` |
-| Delta (1,000 files, warm) | ≤ 1 s | not measured | — | delta path shares the snapshot cache |
+| 1,000-file cold scan | ≤ 1.5 s | 222 ms | 2026-11-20 | release engine; 7-run median; AMD Ryzen 7 5700U, WSL2 |
+| 1,000-file warm scan | ≤ 400 ms | 146 ms (178 ms p95) | 2026-11-20 | cache hit; 7 measured runs; byte-identical snapshot |
+| 10,000-file cold scan | ≤ 6 s | 2.70 s | 2026-11-20 | release engine; 10,001 files; 7-run median |
+| 10,000-file warm scan | ≤ 2 s | 1.37 s (1.47 s p95) | 2026-11-20 | cache hit; 22,018 symbols |
+| 10,000-file peak RSS | ≤ 600 MB | 231 MB | 2026-11-20 | harness `/proc/<pid>/status` VmHWM |
+| Delta (1,000 files, warm) | ≤ 1 s | 346 ms (408 ms p95) | 2026-11-20 | base/head snapshots; 1 newly dead symbol; 7 measured runs |
 | Fast path (delta + typecheck + lint) | ≤ 60 s | 55 s hard timeout | 2026-11-20 | `shrike hook run`; no real-app timing yet |
 | Full receipt | ≤ 10 min | not measured | — | requires a real app |
-| Must-not-report false positives | 0 | 0 | 2026-11-20 | 250 entries; 13 candidates, 0 protected symbols |
+| Must-not-report false positives | 0 | 0 | 2026-11-20 | 250 entries; 8 candidates, 0 protected symbols |
 | Batches verified without edits | ≥ 80% | 1/1 synthetic | 2026-11-20 | e2e verified batch; no partner data |
 | PRs with orphan-delta hit | ≥ 30% | no real sample | — | blocked on labeled set |
 | Design partners merged | ≥ 3 | 0 | 2026-11-20 | blocked: no partners yet |
@@ -366,6 +367,9 @@ not commitments; commitments are in the plans.
 | 2026-11-20 | Implemented build-evidence discovery, JSONL/object ingestion, version guard, join coverage, route/byte attribution, and receipt population | `packages/cli/src/build.ts`, `crates/shrike-evidence/`, `fixtures/build/`, `packages/cli/test/build-evidence.test.mjs` |
 | 2026-11-20 | Added build-edge feedback: build-live modules seed a liveness closure over known edges; build evidence can only suppress, never delete | `crates/shrike-evidence/`, `crates/shrike-engine/`, `packages/cli/src/main.ts` |
 | 2026-11-20 | Fixed root-package self-reference resolution and dynamic imports inside function bodies; made snapshot caches resolver-aware; corpus runner now analyzes each case independently in static and evidence modes | `crates/shrike-resolve/`, `crates/shrike-syntax/`, `crates/shrike-engine/`, `scripts/corpus-runner.mjs` |
+| 2026-11-20 | Completed the local security review: allowlisted config and check environments, added prompt-injection and render tests, recorded audits, and documented residual release gates | `packages/verifier/src/run.ts`, `packages/cli/src/config.ts`, `packages/agent/test/`, `packages/receipts/test/`, `docs/09-security-and-trust.md`, `.github/workflows/ci.yml` |
+| 2026-11-20 | Added a warm delta measurement and p95 reporting to the benchmark harness; recorded 1k/10k actuals | `benchmarks/harness.mjs`, `benchmarks/README.md`, `TRACKER.md` |
+| 2026-11-20 | Reconciled README, license, and docs with the implemented build-graph and distribution state | `README.md`, `LICENSE`, `packages/cli/package.json`, `docs/08-benchmarks-and-confidence.md` |
 
 ---
 
@@ -395,6 +399,15 @@ implementation starts; design-package validation is recorded below.
 | 2026-11-20 | 4.1–4.16 | `node scripts/check.mjs` | OK: build fixture joins `low-coverage`, coverage 0.714, 2,600 matched bytes; all gates green |
 | 2026-11-20 | 0.8, 3.14 | `cargo fmt --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `pnpm -r typecheck`; `pnpm test:node` | OK: 38 Node tests; no clippy warnings |
 | 2026-11-20 | 2.4, 4.15, 6.8 | `cargo test -p shrike-resolve`; `node scripts/corpus-runner.mjs`; `node scripts/check.mjs` | OK: root-package self-reference regression test; 250/250 corpus cases green in both modes; all local gates green |
+| 2026-11-20 | 4.3, 4.4, 4.6, 4.8, 4.10, 4.11, 4.13 | `node --test packages/cli/test/build-evidence.test.mjs` | OK: 16 tests — streaming/module IDs/layers/client references, suffix matching, stale, build-failed, unknown sizes/leak opt-out, 10k-line JSONL, fail-closed prune |
+| 2026-11-20 | 4.2, 4.6, 4.8, 4.10, 4.11, 4.13 | `cargo test -p shrike-evidence` | OK: 13 tests — joins, verdicts, shared bytes, unknown sizes, leaks, client-reference liveness, stale/build-failed |
+| 2026-11-20 | 4.1–4.16 | `node scripts/run-fixtures.mjs` | OK: 14 delta, 6 verification, 1 build, 11 build-graph scenarios; all joins and fallbacks pass |
+| 2026-11-20 | 0.8, 0.9 | `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo test --workspace` | OK: all Rust tests pass; no clippy warnings |
+| 2026-11-20 | 0.9, 5.1–5.9, 6.6 | `pnpm -r typecheck`; `pnpm test:node` | OK: typecheck green; 73 Node tests pass (agent, action, build evidence, CLI contracts, hooks, receipts, recovery, verifier) |
+| 2026-11-20 | 0.11, 0.12, 0.13, 2.13, 3.4–3.16, 4.1–4.16, 6.8 | `node scripts/check.mjs` | OK: schemas/receipts/package/corpus/14 delta/6 verification/1 build/11 build-graph/prune e2e all green |
+| 2026-11-20 | 6.6 | `pnpm audit --prod`; `cargo audit --json` | OK: pnpm no known vulnerabilities; cargo audit 0 vulnerabilities (1550 advisories, 108 dependencies) |
+| 2026-11-20 | 6.6, 5.5, 5.6 | `node --test packages/agent/test/brief.test.mjs`; `node --test packages/receipts/test/redact.test.mjs`; `node --test packages/receipts/test/render.test.mjs`; `node --test packages/verifier/test/checks.test.mjs` | OK: injection stripping/labels/caps, synthetic secret redaction, Markdown escaping, safe check environment |
+| 2026-11-20 | 6.5, 6.9 | `node benchmarks/harness.mjs --files 1000 --runs 7`; `node benchmarks/harness.mjs --files 10000 --runs 7`; `node scripts/check-links.mjs`; `node scripts/check-docs.mjs`; `node scripts/check-schemas.mjs` | OK: 1k 222/146 ms cold/warm, 346 ms delta; 10k 2.70/1.37 s cold/warm, 231 MB RSS; 115 links, 13 docs/7 plans/111 IDs, 1231 fixture files |
 
 ---
 

@@ -16,6 +16,10 @@ export interface FakeEngineOptions {
   defaultResult?: unknown;
   /** Exit code after handling one request. */
   exitCode?: number;
+  /** Protocol version written into envelopes. Default "1.0". */
+  protocolVersion?: string;
+  /** Omit the result field from a successful envelope. */
+  omitResult?: boolean;
 }
 
 /**
@@ -35,6 +39,8 @@ export function writeFakeEngine(
     responses: options.responses ?? {},
     defaultResult: options.defaultResult,
     exitCode: options.exitCode ?? 0,
+    protocolVersion: options.protocolVersion ?? "1.0",
+    omitResult: options.omitResult ?? false,
   });
   const source = `#!/usr/bin/env node
 const config = ${payload};
@@ -54,7 +60,7 @@ process.stdin.on("end", async () => {
   }
   if (canned && canned.error) {
     process.stdout.write(JSON.stringify({
-      protocolVersion: "1.0",
+      protocolVersion: config.protocolVersion,
       id: request.id,
       ok: false,
       error: canned.error,
@@ -63,7 +69,7 @@ process.stdin.on("end", async () => {
   }
   if (!canned && config.defaultResult === undefined) {
     process.stdout.write(JSON.stringify({
-      protocolVersion: "1.0",
+      protocolVersion: config.protocolVersion,
       id: request.id,
       ok: false,
       error: { code: "unknown_command", message: "no fake response for " + request.command, details: [] },
@@ -72,12 +78,13 @@ process.stdin.on("end", async () => {
     return;
   }
   const result = canned && "result" in canned ? canned.result : config.defaultResult;
-  process.stdout.write(JSON.stringify({
-    protocolVersion: "1.0",
+  const envelope = {
+    protocolVersion: config.protocolVersion,
     id: request.id,
     ok: true,
-    result,
-  }) + "\\n");
+    ...(config.omitResult ? {} : { result }),
+  };
+  process.stdout.write(JSON.stringify(envelope) + "\\n");
   process.exit(config.exitCode);
 });
 `;

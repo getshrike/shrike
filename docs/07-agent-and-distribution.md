@@ -2,7 +2,7 @@
 
 > **Parent:** [MASTER_PROMPT.md](../MASTER_PROMPT.md) · **Tracker:** [TRACKER.md](../TRACKER.md)
 > **Status:** canonical · Authored 2026-11-20
-> **Implementation status (2026-11-20):** Claude Code, Cursor, and OpenCode hooks, the GitHub Action, the PR/receipt renderers, and the four-tool read-only MCP server are implemented. npm publishing, signed releases, landing tests, and design-partner trials are blocked on credentials or participants.
+> **Implementation status (2026-11-20):** Claude Code, Cursor, and OpenCode hooks, the GitHub Action, the PR/receipt renderers, the four-tool read-only MCP server, and a read-only [design-partner kit](../design-partner/README.md) are implemented. npm publishing, signed releases, landing tests, and design-partner trials are blocked on credentials or participants. Local packaging checks verify the tarball contents; the publish dry run itself needs registry access.
 
 ---
 
@@ -183,13 +183,13 @@ artifact.
 
 | Input | Default | Meaning |
 |---|---|---|
-| `mode` | `delta` | `delta`, `scan`, or `prune` |
+| `mode` | `delta` | `delta` (read-only) or `prune` (verified cleanup PR) |
 | `base` | `origin/${{ github.base_ref }}` | Base ref |
-| `fail-on` | `newly-dead` | `never`, `newly-dead`, `threshold:N` |
-| `checks` | `fast` | `fast`, `standard`, `full`, `none` |
-| `receipt` | `false` | Upload a receipt artifact |
-| `build-evidence` | `auto` | `auto`, `require`, `off` |
-| `version` | `latest` | Pinned Shrike version |
+| `max-items` | `0` | Fail delta mode when the count exceeds this value; `0` disables |
+
+Outputs: `count`, `delta-path` (delta mode); `outcome`, `receipts` (prune mode).
+The Action is a thin wrapper over the CLI; it does not re-implement analysis.
+`mode: prune` refuses a fork pull request and returns exit 2.
 
 ### 4.2 Permissions
 
@@ -278,6 +278,7 @@ never give an agent credentials it does not need.
 | `shrike receipt <id>` | Show a receipt | no |
 | `shrike evidence --build <path>` | Join build evidence | no |
 | `shrike hook install --claude|--cursor|--opencode` | Install a hook | config |
+| `shrike hook run` | One bounded delta for an agent lifecycle hook | cache |
 | `shrike mcp serve` | MCP server over stdio | no |
 | `shrike cache clean|verify` | Cache maintenance | cache |
 | `shrike version` | Version and protocol | no |
@@ -305,10 +306,15 @@ curl -fsSL https://shrike.dev/install.sh | sh
 
 - The npm package ships a launcher and optional platform packages containing the
   native engine.
-- The launcher verifies the binary checksum before spawning it.
+- The launcher resolves `SHRIKE_ENGINE`, a repository `target/{release,debug}`
+  build, `PATH`, and the platform package, in that order; the packaged path
+  verifies a `.sha256` sidecar when one is present.
 - A missing platform package fails closed with a clear message and a link to the
   standalone binary.
 - No postinstall script downloads an unverified binary.
+- Local dry-run: `npm pack --dry-run` in `packages/cli` must list the launcher,
+  README, license, and platform package metadata, and must not list source,
+  tests, or fixtures. The registry publish itself is a release gate.
 
 ---
 
@@ -343,16 +349,19 @@ These are measured in design-partner trials, not inferred from downloads.
 
 ## 11. Acceptance criteria
 
-- [ ] `shrike hook install --claude` is idempotent and does not duplicate the
+- [x] `shrike hook install --claude` is idempotent and does not duplicate the
       hook block.
-- [ ] The hook completes within 60 s on a 1,000-file app or degrades to
+- [x] The hook completes within 60 s on a 1,000-file app or degrades to
       delta-only.
-- [ ] The hook never applies a deletion.
-- [ ] The hook writes only under `.shrike/` and makes no network call.
-- [ ] The Action opens a draft PR on a test repository.
-- [ ] The Action refuses `prune` on a fork.
-- [ ] The MCP server exposes exactly four read-only tools.
-- [ ] The MCP server refuses paths outside the working directory.
+- [x] The hook never applies a deletion.
+- [x] The hook writes only under `.shrike/` and makes no network call.
+- [ ] The Action opens a draft PR on a test repository (release gate: needs an
+      external test repository).
+- [x] The Action refuses `prune` on a fork.
+- [x] The MCP server exposes exactly four read-only tools.
+- [x] The MCP server refuses paths outside the working directory.
+- [x] The design-partner kit runs read-only delta and plan, explains the trust
+      boundary, and removes with one command.
 - [ ] The agent brief is capped and strips instruction-like comments.
 - [ ] The CLI exits 4, not 0, when the engine is missing.
 - [ ] `--json` output validates against the schemas.

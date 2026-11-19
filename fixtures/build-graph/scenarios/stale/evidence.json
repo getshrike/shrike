@@ -1,0 +1,21 @@
+{
+  "source": "next analyze export",
+  "version": "16.4.0",
+  "files": ["app/page.tsx"],
+  "symbols": ["app/page.tsx#default"],
+  "routes": [
+    {
+      "route": "/",
+      "runtime": "client",
+      "files": ["app/page.tsx"],
+      "symbols": ["app/page.tsx#default"]
+    }
+  ],
+  "sizes": {
+    "app/page.tsx": 1200,
+    "app/page.tsx#default": 50
+  },
+  "fileHashes": {
+    "app/page.tsx": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

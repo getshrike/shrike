@@ -17,7 +17,7 @@ const UNTRUSTED_NOTICE =
 const INSTRUCTION_PATTERNS: RegExp[] = [
   /(?:ignore|disregard|forget)\s+(?:all\s+)?(?:previous|prior|above)\s+(?:instructions?|prompts?|rules?)/gi,
   /<\|(?:im_start|im_end|system|user|assistant)\|>/gi,
-  /^\s*(?:system|developer|assistant)\s*:/gim,
+  /(^|\s)(?:system|developer|assistant)\s*:/gim,
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {

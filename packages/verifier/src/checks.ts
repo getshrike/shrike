@@ -16,7 +16,8 @@ export interface DetectChecksOptions {
 
 interface ScriptDefinition {
   name: string;
-  script: string;
+  /** Accepted package.json script names, in preference order. */
+  scripts: string[];
   timeoutMs: number;
   reruns: number;
   tiers: CheckTier[];
@@ -25,33 +26,42 @@ interface ScriptDefinition {
 const SCRIPT_DEFINITIONS: ScriptDefinition[] = [
   {
     name: "typecheck",
-    script: "typecheck",
+    scripts: ["typecheck", "type-check", "tsc"],
     timeoutMs: 180_000,
     reruns: 0,
     tiers: ["fast", "standard", "full"],
   },
   {
     name: "lint",
-    script: "lint",
+    scripts: ["lint"],
     timeoutMs: 180_000,
     reruns: 0,
     tiers: ["fast", "standard", "full"],
   },
   {
     name: "test",
-    script: "test",
+    scripts: ["test"],
     timeoutMs: 600_000,
     reruns: 1,
     tiers: ["standard", "full"],
   },
   {
     name: "build",
-    script: "build",
+    scripts: ["build"],
     timeoutMs: 900_000,
     reruns: 0,
     tiers: ["full"],
   },
 ];
+
+/**
+ * A watch/dev script never terminates on its own, so it cannot be a verifier
+ * check. Detect the common forms and skip them instead of hanging a run.
+ */
+function isInteractiveScript(script: string): boolean {
+  return /(^|[\s;&|])(--watch|-w|--watchAll|watch)([\s;&|]|$)/i.test(script) ||
+    /\b(vite|webpack|next|nodemon)\s+(dev|serve)\b/i.test(script);
+}
 
 const TIER_RANK: Record<Exclude<CheckTier, "none">, number> = {
   fast: 0,
@@ -137,11 +147,14 @@ export function detectChecks(
   const specs: CheckSpec[] = [];
 
   for (const definition of SCRIPT_DEFINITIONS) {
-    if (!(definition.script in scripts)) continue;
+    const script = definition.scripts.find((name) => name in scripts);
+    if (script === undefined) continue;
+    const command = scripts[script] ?? "";
+    if (isInteractiveScript(command)) continue;
     if (TIER_RANK[definition.tiers[0] as Exclude<CheckTier, "none">] > rank) continue;
     specs.push({
       name: definition.name,
-      command: managerCommand(manager, definition.script),
+      command: managerCommand(manager, script),
       timeoutMs: options.timeoutMs ?? definition.timeoutMs,
       reruns:
         definition.name === "test"
