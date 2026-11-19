@@ -1,0 +1,19 @@
+name: "Shrike orphan delta"
+description: "Report newly dead code caused by a pull request, using the whole graph."
+inputs:
+  base:
+    description: "Base git ref"
+    required: false
+    default: ""
+  max-items:
+    description: "Fail when the delta exceeds this many items (0 disables)"
+    required: false
+    default: "0"
+outputs:
+  count:
+    description: "Number of newly dead items"
+  delta-path:
+    description: "Path to the JSON delta artifact"
+runs:
+  using: "node24"
+  main: "src/main.ts"

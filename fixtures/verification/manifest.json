@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "1.0",
+  "scenarios": [
+    {
+      "id": "pass",
+      "expected": "pass",
+      "reruns": 0,
+      "command": "node check.mjs",
+      "timeoutMs": 2000,
+      "notes": "verification fixture: pass"
+    },
+    {
+      "id": "fail",
+      "expected": "fail",
+      "reruns": 0,
+      "command": "node check.mjs",
+      "timeoutMs": 2000,
+      "notes": "verification fixture: fail"
+    },
+    {
+      "id": "flaky",
+      "expected": "flaky",
+      "reruns": 1,
+      "command": "node check.mjs",
+      "timeoutMs": 2000,
+      "notes": "verification fixture: flaky"
+    },
+    {
+      "id": "known-failure",
+      "expected": "known-failure",
+      "reruns": 0,
+      "command": "node check.mjs",
+      "timeoutMs": 2000,
+      "notes": "verification fixture: known-failure"
+    },
+    {
+      "id": "timeout",
+      "expected": "timeout",
+      "reruns": 0,
+      "command": "node check.mjs",
+      "timeoutMs": 200,
+      "notes": "verification fixture: timeout"
+    },
+    {
+      "id": "revert-failure",
+      "expected": "revert-failure",
+      "reruns": 0,
+      "command": "node check.mjs",
+      "timeoutMs": 2000,
+      "notes": "verification fixture: revert-failure",
+      "revertCommand": "node revert.mjs"
+    }
+  ]
+}

@@ -1,0 +1,483 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shrike.dev/schemas/graph-snapshot.schema.json",
+  "title": "Shrike GraphSnapshot",
+  "description": "Deterministic, source-free serialization of one repository graph. Every entity is keyed by a stable string so the snapshot is comparable across commits: file keys are normalized relative paths, symbol keys are path#Name, module keys are path#__module__, and entry keys are path#entryKey. Arrays are serialized in canonical order and contain no source text beyond names and spans.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "protocolVersion",
+    "toolVersion",
+    "configHash",
+    "resolverHash",
+    "files",
+    "symbols",
+    "modules",
+    "entries",
+    "edges",
+    "sccs",
+    "live",
+    "candidates",
+    "diagnostics"
+  ],
+  "$comment": "The snapshot hash is BLAKE3 over the canonical serialization. The cache key adds sorted file hashes, configHash, resolverHash, toolVersion, and protocolVersion. Invariant H1: same input produces the same snapshot bytes.",
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Snapshot schema version."
+    },
+    "protocolVersion": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Engine protocol version that produced the snapshot."
+    },
+    "toolVersion": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Shrike version that produced the snapshot."
+    },
+    "entryAdapterVersion": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Framework entry-adapter version. A change makes base and head incomparable."
+    },
+    "configHash": {
+      "$ref": "#/$defs/hash",
+      "description": "Hash of the normalized EngineConfig. A change invalidates comparability."
+    },
+    "resolverHash": {
+      "$ref": "#/$defs/hash",
+      "description": "Hash of the resolver configuration (tsconfig paths, aliases, workspace layout)."
+    },
+    "snapshotHash": {
+      "$ref": "#/$defs/hash",
+      "description": "Optional content hash of this snapshot's canonical serialization."
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Workspace layout used for comparability and monorepo attribution.",
+      "required": ["root", "packages"],
+      "properties": {
+        "root": { "type": "string", "minLength": 1 },
+        "packages": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "description": "File records sorted by normalized path. Invariant A1: sorted and unique.",
+      "items": { "$ref": "#/$defs/file" }
+    },
+    "symbols": {
+      "type": "array",
+      "description": "Symbol records sorted by (file, span.start, kind, name).",
+      "items": { "$ref": "#/$defs/symbol" }
+    },
+    "modules": {
+      "type": "array",
+      "description": "Module records sorted by path. Every module has a path#__module__ key.",
+      "items": { "$ref": "#/$defs/module" }
+    },
+    "entries": {
+      "type": "array",
+      "description": "Framework, package, test, and config entries sorted by entry key.",
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "edges": {
+      "type": "array",
+      "description": "Edges sorted by (source, target, kind, certainty). Unknown edges are retained.",
+      "items": { "$ref": "#/$defs/edge" }
+    },
+    "sccs": {
+      "type": "array",
+      "description": "Tarjan SCCs. Each SCC is sorted by symbol key; SCCs are sorted by their minimum symbol key. A cycle is deleted as a unit.",
+      "items": { "$ref": "#/$defs/scc" },
+      "uniqueItems": true
+    },
+    "live": {
+      "type": "array",
+      "description": "Canonical ascending list of live symbol keys (serialized FixedBitSet). Invariant F1: every live symbol has a witness.",
+      "items": { "$ref": "#/$defs/symbolKey" },
+      "uniqueItems": true
+    },
+    "candidates": {
+      "type": "array",
+      "description": "Canonical ascending list of deletion-candidate symbol keys. Never contains an entry, a public API symbol, or a symbol from an unparsed file.",
+      "items": { "$ref": "#/$defs/symbolKey" },
+      "uniqueItems": true
+    },
+    "witnesses": {
+      "type": "array",
+      "description": "Shortest witness paths for live symbols. Optional in a minimal snapshot; required for proof and delta explanations.",
+      "items": { "$ref": "#/$defs/witness" }
+    },
+    "proofs": {
+      "type": "array",
+      "description": "Auditable proof traces for candidates, including the unknown edges that would block deletion.",
+      "items": { "$ref": "#/$defs/proof" }
+    },
+    "diagnostics": {
+      "type": "array",
+      "description": "Parse, resolve, entry, and policy diagnostics. A missing fact is a diagnostic, not evidence of death.",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^(sha256|blake3):[0-9a-f]{64}$",
+      "description": "Content hash in algorithm:hex form."
+    },
+    "filePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^#]+$",
+      "description": "Normalized repository-relative path with forward slashes."
+    },
+    "symbolKey": {
+      "type": "string",
+      "pattern": "^[^#]+#[^#]+$",
+      "description": "Stable symbol key: normalized path#Name."
+    },
+    "moduleKey": {
+      "type": "string",
+      "pattern": "^[^#]+#__module__$",
+      "description": "Stable module key: normalized path#__module__."
+    },
+    "entryKey": {
+      "type": "string",
+      "pattern": "^[^#]+#[^#]+$",
+      "description": "Stable entry key, for example app/invoices/page.tsx#default."
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end", "line", "column"],
+      "properties": {
+        "start": { "type": "integer", "minimum": 0, "description": "Byte offset, inclusive." },
+        "end": { "type": "integer", "minimum": 0, "description": "Byte offset, exclusive." },
+        "line": { "type": "integer", "minimum": 1, "description": "1-based line." },
+        "column": { "type": "integer", "minimum": 1, "description": "1-based column." }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "code", "message"],
+      "properties": {
+        "severity": { "type": "string", "enum": ["error", "warning", "info"] },
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "file": { "$ref": "#/$defs/filePath" },
+        "span": { "$ref": "#/$defs/span" },
+        "details": { "type": "object" }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "contentHash", "parseStatus", "moduleKind", "generated"],
+      "properties": {
+        "path": { "$ref": "#/$defs/filePath" },
+        "contentHash": { "$ref": "#/$defs/hash" },
+        "parseStatus": { "type": "string", "enum": ["ok", "error", "skipped"] },
+        "unparsed": { "type": "boolean", "default": false, "description": "True when parsing failed or the file was intentionally skipped; symbols in it are never candidates." },
+        "moduleKind": { "type": "string", "enum": ["Ts", "Tsx", "Js", "Jsx", "Json", "Declaration"] },
+        "package": { "type": "string", "description": "Workspace package name, when the file belongs to one." },
+        "generated": { "type": "boolean", "description": "Generated files are parsed for edges but excluded from deletion candidates by default." },
+        "sizeBytes": { "type": "integer", "minimum": 0 },
+        "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } }
+      }
+    },
+    "symbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name", "kind", "file", "span", "exported", "publicApi", "entryRoles"],
+      "properties": {
+        "key": { "$ref": "#/$defs/symbolKey" },
+        "name": { "type": "string", "minLength": 1 },
+        "kind": {
+          "type": "string",
+          "enum": ["function", "class", "variable", "type", "interface", "enum", "namespace", "default", "re-export"]
+        },
+        "file": { "$ref": "#/$defs/filePath" },
+        "span": { "$ref": "#/$defs/span" },
+        "exported": { "type": "boolean" },
+        "publicApi": { "type": "boolean", "description": "Public package surface, declaration file, or explicit @public marker. Never a candidate." },
+        "entryRoles": {
+          "type": "array",
+          "description": "Entry keys for which this symbol is an entry. Invariant E1: an entry is never deleted.",
+          "items": { "$ref": "#/$defs/entryKey" },
+          "uniqueItems": true
+        },
+        "typeOnly": { "type": "boolean", "default": false, "description": "Type-only symbols are kept for type analysis but do not keep a runtime symbol live by themselves." },
+        "generated": { "type": "boolean", "default": false },
+        "references": {
+          "type": "array",
+          "description": "Edge IDs or symbol keys considered for this symbol. Used by proof traces.",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "specifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["specifier", "kind", "certainty"],
+      "properties": {
+        "specifier": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "enum": ["import", "export", "dynamic", "require", "side-effect"] },
+        "resolved": { "$ref": "#/$defs/moduleKey" },
+        "certainty": { "$ref": "#/$defs/certainty" },
+        "typeOnly": { "type": "boolean", "default": false },
+        "dynamicScope": {
+          "type": "string",
+          "enum": ["literal", "template-prefix", "directory-prefix", "package", "repo", "unknown"],
+          "description": "Bounded dynamic scope for import() and require(). Repo-scope unknown blocks deletion."
+        }
+      }
+    },
+    "unresolved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["specifier", "reason", "certainty"],
+      "properties": {
+        "specifier": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "certainty": { "$ref": "#/$defs/certainty" }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "path", "file", "specifiers", "resolved", "unresolved"],
+      "properties": {
+        "key": { "$ref": "#/$defs/moduleKey" },
+        "path": { "$ref": "#/$defs/filePath" },
+        "file": { "$ref": "#/$defs/filePath" },
+        "package": { "type": "string" },
+        "specifiers": { "type": "array", "items": { "$ref": "#/$defs/specifier" } },
+        "resolved": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/moduleKey" },
+          "uniqueItems": true
+        },
+        "unresolved": { "type": "array", "items": { "$ref": "#/$defs/unresolved" } }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "framework", "kind", "runtime", "certainty"],
+      "properties": {
+        "key": { "$ref": "#/$defs/entryKey" },
+        "framework": {
+          "type": "string",
+          "enum": ["next-app", "next-pages", "react", "package", "test", "config"]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "page",
+            "layout",
+            "template",
+            "loading",
+            "error",
+            "global-error",
+            "not-found",
+            "route",
+            "default",
+            "metadata",
+            "sitemap",
+            "robots",
+            "manifest",
+            "icon",
+            "apple-icon",
+            "opengraph-image",
+            "twitter-image",
+            "proxy",
+            "middleware",
+            "instrumentation",
+            "server-action",
+            "client-boundary",
+            "test",
+            "config",
+            "package-export",
+            "react-root",
+            "custom"
+          ]
+        },
+        "route": { "type": ["string", "null"], "description": "Route path for Next.js and React entries." },
+        "exportName": { "type": "string", "description": "Convention export name, for example default, GET, or generateMetadata." },
+        "runtime": { "type": "string", "enum": ["client", "server", "both", "unknown"] },
+        "certainty": { "$ref": "#/$defs/certainty" },
+        "file": { "$ref": "#/$defs/filePath" },
+        "symbol": { "$ref": "#/$defs/symbolKey" }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "target", "kind", "certainty"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "source": { "$ref": "#/$defs/symbolKey" },
+        "target": { "$ref": "#/$defs/symbolKey" },
+        "kind": {
+          "type": "string",
+          "enum": ["import", "re-export", "reference", "call", "jsx", "dynamic", "unknown", "build"]
+        },
+        "certainty": { "$ref": "#/$defs/certainty" },
+        "specifier": { "type": "string" },
+        "evidence": { "type": "string", "description": "Build evidence such as chunk:app/registry/page." },
+        "reason": { "type": "string" }
+      }
+    },
+    "certainty": {
+      "type": "string",
+      "enum": ["certain", "probable", "unknown"],
+      "description": "certain is a resolved edge; probable is a bounded heuristic; unknown blocks deletion of every symbol it could reach."
+    },
+    "scc": {
+      "type": "array",
+      "description": "One strongly connected component. Sorted by symbol key. Invariant K1: no plan contains a partial SCC.",
+      "items": { "$ref": "#/$defs/symbolKey" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "witness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol", "entry", "path", "length"],
+      "properties": {
+        "symbol": { "$ref": "#/$defs/symbolKey" },
+        "entry": { "$ref": "#/$defs/entryKey" },
+        "path": {
+          "type": "array",
+          "description": "Shortest path from the entry symbol to the live symbol, inclusive. Invariant F2: a valid path; F3: shortest in edge count.",
+          "items": { "$ref": "#/$defs/symbolKey" },
+          "minItems": 1
+        },
+        "edges": {
+          "type": "array",
+          "description": "Edge IDs or (source,target,kind) tuples traversed by the path.",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "length": { "type": "integer", "minimum": 0, "description": "Edge count. A single-symbol path has length 0." }
+      }
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol", "reason", "consideredEdges", "unknownEdges"],
+      "properties": {
+        "symbol": { "$ref": "#/$defs/symbolKey" },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "no-witness",
+            "blocked-by-unknown",
+            "blocked-by-probable-edge",
+            "blocked-by-public-api",
+            "blocked-by-entry",
+            "blocked-by-unparsed-file",
+            "blocked-by-generated"
+          ]
+        },
+        "consideredEdges": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "unknownEdges": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "entryChecks": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": "1.0",
+      "protocolVersion": "1.0",
+      "toolVersion": "1.0.0",
+      "configHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "resolverHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "files": [
+        {
+          "path": "src/index.ts",
+          "contentHash": "blake3:2222222222222222222222222222222222222222222222222222222222222222",
+          "parseStatus": "ok",
+          "moduleKind": "Ts",
+          "generated": false
+        }
+      ],
+      "symbols": [
+        {
+          "key": "src/index.ts#main",
+          "name": "main",
+          "kind": "function",
+          "file": "src/index.ts",
+          "span": { "start": 0, "end": 20, "line": 1, "column": 1 },
+          "exported": true,
+          "publicApi": false,
+          "entryRoles": ["src/index.ts#__entry__"]
+        }
+      ],
+      "modules": [
+        {
+          "key": "src/index.ts#__module__",
+          "path": "src/index.ts",
+          "file": "src/index.ts",
+          "specifiers": [],
+          "resolved": [],
+          "unresolved": []
+        }
+      ],
+      "entries": [
+        {
+          "key": "src/index.ts#__entry__",
+          "framework": "package",
+          "kind": "package-export",
+          "runtime": "both",
+          "certainty": "certain",
+          "exportName": "main",
+          "file": "src/index.ts",
+          "symbol": "src/index.ts#main"
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge_1",
+          "source": "src/index.ts#main",
+          "target": "src/index.ts#main",
+          "kind": "reference",
+          "certainty": "certain"
+        }
+      ],
+      "sccs": [["src/index.ts#main"]],
+      "live": ["src/index.ts#main"],
+      "candidates": [],
+      "witnesses": [
+        {
+          "symbol": "src/index.ts#main",
+          "entry": "src/index.ts#__entry__",
+          "path": ["src/index.ts#main"],
+          "edges": [],
+          "length": 0
+        }
+      ],
+      "proofs": [],
+      "diagnostics": []
+    }
+  ]
+}

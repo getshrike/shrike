@@ -1,0 +1,31 @@
+{
+  "name": "shrike-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm run build:engine && pnpm run build:ts",
+    "build:engine": "cargo build --release -p shrike-engine",
+    "build:ts": "tsc -b packages/cli packages/verifier packages/receipts packages/agent packages/testkit",
+    "typecheck": "tsc -b packages/cli packages/verifier packages/receipts packages/agent packages/testkit",
+    "lint": "node scripts/lint.mjs",
+    "test": "node scripts/test.mjs",
+    "test:rust": "cargo test --workspace",
+    "test:node": "node --test packages",
+    "check": "node scripts/check.mjs",
+    "check:links": "node scripts/check-links.mjs",
+    "check:docs": "node scripts/check-docs.mjs",
+    "check:schemas": "node scripts/validate-schemas.mjs",
+    "corpus": "node scripts/corpus-runner.mjs",
+    "fixtures:delta": "node scripts/delta-fixtures.mjs",
+    "fixtures:verify": "node scripts/verify-fixtures.mjs",
+    "bench": "node benchmarks/harness.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

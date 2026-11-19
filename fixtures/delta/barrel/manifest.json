@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0",
+  "id": "barrel",
+  "dirty": false,
+  "config": {},
+  "expected": {
+    "newlyDead": [
+      "lib/impl.ts#impl"
+    ],
+    "newlyDeadFiles": [
+      "lib/impl.ts"
+    ],
+    "triggerKinds": {
+      "lib/impl.ts#impl": "removed-re-export"
+    }
+  },
+  "notes": ""
+}

@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shrike.dev/schemas/delta.schema.json",
+  "title": "Shrike whole-graph orphan delta",
+  "description": "The newly dead code caused by a base-to-head change, exactly as specified by docs/04-whole-graph-delta.md section 7. It is L(base) minus L(head), not all dead code at head. Every item carries the lost witness and the changed edge that removed it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "base",
+    "head",
+    "newlyDead",
+    "newlyDeadFiles",
+    "cascade",
+    "batches",
+    "incomparable",
+    "diagnostics"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "base": { "$ref": "#/$defs/base" },
+    "head": { "$ref": "#/$defs/head" },
+    "newlyDead": {
+      "type": "array",
+      "description": "Symbols that were live at base and are not live at head. Pre-existing dead code is excluded.",
+      "items": { "$ref": "#/$defs/newlyDead" }
+    },
+    "newlyDeadFiles": {
+      "type": "array",
+      "description": "Files that contained at least one delta symbol and no live symbol remains, or that were removed at head and whose exports were all delta symbols.",
+      "items": { "$ref": "#/$defs/filePath" },
+      "uniqueItems": true
+    },
+    "cascade": { "$ref": "#/$defs/cascade" },
+    "batches": {
+      "type": "array",
+      "description": "Summary counts only. The deletion plan carries the detailed symbol and file lists.",
+      "items": { "$ref": "#/$defs/batchSummary" }
+    },
+    "incomparable": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/incomparable" }
+      ],
+      "description": "Null when the snapshots are comparable; otherwise a named reason. Never silently produce a misleading diff."
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^(sha256|blake3):[0-9a-f]{64}$"
+    },
+    "filePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^#]+$"
+    },
+    "symbolKey": {
+      "type": "string",
+      "pattern": "^[^#]+#[^#]+$",
+      "description": "Stable symbol key path#Name."
+    },
+    "base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "commit"],
+      "properties": {
+        "ref": { "type": "string", "minLength": 1, "description": "Base ref, normally the merge base." },
+        "commit": { "type": "string", "minLength": 1 },
+        "graphHash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "head": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "dirty"],
+      "properties": {
+        "commit": { "type": "string", "minLength": 1 },
+        "dirty": { "type": "boolean", "description": "A dirty head is allowed for local feedback but never for a CI receipt." },
+        "graphHash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "kind", "change", "certainty"],
+      "properties": {
+        "file": { "$ref": "#/$defs/filePath", "description": "File that owns the changed edge, not a guess about intent." },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "removed-import",
+            "removed-call",
+            "removed-jsx",
+            "removed-route",
+            "renamed-export",
+            "removed-re-export",
+            "changed-dynamic",
+            "indirect"
+          ]
+        },
+        "change": { "type": "string", "minLength": 1, "description": "Factual description of the changed edge, for example 'removed import of formatInvoice'." },
+        "edge": { "type": "string", "description": "Optional edge label, for example 'InvoiceCard -> formatInvoice'." },
+        "certainty": { "type": "string", "enum": ["certain", "probable", "unknown"] }
+      }
+    },
+    "newlyDead": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "kind",
+        "file",
+        "lastWitness",
+        "trigger",
+        "confidence",
+        "estimatedLines"
+      ],
+      "properties": {
+        "symbol": { "$ref": "#/$defs/symbolKey" },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "export",
+            "function",
+            "class",
+            "variable",
+            "type",
+            "interface",
+            "enum",
+            "namespace",
+            "default",
+            "re-export",
+            "file"
+          ]
+        },
+        "file": { "$ref": "#/$defs/filePath" },
+        "lastWitness": {
+          "type": "array",
+          "description": "The shortest live path at base, from entry to symbol. Invariant J1: every delta item has a lost witness or an explicit no-witness reason.",
+          "items": { "$ref": "#/$defs/symbolKey" }
+        },
+        "noWitnessReason": {
+          "type": "string",
+          "enum": [
+            "entry-removed",
+            "entry-renamed",
+            "symbol-renamed",
+            "symbol-removed",
+            "unparsed-at-base",
+            "unknown-edge"
+          ]
+        },
+        "trigger": { "$ref": "#/$defs/trigger" },
+        "confidence": { "type": "string", "enum": ["certain", "probable", "unknown"] },
+        "estimatedLines": { "type": "integer", "minimum": 0 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "lastWitness": { "maxItems": 0 } },
+            "required": ["lastWitness"]
+          },
+          "then": { "required": ["noWitnessReason"] }
+        }
+      ]
+    },
+    "cascade": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbols", "files", "lines"],
+      "properties": {
+        "symbols": { "type": "integer", "minimum": 0 },
+        "files": { "type": "integer", "minimum": 0 },
+        "lines": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "batchSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "symbols", "files", "lines"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^batch_[A-Za-z0-9_-]+$" },
+        "symbols": { "type": "integer", "minimum": 0, "description": "Symbol count, not a list." },
+        "files": { "type": "integer", "minimum": 0, "description": "File count, not a list." },
+        "lines": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "incomparable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason"],
+      "properties": {
+        "reason": { "type": "string", "minLength": 1 },
+        "changedInputs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "config",
+              "resolver",
+              "entryAdapter",
+              "toolVersion",
+              "protocolVersion",
+              "workspaceLayout"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "base": { "type": "string" },
+        "head": { "type": "string" }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "code", "message"],
+      "properties": {
+        "severity": { "type": "string", "enum": ["error", "warning", "info"] },
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "file": { "$ref": "#/$defs/filePath" }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": "1.0",
+      "base": { "ref": "origin/main", "commit": "abc123" },
+      "head": { "commit": "def456", "dirty": false },
+      "newlyDead": [],
+      "newlyDeadFiles": [],
+      "cascade": { "symbols": 0, "files": 0, "lines": 0 },
+      "batches": [],
+      "incomparable": null,
+      "diagnostics": []
+    },
+    {
+      "schemaVersion": "1.0",
+      "base": { "ref": "origin/main", "commit": "abc123" },
+      "head": { "commit": "def456", "dirty": false },
+      "newlyDead": [
+        {
+          "symbol": "src/lib/format.ts#formatInvoice",
+          "kind": "export",
+          "file": "src/lib/format.ts",
+          "lastWitness": [
+            "app/invoices/page.tsx#default",
+            "src/features/invoice/InvoiceCard.tsx#InvoiceCard",
+            "src/lib/format.ts#formatInvoice"
+          ],
+          "trigger": {
+            "file": "src/features/invoice/InvoiceCard.tsx",
+            "kind": "removed-import",
+            "change": "removed import of formatInvoice",
+            "edge": "InvoiceCard -> formatInvoice",
+            "certainty": "certain"
+          },
+          "confidence": "certain",
+          "estimatedLines": 18
+        }
+      ],
+      "newlyDeadFiles": ["src/lib/format.ts"],
+      "cascade": { "symbols": 2, "files": 1, "lines": 36 },
+      "batches": [
+        { "id": "batch_1", "symbols": 2, "files": 1, "lines": 36 }
+      ],
+      "incomparable": null,
+      "diagnostics": []
+    }
+  ]
+}

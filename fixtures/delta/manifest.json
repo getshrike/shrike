@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "scenarios": [
+    "barrel",
+    "cycle",
+    "dirty",
+    "dynamic",
+    "generated",
+    "interaction",
+    "monorepo",
+    "no-change",
+    "preexisting",
+    "public-api",
+    "removed-caller",
+    "removed-route",
+    "renamed-export",
+    "test-policy"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1.0",
+  "id": "interaction",
+  "dirty": "two removed callers interact to orphan a shared helper",
+  "config": {},
+  "expected": {
+    "newlyDead": [
+      "lib/a.ts#a",
+      "lib/b.ts#b",
+      "lib/shared.ts#shared"
+    ],
+    "newlyDeadFiles": [
+      "lib/a.ts",
+      "lib/b.ts",
+      "lib/shared.ts"
+    ],
+    "triggerKinds": {
+      "lib/a.ts#a": "indirect",
+      "lib/b.ts#b": "indirect",
+      "lib/shared.ts#shared": "indirect"
+    }
+  },
+  "notes": ""
+}

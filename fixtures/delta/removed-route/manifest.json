@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0",
+  "id": "removed-route",
+  "dirty": false,
+  "config": {},
+  "expected": {
+    "newlyDead": [
+      "components/InvoiceCard.tsx#InvoiceCard"
+    ],
+    "newlyDeadFiles": [
+      "components/InvoiceCard.tsx"
+    ],
+    "triggerKinds": {
+      "components/InvoiceCard.tsx#InvoiceCard": "removed-route"
+    }
+  },
+  "notes": ""
+}

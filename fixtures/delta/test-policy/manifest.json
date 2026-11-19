@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0",
+  "id": "test-policy",
+  "dirty": false,
+  "config": {
+    "entryPolicy": "local",
+    "testEntries": true
+  },
+  "expected": {
+    "newlyDead": [
+      "src/helper.ts#helper"
+    ],
+    "newlyDeadFiles": [
+      "src/helper.ts"
+    ],
+    "triggerKinds": {
+      "src/helper.ts#helper": "removed-import"
+    }
+  },
+  "notes": "the test entry was removed; its helper is now dead"
+}

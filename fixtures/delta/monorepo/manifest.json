@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "id": "monorepo",
+  "dirty": false,
+  "config": {},
+  "expected": {
+    "newlyDead": [
+      "packages/ui/src/util.ts#util"
+    ],
+    "newlyDeadFiles": [],
+    "triggerKinds": {
+      "packages/ui/src/util.ts#util": "removed-import"
+    }
+  },
+  "notes": ""
+}
