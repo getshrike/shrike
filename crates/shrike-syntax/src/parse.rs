@@ -222,7 +222,7 @@ fn extract_statement(
         Statement::ExportNamedDeclaration(export) => {
             let statement_span = span_of(line_index, source, export.span);
             if let Some(declaration) = &export.declaration {
-                let mut record = declaration_record(
+                let (mut record, dynamic, unknown) = declaration_record(
                     declaration,
                     statement_span,
                     true,
@@ -231,6 +231,8 @@ fn extract_statement(
                     source,
                 );
                 record.type_only = record.type_only || export.export_kind.is_type();
+                summary.dynamic.extend(dynamic);
+                summary.unknown.extend(unknown);
                 summary.declarations.push(record);
             } else if let Some(source_literal) = &export.source {
                 let source_text = source_literal.value.to_string();
@@ -266,7 +268,7 @@ fn extract_statement(
                         .id
                         .as_ref()
                         .map_or_else(|| "default".to_string(), |id| id.name.to_string());
-                    summary.declarations.push(function_record(
+                    let (record, dynamic, unknown) = function_record(
                         function,
                         name,
                         statement_span,
@@ -274,24 +276,30 @@ fn extract_statement(
                         true,
                         source,
                         line_index,
-                    ));
+                    );
+                    summary.dynamic.extend(dynamic);
+                    summary.unknown.extend(unknown);
+                    summary.declarations.push(record);
                 }
                 ExportDefaultDeclarationKind::ClassDeclaration(class) => {
                     let name = class
                         .id
                         .as_ref()
                         .map_or_else(|| "default".to_string(), |id| id.name.to_string());
-                    summary.declarations.push(class_record(
-                        class,
-                        name,
-                        statement_span,
-                        true,
-                        true,
-                        source,
-                        line_index,
-                    ));
+                    let (record, dynamic, unknown) =
+                        class_record(class, name, statement_span, true, true, source, line_index);
+                    summary.dynamic.extend(dynamic);
+                    summary.unknown.extend(unknown);
+                    summary.declarations.push(record);
                 }
                 ExportDefaultDeclarationKind::TSInterfaceDeclaration(interface) => {
+                    let (references, dynamic, unknown) = collect_expression_or_declaration_refs(
+                        None,
+                        Some(&export.declaration),
+                        source,
+                    );
+                    summary.dynamic.extend(dynamic);
+                    summary.unknown.extend(unknown);
                     summary.declarations.push(DeclarationRecord {
                         name: interface.id.name.to_string(),
                         names: vec![interface.id.name.to_string()],
@@ -302,11 +310,7 @@ fn extract_statement(
                         type_only: true,
                         r#async: false,
                         directives: Vec::new(),
-                        references: collect_expression_or_declaration_refs(
-                            None,
-                            Some(&export.declaration),
-                            source,
-                        ),
+                        references,
                     });
                 }
                 other => {
@@ -399,7 +403,7 @@ fn extract_statement(
                 .id
                 .as_ref()
                 .map_or_else(|| "__function".to_string(), |id| id.name.to_string());
-            summary.declarations.push(function_record(
+            let (record, dynamic, unknown) = function_record(
                 function,
                 name,
                 span_of(line_index, source, function.span),
@@ -407,14 +411,17 @@ fn extract_statement(
                 false,
                 source,
                 line_index,
-            ));
+            );
+            summary.dynamic.extend(dynamic);
+            summary.unknown.extend(unknown);
+            summary.declarations.push(record);
         }
         Statement::ClassDeclaration(class) => {
             let name = class
                 .id
                 .as_ref()
                 .map_or_else(|| "__class".to_string(), |id| id.name.to_string());
-            summary.declarations.push(class_record(
+            let (record, dynamic, unknown) = class_record(
                 class,
                 name,
                 span_of(line_index, source, class.span),
@@ -422,10 +429,15 @@ fn extract_statement(
                 false,
                 source,
                 line_index,
-            ));
+            );
+            summary.dynamic.extend(dynamic);
+            summary.unknown.extend(unknown);
+            summary.declarations.push(record);
         }
         Statement::TSTypeAliasDeclaration(alias) => {
-            let refs = refs_for_type_alias(alias);
+            let (refs, dynamic, unknown) = refs_for_type_alias(alias);
+            summary.dynamic.extend(dynamic);
+            summary.unknown.extend(unknown);
             summary.declarations.push(DeclarationRecord {
                 name: alias.id.name.to_string(),
                 names: vec![alias.id.name.to_string()],
@@ -440,7 +452,9 @@ fn extract_statement(
             });
         }
         Statement::TSInterfaceDeclaration(interface) => {
-            let refs = refs_for_interface(interface);
+            let (refs, dynamic, unknown) = refs_for_interface(interface);
+            summary.dynamic.extend(dynamic);
+            summary.unknown.extend(unknown);
             summary.declarations.push(DeclarationRecord {
                 name: interface.id.name.to_string(),
                 names: vec![interface.id.name.to_string()],
@@ -455,7 +469,9 @@ fn extract_statement(
             });
         }
         Statement::TSEnumDeclaration(enumeration) => {
-            let refs = refs_for_enum(enumeration);
+            let (refs, dynamic, unknown) = refs_for_enum(enumeration);
+            summary.dynamic.extend(dynamic);
+            summary.unknown.extend(unknown);
             summary.declarations.push(DeclarationRecord {
                 name: enumeration.id.name.to_string(),
                 names: vec![enumeration.id.name.to_string()],
@@ -474,7 +490,9 @@ fn extract_statement(
                 TSModuleDeclarationName::Identifier(id) => id.name.to_string(),
                 TSModuleDeclarationName::StringLiteral(literal) => literal.value.to_string(),
             };
-            let refs = refs_for_module(module);
+            let (refs, dynamic, unknown) = refs_for_module(module);
+            summary.dynamic.extend(dynamic);
+            summary.unknown.extend(unknown);
             summary.declarations.push(DeclarationRecord {
                 name: name.clone(),
                 names: vec![name],
@@ -498,6 +516,8 @@ fn extract_statement(
     }
 }
 
+type CollectedParts = (ModuleRefs, Vec<DynamicRecord>, Vec<UnknownRecord>);
+
 fn declaration_record(
     declaration: &Declaration<'_>,
     statement_span: Span,
@@ -505,7 +525,7 @@ fn declaration_record(
     default: bool,
     line_index: &LineIndex,
     source: &str,
-) -> DeclarationRecord {
+) -> (DeclarationRecord, Vec<DynamicRecord>, Vec<UnknownRecord>) {
     match declaration {
         Declaration::FunctionDeclaration(function) => {
             let name = function
@@ -547,98 +567,122 @@ fn declaration_record(
                 .first()
                 .cloned()
                 .unwrap_or_else(|| "__variable".to_string());
-            let (refs, _, _) = refs_for_variable(variable);
-            DeclarationRecord {
-                name,
-                names,
-                kind: DeclarationKind::Variable,
-                span: statement_span,
-                exported,
-                default,
-                type_only: false,
-                r#async: false,
-                directives: Vec::new(),
-                references: refs,
-            }
+            let (refs, dynamic, unknown) = refs_for_variable(variable);
+            (
+                DeclarationRecord {
+                    name,
+                    names,
+                    kind: DeclarationKind::Variable,
+                    span: statement_span,
+                    exported,
+                    default,
+                    type_only: false,
+                    r#async: false,
+                    directives: Vec::new(),
+                    references: refs,
+                },
+                dynamic,
+                unknown,
+            )
         }
         Declaration::TSTypeAliasDeclaration(alias) => {
-            let refs = refs_for_type_alias(alias);
-            DeclarationRecord {
-                name: alias.id.name.to_string(),
-                names: vec![alias.id.name.to_string()],
-                kind: DeclarationKind::Type,
-                span: statement_span,
-                exported,
-                default,
-                type_only: true,
-                r#async: false,
-                directives: Vec::new(),
-                references: refs,
-            }
+            let (refs, dynamic, unknown) = refs_for_type_alias(alias);
+            (
+                DeclarationRecord {
+                    name: alias.id.name.to_string(),
+                    names: vec![alias.id.name.to_string()],
+                    kind: DeclarationKind::Type,
+                    span: statement_span,
+                    exported,
+                    default,
+                    type_only: true,
+                    r#async: false,
+                    directives: Vec::new(),
+                    references: refs,
+                },
+                dynamic,
+                unknown,
+            )
         }
         Declaration::TSInterfaceDeclaration(interface) => {
-            let refs = refs_for_interface(interface);
-            DeclarationRecord {
-                name: interface.id.name.to_string(),
-                names: vec![interface.id.name.to_string()],
-                kind: DeclarationKind::Interface,
-                span: statement_span,
-                exported,
-                default,
-                type_only: true,
-                r#async: false,
-                directives: Vec::new(),
-                references: refs,
-            }
+            let (refs, dynamic, unknown) = refs_for_interface(interface);
+            (
+                DeclarationRecord {
+                    name: interface.id.name.to_string(),
+                    names: vec![interface.id.name.to_string()],
+                    kind: DeclarationKind::Interface,
+                    span: statement_span,
+                    exported,
+                    default,
+                    type_only: true,
+                    r#async: false,
+                    directives: Vec::new(),
+                    references: refs,
+                },
+                dynamic,
+                unknown,
+            )
         }
         Declaration::TSEnumDeclaration(enumeration) => {
-            let refs = refs_for_enum(enumeration);
-            DeclarationRecord {
-                name: enumeration.id.name.to_string(),
-                names: vec![enumeration.id.name.to_string()],
-                kind: DeclarationKind::Enum,
-                span: statement_span,
-                exported,
-                default,
-                type_only: false,
-                r#async: false,
-                directives: Vec::new(),
-                references: refs,
-            }
+            let (refs, dynamic, unknown) = refs_for_enum(enumeration);
+            (
+                DeclarationRecord {
+                    name: enumeration.id.name.to_string(),
+                    names: vec![enumeration.id.name.to_string()],
+                    kind: DeclarationKind::Enum,
+                    span: statement_span,
+                    exported,
+                    default,
+                    type_only: false,
+                    r#async: false,
+                    directives: Vec::new(),
+                    references: refs,
+                },
+                dynamic,
+                unknown,
+            )
         }
         Declaration::TSModuleDeclaration(module) => {
             let name = match &module.id {
                 TSModuleDeclarationName::Identifier(id) => id.name.to_string(),
                 TSModuleDeclarationName::StringLiteral(literal) => literal.value.to_string(),
             };
-            let refs = refs_for_module(module);
-            DeclarationRecord {
-                name: name.clone(),
-                names: vec![name],
-                kind: DeclarationKind::Namespace,
-                span: statement_span,
-                exported,
-                default,
-                type_only: false,
-                r#async: false,
-                directives: Vec::new(),
-                references: refs,
-            }
+            let (refs, dynamic, unknown) = refs_for_module(module);
+            (
+                DeclarationRecord {
+                    name: name.clone(),
+                    names: vec![name],
+                    kind: DeclarationKind::Namespace,
+                    span: statement_span,
+                    exported,
+                    default,
+                    type_only: false,
+                    r#async: false,
+                    directives: Vec::new(),
+                    references: refs,
+                },
+                dynamic,
+                unknown,
+            )
         }
         Declaration::TSImportEqualsDeclaration(import) => {
             let name = import.id.name.to_string();
-            DeclarationRecord {
-                name: name.clone(),
-                names: vec![name],
-                kind: DeclarationKind::Variable,
-                span: statement_span,
-                exported,
-                default,
-                type_only: import.import_kind.is_type(),
-                r#async: false,
-                directives: Vec::new(),
-                references: ModuleRefs::default(),
-            }
+            (
+                DeclarationRecord {
+                    name: name.clone(),
+                    names: vec![name],
+                    kind: DeclarationKind::Variable,
+                    span: statement_span,
+                    exported,
+                    default,
+                    type_only: import.import_kind.is_type(),
+                    r#async: false,
+                    directives: Vec::new(),
+                    references: ModuleRefs::default(),
+                },
+                Vec::new(),
+                Vec::new(),
+            )
         }
     }
 }
@@ -651,7 +695,7 @@ fn function_record(
     default: bool,
     _source: &str,
     _line_index: &LineIndex,
-) -> DeclarationRecord {
+) -> (DeclarationRecord, Vec<DynamicRecord>, Vec<UnknownRecord>) {
     let mut refs = RefCollector::default();
     refs.visit_function(function, oxc_syntax::scope::ScopeFlags::Function);
     let directives = function
@@ -664,6 +708,7 @@ fn function_record(
                 .collect()
         })
         .unwrap_or_default();
+    let (references, dynamic, unknown) = refs.into_parts();
     let mut record = DeclarationRecord {
         name: name.clone(),
         names: vec![name],
@@ -674,14 +719,14 @@ fn function_record(
         type_only: false,
         r#async: function.r#async,
         directives,
-        references: refs.finish(),
+        references,
     };
     // The function's own name is not a reference.
     record
         .references
         .identifiers
         .retain(|id| id != &record.name);
-    record
+    (record, dynamic, unknown)
 }
 
 fn class_record(
@@ -692,9 +737,10 @@ fn class_record(
     default: bool,
     _source: &str,
     _line_index: &LineIndex,
-) -> DeclarationRecord {
+) -> (DeclarationRecord, Vec<DynamicRecord>, Vec<UnknownRecord>) {
     let mut refs = RefCollector::default();
     refs.visit_class(class);
+    let (references, dynamic, unknown) = refs.into_parts();
     let mut record = DeclarationRecord {
         name: name.clone(),
         names: vec![name],
@@ -705,52 +751,50 @@ fn class_record(
         type_only: false,
         r#async: false,
         directives: Vec::new(),
-        references: refs.finish(),
+        references,
     };
     record
         .references
         .identifiers
         .retain(|id| id != &record.name);
-    record
+    (record, dynamic, unknown)
 }
 
-fn refs_for_variable(
-    variable: &oxc_ast::ast::VariableDeclaration<'_>,
-) -> (ModuleRefs, Vec<DynamicRecord>, Vec<UnknownRecord>) {
+fn refs_for_variable(variable: &oxc_ast::ast::VariableDeclaration<'_>) -> CollectedParts {
     let mut refs = RefCollector::default();
     refs.visit_variable_declaration(variable);
     refs.into_parts()
 }
 
-fn refs_for_type_alias(alias: &oxc_ast::ast::TSTypeAliasDeclaration<'_>) -> ModuleRefs {
+fn refs_for_type_alias(alias: &oxc_ast::ast::TSTypeAliasDeclaration<'_>) -> CollectedParts {
     let mut refs = RefCollector::default();
     refs.visit_ts_type_alias_declaration(alias);
-    refs.finish()
+    refs.into_parts()
 }
 
-fn refs_for_interface(interface: &oxc_ast::ast::TSInterfaceDeclaration<'_>) -> ModuleRefs {
+fn refs_for_interface(interface: &oxc_ast::ast::TSInterfaceDeclaration<'_>) -> CollectedParts {
     let mut refs = RefCollector::default();
     refs.visit_ts_interface_declaration(interface);
-    refs.finish()
+    refs.into_parts()
 }
 
-fn refs_for_enum(enumeration: &oxc_ast::ast::TSEnumDeclaration<'_>) -> ModuleRefs {
+fn refs_for_enum(enumeration: &oxc_ast::ast::TSEnumDeclaration<'_>) -> CollectedParts {
     let mut refs = RefCollector::default();
     refs.visit_ts_enum_declaration(enumeration);
-    refs.finish()
+    refs.into_parts()
 }
 
-fn refs_for_module(module: &oxc_ast::ast::TSModuleDeclaration<'_>) -> ModuleRefs {
+fn refs_for_module(module: &oxc_ast::ast::TSModuleDeclaration<'_>) -> CollectedParts {
     let mut refs = RefCollector::default();
     refs.visit_ts_module_declaration(module);
-    refs.finish()
+    refs.into_parts()
 }
 
 fn collect_expression_or_declaration_refs(
     statement: Option<&Statement<'_>>,
     default_kind: Option<&ExportDefaultDeclarationKind<'_>>,
     _source: &str,
-) -> ModuleRefs {
+) -> CollectedParts {
     let mut refs = RefCollector::default();
     if let Some(statement) = statement {
         refs.visit_statement(statement);
@@ -768,7 +812,7 @@ fn collect_expression_or_declaration_refs(
             }
         }
     }
-    refs.finish()
+    refs.into_parts()
 }
 
 fn merge_refs(target: &mut ModuleRefs, source: &RefCollector) {
@@ -899,14 +943,6 @@ impl RefCollector {
             self.dynamic,
             self.unknown,
         )
-    }
-
-    fn finish(self) -> ModuleRefs {
-        ModuleRefs {
-            identifiers: self.identifiers,
-            members: self.members,
-            jsx: self.jsx,
-        }
     }
 }
 

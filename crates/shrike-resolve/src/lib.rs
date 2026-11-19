@@ -83,7 +83,9 @@ impl Resolver {
         self.packages
             .values()
             .filter(|package| {
-                file == package.directory || file.starts_with(&format!("{}/", package.directory))
+                package.directory.is_empty()
+                    || file == package.directory
+                    || file.starts_with(&format!("{}/", package.directory))
             })
             .max_by_key(|package| package.directory.len())
     }
@@ -475,6 +477,12 @@ fn load_workspaces(
         }
     }
     discover_package_dirs(root, root, 0, &mut directories);
+    // The repository root is itself a package when it has a package.json. This
+    // matters for self-references such as importing your own package name from
+    // an example or app directory inside the same repository.
+    if root.join("package.json").is_file() {
+        directories.insert(String::new());
+    }
     // Also discover package.json files from the workspace globs, even when the
     // host did not include them in the analysis set.
     if let Ok(text) = std::fs::read_to_string(root.join("package.json")) {
@@ -562,10 +570,7 @@ fn load_workspaces(
         if let Some(map) = value.get("exports").and_then(serde_json::Value::as_object) {
             for (key, target) in map {
                 if let Some(target) = export_target(target) {
-                    exports.insert(
-                        key.clone(),
-                        normalize_relative(&format!("{directory}/{target}")),
-                    );
+                    exports.insert(key.clone(), join_package_path(&directory, &target));
                 }
             }
         }
@@ -576,24 +581,29 @@ fn load_workspaces(
                 value
                     .get("module")
                     .and_then(serde_json::Value::as_str)
-                    .map(|value| normalize_relative(&format!("{directory}/{value}")))
+                    .map(|value| join_package_path(&directory, value))
             })
             .or_else(|| {
                 value
                     .get("main")
                     .and_then(serde_json::Value::as_str)
-                    .map(|value| normalize_relative(&format!("{directory}/{value}")))
+                    .map(|value| join_package_path(&directory, value))
             })
             .or_else(|| {
                 ["src/index.ts", "index.ts", "src/index.tsx", "index.tsx"]
                     .iter()
-                    .map(|candidate| normalize_relative(&format!("{directory}/{candidate}")))
+                    .map(|candidate| join_package_path(&directory, candidate))
                     .find(|candidate| files.contains(candidate))
             });
+        let public_api_pattern = if directory.is_empty() {
+            "**".to_string()
+        } else {
+            format!("{directory}/**")
+        };
         let public_api = config
             .public_api
             .iter()
-            .any(|glob| shrike_core::glob::glob_match(glob, &format!("{directory}/**")));
+            .any(|glob| shrike_core::glob::glob_match(glob, &public_api_pattern));
         packages.insert(
             name.to_string(),
             PackageInfo {
@@ -606,6 +616,14 @@ fn load_workspaces(
         );
     }
     packages
+}
+
+fn join_package_path(directory: &str, target: &str) -> String {
+    if directory.is_empty() {
+        normalize_relative(target)
+    } else {
+        normalize_relative(&format!("{directory}/{target}"))
+    }
 }
 
 fn export_target(value: &serde_json::Value) -> Option<String> {
@@ -660,6 +678,29 @@ mod tests {
         let barrel = resolver.resolve("src/app/page.ts", "@/lib");
         assert_eq!(barrel.target.as_deref(), Some("src/lib/index.ts"));
         assert!(resolver.resolve("src/app/page.ts", "react").external);
+    }
+
+    #[test]
+    fn resolves_root_package_self_reference() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("src")).unwrap();
+        fs::write(
+            temp.path().join("package.json"),
+            r#"{"name":"@corpus/pkg","exports":{".":"./src/index.ts"}}"#,
+        )
+        .unwrap();
+        fs::write(temp.path().join("src/index.ts"), "export const api = 1;").unwrap();
+        let files = vec!["src/index.ts".to_string()];
+        let resolver = Resolver::new(temp.path(), &files, &EngineConfig::default());
+        assert_eq!(resolver.packages().len(), 1);
+        assert_eq!(
+            resolver
+                .package_for("src/index.ts")
+                .map(|p| p.name.as_str()),
+            Some("@corpus/pkg")
+        );
+        let resolved = resolver.resolve("app/page.ts", "@corpus/pkg");
+        assert_eq!(resolved.target.as_deref(), Some("src/index.ts"));
     }
 
     #[test]

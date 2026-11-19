@@ -13,6 +13,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+/// Bump when analysis semantics change in a way that is not captured by the
+/// tool version, config hash, resolver hash, or source hashes. Old cached
+/// snapshots must never be served across such a change.
+const ANALYSIS_VERSION: &str = "2";
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CacheManifest {
@@ -155,6 +160,7 @@ fn analyze_payload(payload: &AnalyzePayload) -> ShrikeResult<shrike_graph::Graph
     payload.config.validate().map_err(ShrikeError::Config)?;
     let root = Path::new(&payload.root);
     let files = shrike_graph::discover_files(root, &payload.config);
+    let resolver = shrike_resolve::Resolver::new(root, &files, &payload.config);
     let discovered = started.elapsed();
     let cache_dir = payload
         .cache_dir
@@ -209,7 +215,7 @@ fn analyze_payload(payload: &AnalyzePayload) -> ShrikeResult<shrike_graph::Graph
         }
     }
     let scanned = started.elapsed();
-    let cache_key = snapshot_cache_key(&payload.config, &entries);
+    let cache_key = snapshot_cache_key(&payload.config, &resolver.resolver_hash, &entries);
     let cache_path = cache_dir
         .join("snapshots")
         .join(format!("{}.json", cache_key.trim_start_matches("blake3:")));
@@ -252,7 +258,7 @@ fn analyze_payload(payload: &AnalyzePayload) -> ShrikeResult<shrike_graph::Graph
         .map(|(path, source)| shrike_syntax::parse_source(path, source))
         .collect();
     let parsed = started.elapsed();
-    let snapshot = shrike_graph::build_snapshot(root, summaries, &payload.config);
+    let snapshot = shrike_graph::build_snapshot_with_resolver(summaries, &payload.config, resolver);
     let built = started.elapsed();
     // Cache is an optimization. A read-only checkout still analyzes.
     let _ = write_cache(&cache_path, &snapshot);
@@ -289,8 +295,14 @@ fn load_manifest(path: &Path) -> CacheManifest {
         })
 }
 
-fn snapshot_cache_key(config: &EngineConfig, entries: &BTreeMap<String, ManifestEntry>) -> String {
+fn snapshot_cache_key(
+    config: &EngineConfig,
+    resolver_hash: &str,
+    entries: &BTreeMap<String, ManifestEntry>,
+) -> String {
     let mut hasher = blake3::Hasher::new();
+    hasher.update(ANALYSIS_VERSION.as_bytes());
+    hasher.update(b"\0");
     hasher.update(TOOL_VERSION.as_bytes());
     hasher.update(b"\0");
     hasher.update(PROTOCOL_VERSION.as_bytes());
@@ -298,6 +310,8 @@ fn snapshot_cache_key(config: &EngineConfig, entries: &BTreeMap<String, Manifest
     hasher.update(SNAPSHOT_SCHEMA_VERSION.as_bytes());
     hasher.update(b"\0");
     hasher.update(config.config_hash().as_bytes());
+    hasher.update(b"\0");
+    hasher.update(resolver_hash.as_bytes());
     hasher.update(b"\0");
     for (path, entry) in entries {
         hasher.update(path.as_bytes());
