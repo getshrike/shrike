@@ -1,0 +1,96 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+export function git(root: string, args: string[], allowFailure = false): string {
+  try {
+    return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  } catch (error) {
+    if (allowFailure) return "";
+    const message = error instanceof Error && "stderr" in error ? String((error as { stderr?: unknown }).stderr) : String(error);
+    throw new Error(`git ${args.join(" ")} failed: ${message.trim()}`);
+  }
+}
+
+export function isDirty(root: string): boolean {
+  return git(root, ["status", "--porcelain"], true).length > 0;
+}
+
+export function headCommit(root: string): string {
+  return git(root, ["rev-parse", "HEAD"]);
+}
+
+export function mergeBase(root: string, base: string): string {
+  const merge = git(root, ["merge-base", base, "HEAD"], true);
+  if (merge) return merge;
+  const fallback = git(root, ["rev-parse", base], true);
+  if (fallback) return fallback;
+  throw new Error(`could not resolve base ref ${base}`);
+}
+
+export function resolveDefaultBase(root: string, explicit?: string): string {
+  if (explicit) return explicit;
+  for (const candidate of ["origin/main", "main", "origin/master", "master"]) {
+    if (git(root, ["rev-parse", "--verify", candidate], true)) return candidate;
+  }
+  throw new Error("could not find a base branch; pass --base <ref>");
+}
+
+export interface Worktree {
+  directory: string;
+  cleanup: () => void;
+}
+
+/** Create a detached worktree for a commit. */
+export function createWorktree(root: string, commit: string, label: string): Worktree {
+  const directory = mkdtempSync(join(tmpdir(), `shrike-${label}-`));
+  git(root, ["worktree", "add", "--detach", directory, commit]);
+  return {
+    directory,
+    cleanup: () => {
+      try {
+        git(root, ["worktree", "remove", "--force", directory]);
+      } catch {
+        // best effort
+      }
+      try { rmSync(directory, { recursive: true, force: true }); } catch { /* best effort */ }
+    },
+  };
+}
+
+/** Create a new branch in a temporary worktree (default prune mode). */
+export function createBranchWorktree(root: string, branch: string, commit: string): Worktree {
+  const directory = mkdtempSync(join(tmpdir(), `shrike-${branch.replace(/[^a-zA-Z0-9]+/g, "-")}-`));
+  const exists = git(root, ["rev-parse", "--verify", branch], true);
+  if (exists) git(root, ["worktree", "add", directory, branch]);
+  else git(root, ["worktree", "add", "-b", branch, directory, commit]);
+  return {
+    directory,
+    cleanup: () => {
+      try { git(root, ["worktree", "remove", "--force", directory]); } catch { /* best effort */ }
+      try { rmSync(directory, { recursive: true, force: true }); } catch { /* best effort */ }
+    },
+  };
+}
+
+export function currentBranch(root: string): string {
+  return git(root, ["rev-parse", "--abbrev-ref", "HEAD"], true);
+}
+
+export function ensureBranch(root: string, branch: string): void {
+  if (currentBranch(root) === branch) return;
+  const existing = git(root, ["rev-parse", "--verify", branch], true);
+  if (existing) git(root, ["checkout", branch]);
+  else git(root, ["checkout", "-b", branch]);
+}
+
+export function commitAll(root: string, message: string): void {
+  git(root, ["add", "-A"]);
+  git(root, ["commit", "-m", message]);
+}
+
+export function restoreAll(root: string): void {
+  git(root, ["checkout", "--", "."]);
+  git(root, ["clean", "-fd", "--", "."]);
+}

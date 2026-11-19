@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "id": "no-change",
+  "dirty": "no-op PR must produce an empty delta",
+  "config": {},
+  "expected": {
+    "newlyDead": [],
+    "newlyDeadFiles": [],
+    "triggerKinds": {}
+  },
+  "notes": ""
+}

@@ -1,0 +1,30 @@
+{
+  "version": "16.4.0",
+  "routes": [
+    {
+      "route": "/",
+      "files": [
+        "app/page.tsx",
+        "app/layout.tsx"
+      ],
+      "symbols": [
+        "app/page.tsx#default",
+        "app/layout.tsx#default"
+      ]
+    },
+    {
+      "route": "/about",
+      "files": [
+        "app/about/page.tsx"
+      ],
+      "symbols": [
+        "app/about/page.tsx#default"
+      ]
+    }
+  ],
+  "files": [
+    "app/page.tsx",
+    "app/layout.tsx",
+    "components/Button.tsx"
+  ]
+}

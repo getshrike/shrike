@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "id": "generated",
+  "dirty": "generated files are excluded from deletion candidates",
+  "config": {},
+  "expected": {
+    "newlyDead": [],
+    "newlyDeadFiles": [],
+    "triggerKinds": {}
+  },
+  "notes": ""
+}

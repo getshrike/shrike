@@ -1,0 +1,32 @@
+{
+  "name": "shrike",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Verified dead-code cleanup: whole-graph orphan delta, verified deletion batches, and portable receipts.",
+  "bin": {
+    "shrike": "./src/main.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@shrike/agent": "workspace:*",
+    "@shrike/receipts": "workspace:*",
+    "@shrike/verifier": "workspace:*"
+  },
+  "devDependencies": {
+    "@shrike/testkit": "workspace:*",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
+  }
+}

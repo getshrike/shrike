@@ -1,0 +1,1902 @@
+{
+  "schemaVersion": "1.0",
+  "count": 120,
+  "entries": [
+    {
+      "id": "page-entry-1",
+      "category": "page-entry",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/page.tsx#default",
+          "reason": "Next.js App Router page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "page-entry-2",
+      "category": "page-entry",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/page.tsx#default",
+          "reason": "Next.js App Router page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "page-entry-3",
+      "category": "page-entry",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/page.tsx#default",
+          "reason": "Next.js App Router page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "page-entry-4",
+      "category": "page-entry",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/page.tsx#default",
+          "reason": "Next.js App Router page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "page-entry-5",
+      "category": "page-entry",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/page.tsx#default",
+          "reason": "Next.js App Router page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "page-entry-6",
+      "category": "page-entry",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/page.tsx#default",
+          "reason": "Next.js App Router page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "page-entry-7",
+      "category": "page-entry",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/page.tsx#default",
+          "reason": "Next.js App Router page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "page-entry-8",
+      "category": "page-entry",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/page.tsx#default",
+          "reason": "Next.js App Router page is an entry"
+        }
+      ]
+    },
+    {
+      "id": "use-client-1",
+      "category": "use-client",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Widget.tsx#Widget1",
+          "reason": "client boundary component is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "use-client-2",
+      "category": "use-client",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Widget.tsx#Widget2",
+          "reason": "client boundary component is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "use-client-3",
+      "category": "use-client",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Widget.tsx#Widget3",
+          "reason": "client boundary component is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "use-client-4",
+      "category": "use-client",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Widget.tsx#Widget4",
+          "reason": "client boundary component is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "use-client-5",
+      "category": "use-client",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Widget.tsx#Widget5",
+          "reason": "client boundary component is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "use-client-6",
+      "category": "use-client",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Widget.tsx#Widget6",
+          "reason": "client boundary component is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "use-client-7",
+      "category": "use-client",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Widget.tsx#Widget7",
+          "reason": "client boundary component is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "use-client-8",
+      "category": "use-client",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Widget.tsx#Widget8",
+          "reason": "client boundary component is imported by an entry"
+        }
+      ]
+    },
+    {
+      "id": "dynamic-import-1",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/feature.ts#feature1",
+          "reason": "literal dynamic import is reachable from an entry"
+        }
+      ]
+    },
+    {
+      "id": "dynamic-import-2",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/feature.ts#feature2",
+          "reason": "literal dynamic import is reachable from an entry"
+        }
+      ]
+    },
+    {
+      "id": "dynamic-import-3",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/feature.ts#feature3",
+          "reason": "literal dynamic import is reachable from an entry"
+        }
+      ]
+    },
+    {
+      "id": "dynamic-import-4",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/feature.ts#feature4",
+          "reason": "literal dynamic import is reachable from an entry"
+        }
+      ]
+    },
+    {
+      "id": "dynamic-import-5",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/feature.ts#feature5",
+          "reason": "literal dynamic import is reachable from an entry"
+        }
+      ]
+    },
+    {
+      "id": "dynamic-import-6",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/feature.ts#feature6",
+          "reason": "literal dynamic import is reachable from an entry"
+        }
+      ]
+    },
+    {
+      "id": "dynamic-import-7",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/feature.ts#feature7",
+          "reason": "literal dynamic import is reachable from an entry"
+        }
+      ]
+    },
+    {
+      "id": "dynamic-import-8",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/feature.ts#feature8",
+          "reason": "literal dynamic import is reachable from an entry"
+        }
+      ]
+    },
+    {
+      "id": "barrel-1",
+      "category": "barrel",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl1",
+          "reason": "barrel re-export is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "barrel-2",
+      "category": "barrel",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl2",
+          "reason": "barrel re-export is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "barrel-3",
+      "category": "barrel",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl3",
+          "reason": "barrel re-export is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "barrel-4",
+      "category": "barrel",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl4",
+          "reason": "barrel re-export is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "barrel-5",
+      "category": "barrel",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl5",
+          "reason": "barrel re-export is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "barrel-6",
+      "category": "barrel",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl6",
+          "reason": "barrel re-export is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "barrel-7",
+      "category": "barrel",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl7",
+          "reason": "barrel re-export is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "barrel-8",
+      "category": "barrel",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl8",
+          "reason": "barrel re-export is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "test-entry-1",
+      "category": "test-entry",
+      "files": [
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/helper.ts#helper1",
+          "reason": "test files are entries under the local policy"
+        }
+      ]
+    },
+    {
+      "id": "test-entry-2",
+      "category": "test-entry",
+      "files": [
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/helper.ts#helper2",
+          "reason": "test files are entries under the local policy"
+        }
+      ]
+    },
+    {
+      "id": "test-entry-3",
+      "category": "test-entry",
+      "files": [
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/helper.ts#helper3",
+          "reason": "test files are entries under the local policy"
+        }
+      ]
+    },
+    {
+      "id": "test-entry-4",
+      "category": "test-entry",
+      "files": [
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/helper.ts#helper4",
+          "reason": "test files are entries under the local policy"
+        }
+      ]
+    },
+    {
+      "id": "test-entry-5",
+      "category": "test-entry",
+      "files": [
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/helper.ts#helper5",
+          "reason": "test files are entries under the local policy"
+        }
+      ]
+    },
+    {
+      "id": "test-entry-6",
+      "category": "test-entry",
+      "files": [
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/helper.ts#helper6",
+          "reason": "test files are entries under the local policy"
+        }
+      ]
+    },
+    {
+      "id": "test-entry-7",
+      "category": "test-entry",
+      "files": [
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/helper.ts#helper7",
+          "reason": "test files are entries under the local policy"
+        }
+      ]
+    },
+    {
+      "id": "test-entry-8",
+      "category": "test-entry",
+      "files": [
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/helper.ts#helper8",
+          "reason": "test files are entries under the local policy"
+        }
+      ]
+    },
+    {
+      "id": "package-entry-1",
+      "category": "package-entry",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/index.ts#api1",
+          "reason": "package entry export is public API"
+        }
+      ]
+    },
+    {
+      "id": "package-entry-2",
+      "category": "package-entry",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/index.ts#api2",
+          "reason": "package entry export is public API"
+        }
+      ]
+    },
+    {
+      "id": "package-entry-3",
+      "category": "package-entry",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/index.ts#api3",
+          "reason": "package entry export is public API"
+        }
+      ]
+    },
+    {
+      "id": "package-entry-4",
+      "category": "package-entry",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/index.ts#api4",
+          "reason": "package entry export is public API"
+        }
+      ]
+    },
+    {
+      "id": "package-entry-5",
+      "category": "package-entry",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/index.ts#api5",
+          "reason": "package entry export is public API"
+        }
+      ]
+    },
+    {
+      "id": "package-entry-6",
+      "category": "package-entry",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/index.ts#api6",
+          "reason": "package entry export is public API"
+        }
+      ]
+    },
+    {
+      "id": "package-entry-7",
+      "category": "package-entry",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/index.ts#api7",
+          "reason": "package entry export is public API"
+        }
+      ]
+    },
+    {
+      "id": "package-entry-8",
+      "category": "package-entry",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/index.ts#api8",
+          "reason": "package entry export is public API"
+        }
+      ]
+    },
+    {
+      "id": "config-entry-1",
+      "category": "config-entry",
+      "files": [
+        "next.config.ts",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "next.config.ts#__module__",
+          "reason": "config files are entries"
+        }
+      ]
+    },
+    {
+      "id": "config-entry-2",
+      "category": "config-entry",
+      "files": [
+        "next.config.ts",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "next.config.ts#__module__",
+          "reason": "config files are entries"
+        }
+      ]
+    },
+    {
+      "id": "config-entry-3",
+      "category": "config-entry",
+      "files": [
+        "next.config.ts",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "next.config.ts#__module__",
+          "reason": "config files are entries"
+        }
+      ]
+    },
+    {
+      "id": "config-entry-4",
+      "category": "config-entry",
+      "files": [
+        "next.config.ts",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "next.config.ts#__module__",
+          "reason": "config files are entries"
+        }
+      ]
+    },
+    {
+      "id": "config-entry-5",
+      "category": "config-entry",
+      "files": [
+        "next.config.ts",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "next.config.ts#__module__",
+          "reason": "config files are entries"
+        }
+      ]
+    },
+    {
+      "id": "config-entry-6",
+      "category": "config-entry",
+      "files": [
+        "next.config.ts",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "next.config.ts#__module__",
+          "reason": "config files are entries"
+        }
+      ]
+    },
+    {
+      "id": "config-entry-7",
+      "category": "config-entry",
+      "files": [
+        "next.config.ts",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "next.config.ts#__module__",
+          "reason": "config files are entries"
+        }
+      ]
+    },
+    {
+      "id": "config-entry-8",
+      "category": "config-entry",
+      "files": [
+        "next.config.ts",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "next.config.ts#__module__",
+          "reason": "config files are entries"
+        }
+      ]
+    },
+    {
+      "id": "cycle-1",
+      "category": "cycle",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/b.ts#b1",
+          "reason": "cycle member is reachable through the cycle"
+        }
+      ]
+    },
+    {
+      "id": "cycle-2",
+      "category": "cycle",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/b.ts#b2",
+          "reason": "cycle member is reachable through the cycle"
+        }
+      ]
+    },
+    {
+      "id": "cycle-3",
+      "category": "cycle",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/b.ts#b3",
+          "reason": "cycle member is reachable through the cycle"
+        }
+      ]
+    },
+    {
+      "id": "cycle-4",
+      "category": "cycle",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/b.ts#b4",
+          "reason": "cycle member is reachable through the cycle"
+        }
+      ]
+    },
+    {
+      "id": "cycle-5",
+      "category": "cycle",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/b.ts#b5",
+          "reason": "cycle member is reachable through the cycle"
+        }
+      ]
+    },
+    {
+      "id": "cycle-6",
+      "category": "cycle",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/b.ts#b6",
+          "reason": "cycle member is reachable through the cycle"
+        }
+      ]
+    },
+    {
+      "id": "cycle-7",
+      "category": "cycle",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/b.ts#b7",
+          "reason": "cycle member is reachable through the cycle"
+        }
+      ]
+    },
+    {
+      "id": "cycle-8",
+      "category": "cycle",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/b.ts#b8",
+          "reason": "cycle member is reachable through the cycle"
+        }
+      ]
+    },
+    {
+      "id": "jsx-1",
+      "category": "jsx",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Button.tsx#Button1",
+          "reason": "JSX use is an edge"
+        }
+      ]
+    },
+    {
+      "id": "jsx-2",
+      "category": "jsx",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Button.tsx#Button2",
+          "reason": "JSX use is an edge"
+        }
+      ]
+    },
+    {
+      "id": "jsx-3",
+      "category": "jsx",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Button.tsx#Button3",
+          "reason": "JSX use is an edge"
+        }
+      ]
+    },
+    {
+      "id": "jsx-4",
+      "category": "jsx",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Button.tsx#Button4",
+          "reason": "JSX use is an edge"
+        }
+      ]
+    },
+    {
+      "id": "jsx-5",
+      "category": "jsx",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Button.tsx#Button5",
+          "reason": "JSX use is an edge"
+        }
+      ]
+    },
+    {
+      "id": "jsx-6",
+      "category": "jsx",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Button.tsx#Button6",
+          "reason": "JSX use is an edge"
+        }
+      ]
+    },
+    {
+      "id": "jsx-7",
+      "category": "jsx",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Button.tsx#Button7",
+          "reason": "JSX use is an edge"
+        }
+      ]
+    },
+    {
+      "id": "jsx-8",
+      "category": "jsx",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Button.tsx#Button8",
+          "reason": "JSX use is an edge"
+        }
+      ]
+    },
+    {
+      "id": "type-only-1",
+      "category": "type-only",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/types.ts#Props1",
+          "reason": "type-only import keeps the type symbol live"
+        }
+      ]
+    },
+    {
+      "id": "type-only-2",
+      "category": "type-only",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/types.ts#Props2",
+          "reason": "type-only import keeps the type symbol live"
+        }
+      ]
+    },
+    {
+      "id": "type-only-3",
+      "category": "type-only",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/types.ts#Props3",
+          "reason": "type-only import keeps the type symbol live"
+        }
+      ]
+    },
+    {
+      "id": "type-only-4",
+      "category": "type-only",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/types.ts#Props4",
+          "reason": "type-only import keeps the type symbol live"
+        }
+      ]
+    },
+    {
+      "id": "type-only-5",
+      "category": "type-only",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/types.ts#Props5",
+          "reason": "type-only import keeps the type symbol live"
+        }
+      ]
+    },
+    {
+      "id": "type-only-6",
+      "category": "type-only",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/types.ts#Props6",
+          "reason": "type-only import keeps the type symbol live"
+        }
+      ]
+    },
+    {
+      "id": "type-only-7",
+      "category": "type-only",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/types.ts#Props7",
+          "reason": "type-only import keeps the type symbol live"
+        }
+      ]
+    },
+    {
+      "id": "type-only-8",
+      "category": "type-only",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/types.ts#Props8",
+          "reason": "type-only import keeps the type symbol live"
+        }
+      ]
+    },
+    {
+      "id": "side-effect-1",
+      "category": "side-effect",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/setup.ts#__module__",
+          "reason": "side-effect import keeps the module live"
+        }
+      ]
+    },
+    {
+      "id": "side-effect-2",
+      "category": "side-effect",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/setup.ts#__module__",
+          "reason": "side-effect import keeps the module live"
+        }
+      ]
+    },
+    {
+      "id": "side-effect-3",
+      "category": "side-effect",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/setup.ts#__module__",
+          "reason": "side-effect import keeps the module live"
+        }
+      ]
+    },
+    {
+      "id": "side-effect-4",
+      "category": "side-effect",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/setup.ts#__module__",
+          "reason": "side-effect import keeps the module live"
+        }
+      ]
+    },
+    {
+      "id": "side-effect-5",
+      "category": "side-effect",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/setup.ts#__module__",
+          "reason": "side-effect import keeps the module live"
+        }
+      ]
+    },
+    {
+      "id": "side-effect-6",
+      "category": "side-effect",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/setup.ts#__module__",
+          "reason": "side-effect import keeps the module live"
+        }
+      ]
+    },
+    {
+      "id": "side-effect-7",
+      "category": "side-effect",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/setup.ts#__module__",
+          "reason": "side-effect import keeps the module live"
+        }
+      ]
+    },
+    {
+      "id": "side-effect-8",
+      "category": "side-effect",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/setup.ts#__module__",
+          "reason": "side-effect import keeps the module live"
+        }
+      ]
+    },
+    {
+      "id": "export-all-1",
+      "category": "export-all",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl1",
+          "reason": "export * is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "export-all-2",
+      "category": "export-all",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl2",
+          "reason": "export * is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "export-all-3",
+      "category": "export-all",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl3",
+          "reason": "export * is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "export-all-4",
+      "category": "export-all",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl4",
+          "reason": "export * is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "export-all-5",
+      "category": "export-all",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl5",
+          "reason": "export * is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "export-all-6",
+      "category": "export-all",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl6",
+          "reason": "export * is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "export-all-7",
+      "category": "export-all",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl7",
+          "reason": "export * is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "export-all-8",
+      "category": "export-all",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#impl8",
+          "reason": "export * is followed to the underlying symbol"
+        }
+      ]
+    },
+    {
+      "id": "namespace-1",
+      "category": "namespace",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/lib.ts#thing1",
+          "reason": "namespace member access is an edge"
+        }
+      ]
+    },
+    {
+      "id": "namespace-2",
+      "category": "namespace",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/lib.ts#thing2",
+          "reason": "namespace member access is an edge"
+        }
+      ]
+    },
+    {
+      "id": "namespace-3",
+      "category": "namespace",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/lib.ts#thing3",
+          "reason": "namespace member access is an edge"
+        }
+      ]
+    },
+    {
+      "id": "namespace-4",
+      "category": "namespace",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/lib.ts#thing4",
+          "reason": "namespace member access is an edge"
+        }
+      ]
+    },
+    {
+      "id": "namespace-5",
+      "category": "namespace",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/lib.ts#thing5",
+          "reason": "namespace member access is an edge"
+        }
+      ]
+    },
+    {
+      "id": "namespace-6",
+      "category": "namespace",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/lib.ts#thing6",
+          "reason": "namespace member access is an edge"
+        }
+      ]
+    },
+    {
+      "id": "namespace-7",
+      "category": "namespace",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/lib.ts#thing7",
+          "reason": "namespace member access is an edge"
+        }
+      ]
+    },
+    {
+      "id": "namespace-8",
+      "category": "namespace",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/lib.ts#thing8",
+          "reason": "namespace member access is an edge"
+        }
+      ]
+    },
+    {
+      "id": "server-action-1",
+      "category": "server-action",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/actions.ts#action1",
+          "reason": "server action export is an entry"
+        }
+      ]
+    },
+    {
+      "id": "server-action-2",
+      "category": "server-action",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/actions.ts#action2",
+          "reason": "server action export is an entry"
+        }
+      ]
+    },
+    {
+      "id": "server-action-3",
+      "category": "server-action",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/actions.ts#action3",
+          "reason": "server action export is an entry"
+        }
+      ]
+    },
+    {
+      "id": "server-action-4",
+      "category": "server-action",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/actions.ts#action4",
+          "reason": "server action export is an entry"
+        }
+      ]
+    },
+    {
+      "id": "server-action-5",
+      "category": "server-action",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/actions.ts#action5",
+          "reason": "server action export is an entry"
+        }
+      ]
+    },
+    {
+      "id": "server-action-6",
+      "category": "server-action",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/actions.ts#action6",
+          "reason": "server action export is an entry"
+        }
+      ]
+    },
+    {
+      "id": "server-action-7",
+      "category": "server-action",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/actions.ts#action7",
+          "reason": "server action export is an entry"
+        }
+      ]
+    },
+    {
+      "id": "server-action-8",
+      "category": "server-action",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/actions.ts#action8",
+          "reason": "server action export is an entry"
+        }
+      ]
+    },
+    {
+      "id": "default-reexport-1",
+      "category": "default-reexport",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.tsx#default",
+          "reason": "default re-export is followed"
+        }
+      ]
+    },
+    {
+      "id": "default-reexport-2",
+      "category": "default-reexport",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.tsx#default",
+          "reason": "default re-export is followed"
+        }
+      ]
+    },
+    {
+      "id": "default-reexport-3",
+      "category": "default-reexport",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.tsx#default",
+          "reason": "default re-export is followed"
+        }
+      ]
+    },
+    {
+      "id": "default-reexport-4",
+      "category": "default-reexport",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.tsx#default",
+          "reason": "default re-export is followed"
+        }
+      ]
+    },
+    {
+      "id": "default-reexport-5",
+      "category": "default-reexport",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.tsx#default",
+          "reason": "default re-export is followed"
+        }
+      ]
+    },
+    {
+      "id": "default-reexport-6",
+      "category": "default-reexport",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.tsx#default",
+          "reason": "default re-export is followed"
+        }
+      ]
+    },
+    {
+      "id": "default-reexport-7",
+      "category": "default-reexport",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.tsx#default",
+          "reason": "default re-export is followed"
+        }
+      ]
+    },
+    {
+      "id": "default-reexport-8",
+      "category": "default-reexport",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.tsx#default",
+          "reason": "default re-export is followed"
+        }
+      ]
+    }
+  ]
+}
