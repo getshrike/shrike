@@ -400,12 +400,27 @@ impl<'a> Builder<'a> {
             }
 
             // TanStack Router file routes export a `Route` object consumed by
-            // the generated route tree.
+            // the generated route tree. The tree can point at a configured
+            // `routesDirectory`, so identify route modules by their route
+            // factory import rather than a fixed folder name.
             let tanstack_import = summary
                 .imports
                 .iter()
                 .any(|import| import.source.starts_with("@tanstack/"));
-            if tanstack_import && in_directory(path, "src/routes/") {
+            let tanstack_route_factory = summary.imports.iter().any(|import| {
+                import.bindings.iter().any(|binding| {
+                    matches!(
+                        binding.imported.as_str(),
+                        "createFileRoute"
+                            | "createLazyFileRoute"
+                            | "createRootRoute"
+                            | "createServerFileRoute"
+                    )
+                })
+            });
+            let tanstack_route =
+                tanstack_route_factory || (tanstack_import && in_directory(path, "src/routes/"));
+            if tanstack_route {
                 add(
                     self,
                     module.clone(),
@@ -1553,6 +1568,51 @@ mod tests {
                 .candidates
                 .iter()
                 .any(|key| key == "app/components/dead.tsx#deadThing"),
+            "non-route modules must still be analyzed: {:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn tanstack_route_factories_are_entries_in_custom_directories() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"tsr-app","type":"module","dependencies":{"@tanstack/react-router":"^1.130.0"}}"#,
+            ),
+            (
+                "tsr.config.json",
+                r#"{"routesDirectory":"src/pages","generatedRouteTree":"src/routeTree.gen.ts"}"#,
+            ),
+            (
+                "src/pages/index.tsx",
+                "import { createFileRoute } from '@tanstack/react-router';\n\
+                 export const Route = createFileRoute('/')({ component: Home });\n\
+                 function Home() { return <main>Home</main>; }\n",
+            ),
+            (
+                "src/components/dead.tsx",
+                "export function deadThing() { return 1; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        assert!(
+            entries.contains(&"src/pages/index.tsx#Route"),
+            "a route factory marks a route in a configured directory: {entries:?}"
+        );
+        assert!(
+            !snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "src/pages/index.tsx#Home"),
+            "the route's component must stay live: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "src/components/dead.tsx#deadThing"),
             "non-route modules must still be analyzed: {:?}",
             snapshot.candidates
         );

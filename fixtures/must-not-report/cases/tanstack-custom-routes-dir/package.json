@@ -1,0 +1,9 @@
+{
+  "name": "corpus-tanstack-custom-routes-dir",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tanstack/react-router": "^1.130.0",
+    "react": "^19.0.0"
+  }
+}
