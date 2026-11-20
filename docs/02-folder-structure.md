@@ -35,6 +35,29 @@ schemas  ──►  crates  ──►  engine binary
 - **Docs, plans, prompts, and research live at the root**, because they are the
   product definition and must be readable without entering a package.
 
+### 1.1 Prior art and conventions
+
+The layout follows established conventions for multi-crate Rust workspaces and
+polyglot monorepos:
+
+- The [Cargo Book](https://doc.rust-lang.org/cargo/reference/workspaces.html)
+  recommends keeping workspace members in a flat directory, "commonly
+  `crates/`", and using a glob for the `members` field.
+- The [Microsoft Pragmatic Rust Guidelines](https://microsoft.github.io/rust-guidelines/guidelines/project)
+  require all crates to be siblings in one folder and treat crates nested under
+  another crate's `src/` as unacceptable.
+- [matklad's *Large Rust Workspaces*](https://matklad.github.io/2021/08/22/large-rust-workspaces.html)
+  recommends the flat `crates/` layout for workspaces between 10,000 and one
+  million lines, and warns against stripping a common prefix from directory
+  names.
+- [Tauri](https://github.com/tauri-apps/tauri) and
+  [SWC](https://github.com/swc-project/swc) use the same `crates/` + `packages/`
+  split for their Rust and TypeScript halves.
+
+A top-level `src/` is deliberately not used: in Cargo, `src/` belongs to a
+package, and the workspace root is a virtual manifest with no package of its
+own. Every crate already has its own `src/`.
+
 ---
 
 ## 2. Top-level layout
@@ -203,6 +226,13 @@ crates/
 - `shrike-receipt` depends on `shrike-core`.
 - `shrike-engine` depends on all runtime crates.
 - `xtask` may depend on anything; it is dev-only.
+- Each crate directory name equals its package name: `crates/shrike-graph`
+  contains `name = "shrike-graph"`. Do not strip the `shrike-` prefix; directory
+  and package names stay in sync. `xtask` is the exception because it is a
+  conventional tooling crate, not a Shrike runtime crate.
+- The workspace uses `members = ["crates/*"]` and lists the runtime crates in
+  `default-members`, so a root `cargo build` or `cargo test` skips `xtask`; CI
+  still passes `--workspace`.
 - No crate depends on a TypeScript package.
 - No crate performs I/O outside its documented boundary:
   - `shrike-syntax` reads source files;
