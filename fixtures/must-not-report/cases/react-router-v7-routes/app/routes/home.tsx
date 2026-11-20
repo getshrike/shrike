@@ -5,6 +5,7 @@ export function loader({}: Route.LoaderArgs) {
 }
 
 export const middleware = [];
+export const unstable_middleware = [];
 
 export default function Home({ loaderData }: Route.ComponentProps) {
   return <main>{loaderData.title}</main>;

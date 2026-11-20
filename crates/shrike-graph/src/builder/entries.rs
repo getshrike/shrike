@@ -929,12 +929,21 @@ impl<'a> Builder<'a> {
                     "clientAction",
                     "middleware",
                     "clientMiddleware",
+                    // React Router 7.3-7.8 exposed the middleware exports under
+                    // `unstable_` names before they stabilized.
+                    "unstable_middleware",
+                    "unstable_clientMiddleware",
                     "meta",
                     "links",
                     "headers",
                     "ErrorBoundary",
+                    // Remix v1 used a distinct boundary for thrown responses.
+                    "CatchBoundary",
                     "HydrateFallback",
                     "shouldRevalidate",
+                    // Remix v1's revalidation hook and its unstable spelling.
+                    "shouldReload",
+                    "unstable_shouldReload",
                     "handle",
                     "Component",
                     "config",
@@ -2348,6 +2357,7 @@ mod tests {
                 "import type { Route } from './+types/home';\n\
                  export function loader({}: Route.LoaderArgs) { return { title: 'Home' }; }\n\
                  export const middleware = [];\n\
+                 export const unstable_middleware = [];\n\
                  export default function Home({ loaderData }: Route.ComponentProps) { return <main>{loaderData.title}</main>; }\n",
             ),
             (
@@ -2355,6 +2365,7 @@ mod tests {
                 "import type { Route } from './+types/about';\n\
                  export async function action({ request }: Route.ActionArgs) { return request.formData(); }\n\
                  export const clientMiddleware = [];\n\
+                 export const unstable_clientMiddleware = [];\n\
                  export default function About() { return <main>About</main>; }\n",
             ),
             (
@@ -2367,9 +2378,11 @@ mod tests {
             "app/root.tsx#Layout",
             "app/routes/home.tsx#loader",
             "app/routes/home.tsx#middleware",
+            "app/routes/home.tsx#unstable_middleware",
             "app/routes/home.tsx#default",
             "app/routes/about.tsx#action",
             "app/routes/about.tsx#clientMiddleware",
+            "app/routes/about.tsx#unstable_clientMiddleware",
             "app/routes/about.tsx#default",
         ] {
             assert!(
@@ -2397,7 +2410,10 @@ mod tests {
             (
                 "app/root.tsx",
                 "import { Outlet } from '@remix-run/react';\n\
-                 export default function App() { return <Outlet />; }\n",
+                 export default function App() { return <Outlet />; }\n\
+                 export function CatchBoundary() { return <main>Caught</main>; }\n\
+                 export const shouldReload = () => false;\n\
+                 export const unstable_shouldReload = () => false;\n",
             ),
             (
                 "app/routes/about._index.tsx",
@@ -2409,10 +2425,18 @@ mod tests {
             ),
         ]);
         let entries = entry_symbols(&snapshot);
-        assert!(
-            entries.contains(&"app/routes/about._index.tsx#default"),
-            "a Remix route with no imports is still router-rendered: {entries:?}"
-        );
+        for symbol in [
+            "app/root.tsx#default",
+            "app/root.tsx#CatchBoundary",
+            "app/root.tsx#shouldReload",
+            "app/root.tsx#unstable_shouldReload",
+            "app/routes/about._index.tsx#default",
+        ] {
+            assert!(
+                entries.contains(&symbol),
+                "a Remix route export is framework-invoked even with no imports: {symbol} missing from {entries:?}"
+            );
+        }
         assert!(
             snapshot
                 .candidates

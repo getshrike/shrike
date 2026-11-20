@@ -355,8 +355,10 @@ The same entry rule applies to conventions with their own compilers:
   path the router loads. Remix is detected package-wide from
   an `app/root` that imports `@remix-run/*`, so route modules need no imports of
   their own. The root route alone may also export `Layout`, the document shell,
-  and `middleware` / `clientMiddleware` are framework-invoked like `loader` and
-  `action`;
+  and `middleware` / `clientMiddleware` (including their `unstable_` spellings
+  in React Router 7.3-7.8) are framework-invoked like `loader` and `action`.
+  Remix v1 route hooks `CatchBoundary`, `shouldReload`, and
+  `unstable_shouldReload` remain protected for projects on that API;
 - TanStack Router: `Route`/`route` objects in modules that import a route
   factory (`createFileRoute`, `createLazyFileRoute`, `createRootRoute`, or
   `createServerFileRoute`), so a configured `routesDirectory` is covered; the
