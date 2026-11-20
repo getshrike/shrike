@@ -21,19 +21,26 @@ impl<'a> Builder<'a> {
                 queue.push_back(entry.symbol.clone());
             }
         }
-        // Unknown edges widen the live set in their bounded scope.
+        // Unknown edges widen the live set in their bounded scope. Widened
+        // symbols are seeded into the queue like entries: a symbol that is live
+        // must expand its own references, or its helpers are misreported as
+        // dead.
         for unknown in &self.unknowns {
             match unknown.scope.as_str() {
                 "repo" => {
                     for symbol in &self.symbols {
-                        live.insert(symbol.key.clone());
+                        if live.insert(symbol.key.clone()) {
+                            queue.push_back(symbol.key.clone());
+                        }
                     }
                 }
                 "package" => {
                     if let Some(package) = &unknown.package {
                         for symbol in &self.symbols {
-                            if self.package_of.get(&symbol.file) == Some(package) {
-                                live.insert(symbol.key.clone());
+                            if self.package_of.get(&symbol.file) == Some(package)
+                                && live.insert(symbol.key.clone())
+                            {
+                                queue.push_back(symbol.key.clone());
                             }
                         }
                     }
@@ -41,7 +48,9 @@ impl<'a> Builder<'a> {
                 "module" => {
                     if let Some(file) = self.files.iter().find(|file| file.path == unknown.file) {
                         for (_, key) in self.exports.get(&file.path).cloned().unwrap_or_default() {
-                            live.insert(key);
+                            if live.insert(key.clone()) {
+                                queue.push_back(key);
+                            }
                         }
                     }
                 }

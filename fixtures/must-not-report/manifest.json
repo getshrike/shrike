@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 261,
+  "count": 262,
   "entries": [
     {
       "id": "page-entry-1",
@@ -4174,6 +4174,37 @@
       ],
       "mustReport": [
         "pages/_app.tsx#unusedAppExport"
+      ]
+    },
+    {
+      "id": "namespace-value-dependency",
+      "category": "namespace",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/lib.ts#Widget",
+          "reason": "namespace value widens every export"
+        },
+        {
+          "symbol": "src/lib.ts#Unused",
+          "reason": "namespace value widens every export"
+        },
+        {
+          "symbol": "src/lib.ts#helper",
+          "reason": "a widened export keeps its own references live"
+        },
+        {
+          "symbol": "src/lib.ts#leaf",
+          "reason": "a widened export keeps its own references live"
+        }
+      ],
+      "mustReport": [
+        "src/other.ts#DeadExport"
       ]
     }
   ]
