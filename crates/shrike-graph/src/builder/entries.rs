@@ -1003,6 +1003,31 @@ mod tests {
     }
 
     #[test]
+    fn namespace_widening_propagates_through_exported_dependencies() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "import * as UI from '../components/ui';\nconst all = { ...UI };\nexport default function Page() { return <div>{Object.keys(all).length}</div>; }\n",
+            ),
+            (
+                "components/ui.tsx",
+                "function leaf() { return 1; }\n\
+                 function helper() { return leaf(); }\n\
+                 export function Button() { return helper(); }\n\
+                 export function DeadButton() { return null; }\n",
+            ),
+        ]);
+        for key in ["components/ui.tsx#helper", "components/ui.tsx#leaf"] {
+            assert!(
+                !snapshot.candidates.iter().any(|candidate| candidate == key),
+                "a live symbol reached through namespace widening must keep its own \
+                 dependencies live: {key} in {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
     fn type_position_imports_keep_the_named_type_live() {
         let snapshot = snapshot(&[
             (

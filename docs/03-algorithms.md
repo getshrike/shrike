@@ -393,6 +393,7 @@ local scans, off for production deltas. The receipt records the policy.
 ```text
 queue = all entries, sorted by EntryId
 for each entry: mark live, witness[entry] = [entry]
+for each symbol widened by an unknown scope: mark live, queue.push_back(symbol)
 while queue not empty:
     s = pop_front()
     for edge in outgoing(s) sorted by target:
@@ -405,7 +406,9 @@ while queue not empty:
 
 The BFS is over the **over-approximate** graph: `probable` and `unknown` edges
 are traversed. This keeps code alive that might be used. It is the conservative
-direction.
+direction. Widening changes the seed set, never the reachability rule: a symbol
+made live by an unknown scope is expanded like an entry. Otherwise a live
+export's helpers are reported dead even though the export calls them.
 
 ### 10.2 Witness
 
@@ -426,6 +429,9 @@ it is not an entry and it is not public API.
 **Invariant F4:** no entry is a candidate.
 
 **Invariant F5:** no symbol in an unparsed file is a candidate.
+
+**Invariant F6:** every live symbol is expanded exactly once. Symbols widened by
+an unknown scope are queued, so their outgoing references are traversed.
 
 ### 10.4 Proof trace
 
