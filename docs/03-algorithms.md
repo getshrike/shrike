@@ -367,7 +367,11 @@ The same entry rule applies to conventions with their own compilers:
   under the `root` configured by the `expo-router` plugin in `app.json` /
   `app.config.*`; `+api` routes expose HTTP method handlers, `+native-intent`
   exposes `redirectSystemPath`/`legacy_subscribe`, and `+middleware` exposes
-  `default` and `unstable_settings`;
+  `default` and `unstable_settings`. Local config plugins named by relative
+  path in the app config `plugins` array (including a local
+  `const plugins = [...]`, `require.resolve`, and tuple options) are entries,
+  and the whole plugin module surface is protected because Expo loads it
+  without an import;
 - SvelteKit: `src/routes/**/+page|+layout|+server|+error` exports and route
   modules (`.svelte` files have a module entry even though their body is not
   parsed);
