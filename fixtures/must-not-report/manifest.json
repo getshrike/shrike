@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 250,
+  "count": 261,
   "entries": [
     {
       "id": "page-entry-1",
@@ -3916,6 +3916,264 @@
           "symbol": "src/lib.ts#value",
           "reason": "namespace import is followed"
         }
+      ]
+    },
+    {
+      "id": "mdx-two-sided",
+      "category": "mdx",
+      "files": [
+        "app",
+        "components",
+        "mdx-components.tsx",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/widget.tsx#Widget",
+          "reason": "imported by an MDX entry"
+        },
+        {
+          "symbol": "mdx-components.tsx#useMDXComponents",
+          "reason": "MDX component map is loaded by the framework"
+        }
+      ],
+      "mustReport": [
+        "components/widget.tsx#UnusedWidget",
+        "mdx-components.tsx#unusedMdxHelper"
+      ]
+    },
+    {
+      "id": "next-image-two-sided",
+      "category": "next-image-metadata",
+      "files": [
+        "app",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/icon.tsx#default",
+          "reason": "image route default export"
+        },
+        {
+          "symbol": "app/icon.tsx#size",
+          "reason": "image route metadata"
+        },
+        {
+          "symbol": "app/icon.tsx#contentType",
+          "reason": "image route metadata"
+        },
+        {
+          "symbol": "app/icon.tsx#alt",
+          "reason": "image route metadata"
+        },
+        {
+          "symbol": "app/icon.tsx#generateImageMetadata",
+          "reason": "image route metadata"
+        },
+        {
+          "symbol": "app/page.tsx#default",
+          "reason": "Next.js page entry"
+        }
+      ],
+      "mustReport": [
+        "app/icon.tsx#unusedIconHelper",
+        "app/page.tsx#size"
+      ]
+    },
+    {
+      "id": "next-interrupt-two-sided",
+      "category": "next-interrupt",
+      "files": [
+        "app",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/forbidden.tsx#default",
+          "reason": "forbidden route entry"
+        },
+        {
+          "symbol": "app/unauthorized.tsx#default",
+          "reason": "unauthorized route entry"
+        }
+      ],
+      "mustReport": [
+        "app/forbidden.tsx#unusedForbiddenHelper",
+        "app/unauthorized.tsx#unusedUnauthorizedHelper"
+      ]
+    },
+    {
+      "id": "internal-only-two-sided",
+      "category": "internal-only",
+      "files": [
+        "app",
+        "src",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/page.tsx#default",
+          "reason": "Next.js page entry"
+        }
+      ],
+      "internalOnly": [
+        "src/registry.ts#helper",
+        "src/registry.ts#publicApi"
+      ],
+      "mustReport": [
+        "src/registry.ts#unusedExport"
+      ]
+    },
+    {
+      "id": "remix-two-sided",
+      "category": "remix",
+      "files": [
+        "app",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/root.tsx#default",
+          "reason": "Remix root route"
+        },
+        {
+          "symbol": "app/root.tsx#loader",
+          "reason": "Remix root loader"
+        },
+        {
+          "symbol": "app/routes/users.tsx#default",
+          "reason": "Remix route component"
+        },
+        {
+          "symbol": "app/routes/users.tsx#loader",
+          "reason": "Remix route loader"
+        }
+      ],
+      "mustReport": [
+        "app/routes/users.tsx#unusedRouteHelper"
+      ]
+    },
+    {
+      "id": "tanstack-two-sided",
+      "category": "tanstack",
+      "files": [
+        "src",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/routes/posts.tsx#Route",
+          "reason": "TanStack file route"
+        }
+      ],
+      "mustReport": [
+        "src/routes/posts.tsx#unusedRouteHelper"
+      ]
+    },
+    {
+      "id": "expo-two-sided",
+      "category": "expo",
+      "files": [
+        "app",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/_layout.tsx#default",
+          "reason": "Expo Router layout"
+        },
+        {
+          "symbol": "app/index.tsx#default",
+          "reason": "Expo Router index route"
+        },
+        {
+          "symbol": "app/profile.tsx#default",
+          "reason": "every module under app/ is an Expo route"
+        }
+      ],
+      "mustReport": [
+        "app/profile.tsx#unusedProfileHelper"
+      ]
+    },
+    {
+      "id": "sveltekit-two-sided",
+      "category": "sveltekit",
+      "files": [
+        "src",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/routes/+page.ts#load",
+          "reason": "SvelteKit load function"
+        },
+        {
+          "symbol": "src/routes/+page.svelte#__module__",
+          "reason": "SvelteKit route module"
+        }
+      ],
+      "mustReport": [
+        "src/routes/+page.ts#unusedRouteHelper",
+        "src/lib/unused.ts#unusedLib"
+      ]
+    },
+    {
+      "id": "astro-two-sided",
+      "category": "astro",
+      "files": [
+        "src",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/pages/health.ts#GET",
+          "reason": "Astro endpoint handler"
+        }
+      ],
+      "mustReport": [
+        "src/pages/health.ts#unusedEndpointHelper"
+      ]
+    },
+    {
+      "id": "nuxt-two-sided",
+      "category": "nuxt",
+      "files": [
+        "app.vue",
+        "nuxt.config.ts",
+        "server",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "server/api/hello.ts#default",
+          "reason": "Nuxt server route"
+        },
+        {
+          "symbol": "app.vue#__module__",
+          "reason": "Nuxt root component"
+        }
+      ],
+      "mustReport": [
+        "server/models/unused.ts#unusedModel"
+      ]
+    },
+    {
+      "id": "next-pages-report-web-vitals",
+      "category": "next-pages",
+      "files": [
+        "pages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "pages/_app.tsx#reportWebVitals",
+          "reason": "Next.js calls reportWebVitals when it is exported from pages/_app"
+        }
+      ],
+      "mustReport": [
+        "pages/_app.tsx#unusedAppExport"
       ]
     }
   ]

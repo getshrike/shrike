@@ -40,6 +40,20 @@ impl Default for BatchPolicy {
     }
 }
 
+/// How a `"use client"`/`"use server"` directive affects entry seeding.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ClientBoundaryPolicy {
+    /// The directive marks a boundary, but liveness comes from the module
+    /// graph like any other file. Unused boundaries are reported.
+    #[default]
+    Graph,
+    /// Every export in a client/server boundary file is an entry. Maximum
+    /// caution for frameworks that discover boundaries outside the import
+    /// graph; hides genuinely unused boundary exports.
+    Protect,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct EngineConfig {
@@ -56,6 +70,8 @@ pub struct EngineConfig {
     /// Treat generated files as deletion candidates. Default false: generated
     /// files are parsed for edges but never proposed for deletion.
     pub include_generated: bool,
+    /// Client/server boundary entry policy.
+    pub client_boundary_policy: ClientBoundaryPolicy,
     /// Extra globs whose exports are public API and never deletion candidates.
     pub public_api: Vec<String>,
     /// Extra globs treated as generated.
@@ -76,6 +92,10 @@ impl Default for EngineConfig {
                 "**/*.jsx".into(),
                 "**/*.mjs".into(),
                 "**/*.cjs".into(),
+                "**/*.mdx".into(),
+                "**/*.svelte".into(),
+                "**/*.vue".into(),
+                "**/*.astro".into(),
             ],
             ignore: vec![
                 "node_modules/**".into(),
@@ -95,6 +115,7 @@ impl Default for EngineConfig {
             entry_policy: EntryPolicy::Local,
             test_entries: true,
             include_generated: false,
+            client_boundary_policy: ClientBoundaryPolicy::Graph,
             public_api: Vec::new(),
             generated: Vec::new(),
             batch_policy: BatchPolicy::default(),
@@ -176,6 +197,7 @@ mod tests {
         assert_eq!(config.batch_policy.max_files, 10);
         assert!(config.test_entries);
         assert!(!config.include_generated);
+        assert_eq!(config.client_boundary_policy, ClientBoundaryPolicy::Graph);
         assert!(config.validate().is_ok());
     }
 

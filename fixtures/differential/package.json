@@ -1,0 +1,12 @@
+{
+  "name": "differential-fixture",
+  "private": true,
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "left-pad": "^1.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

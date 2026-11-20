@@ -13,7 +13,9 @@ import { readReceipt, listReceipts } from "@shrike/receipts";
 import { analyze, analyzePair, toReceiptBuild } from "../session.ts";
 import { storePlan } from "../plan-store.ts";
 import { renderDelta, renderPlan } from "../render.ts";
-import type { BuildJoinResult, Plan, Snapshot } from "../cli-types.ts";
+import { analyzeDependencies, type DependencyReport } from "../dependencies.ts";
+import { summarizeDiagnostics, type DiagnosticSummary } from "../diagnostics.ts";
+import type { BuildJoinResult, Plan, ScanResult, Snapshot } from "../cli-types.ts";
 
 export function versionCommand(args: ParsedArgs): number {
   const value = { name: "shrike", version: VERSION, protocolVersion: PROTOCOL_VERSION, engine: "rust" };
@@ -51,19 +53,93 @@ export default config;
 }
 export async function scanCommand(root: string, args: ParsedArgs): Promise<number> {
   const config = await loadConfig(root);
-  const result = await requestEngine<{ snapshot: Snapshot; candidates: unknown[] }>("scan", {
+  const result = await requestEngine<ScanResult>("scan", {
     root,
     config: engineConfig(config),
     cacheDir: cacheDirectory(root, config),
   });
-  if (booleanFlag(args, "json")) writeJson(result);
+  const dependencies = analyzeDependencies(root, result.snapshot, config.ignoreDependencies);
+  const diagnostics = summarizeDiagnostics(result.snapshot.diagnostics ?? []);
+  const payload = { ...result, dependencies, diagnosticsSummary: diagnostics };
+  if (booleanFlag(args, "json")) writeJson(payload);
   else {
     writeHuman(`Shrike scan: ${formatCount(result.candidates.length, "candidate")} (${result.snapshot.files.length} files)`);
-    for (const item of result.candidates as { symbol: string; lines: number }[]) {
-      writeHuman(`  ${item.symbol}  -${item.lines} lines`);
+    const incoming = new Map<string, number>();
+    for (const edge of result.snapshot.edges ?? []) {
+      incoming.set(edge.target, (incoming.get(edge.target) ?? 0) + 1);
+    }
+    for (const item of result.candidates) {
+      const references = incoming.get(item.symbol) ?? 0;
+      const evidence = references > 0
+        ? `only dead references (${references})`
+        : "no incoming references";
+      writeHuman(`  ${item.symbol}  -${item.lines} lines  [${evidence}]`);
+    }
+    const internalOnly = result.snapshot.internalOnly ?? [];
+    if (internalOnly.length > 0) {
+      writeHuman(
+        `Exported but only used internally: ${formatCount(internalOnly.length, "export")} (not deletion candidates)`,
+      );
+      for (const symbol of internalOnly.slice(0, 20)) writeHuman(`  ${symbol}`);
+      if (internalOnly.length > 20) writeHuman(`  ... ${internalOnly.length - 20} more`);
+    }
+    renderDiagnostics(diagnostics);
+    renderDependencies(dependencies);
+  }
+  return result.candidates.length > 0 || dependencies.summary.unused > 0 || dependencies.summary.unlisted > 0
+    ? ExitCode.FINDINGS
+    : ExitCode.OK;
+}
+
+export async function depsCommand(root: string, args: ParsedArgs): Promise<number> {
+  rejectUnknownFlags(args, ["json", "help"]);
+  const config = await loadConfig(root);
+  const result = await requestEngine<ScanResult>("scan", {
+    root,
+    config: engineConfig(config),
+    cacheDir: cacheDirectory(root, config),
+  });
+  const dependencies = analyzeDependencies(root, result.snapshot, config.ignoreDependencies);
+  if (booleanFlag(args, "json")) writeJson(dependencies);
+  else renderDependencies(dependencies);
+  return dependencies.summary.unused > 0 || dependencies.summary.unlisted > 0
+    ? ExitCode.FINDINGS
+    : ExitCode.OK;
+}
+
+function renderDependencies(report: DependencyReport): void {
+  const { summary } = report;
+  if (summary.unused === 0 && summary.unlisted === 0 && summary.transitive === 0) {
+    writeHuman("Dependencies: none unused or unlisted.");
+    return;
+  }
+  writeHuman(
+    `Dependencies: ${formatCount(summary.unused, "unused")}, ${formatCount(summary.unlisted, "unlisted")}` +
+      (summary.transitive > 0 ? `, ${formatCount(summary.transitive, "transitive")}` : ""),
+  );
+  for (const pkg of report.packages) {
+    const label = pkg.directory === "" ? pkg.name : `${pkg.name} (${pkg.directory})`;
+    for (const item of pkg.unused) {
+      writeHuman(`  ${label}: ${item.name}  [${item.kind}]`);
+    }
+    for (const item of pkg.unlisted) {
+      writeHuman(`  ${label}: ${item.name}  [imported but not declared]`);
+    }
+    for (const item of pkg.transitive) {
+      writeHuman(`  ${label}: ${item.name}  [provided by a declared dependency; informational]`);
     }
   }
-  return result.candidates.length > 0 ? ExitCode.FINDINGS : ExitCode.OK;
+}
+
+function renderDiagnostics(summary: DiagnosticSummary): void {
+  if (summary.total === 0) return;
+  writeHuman(
+    `Diagnostics: ${summary.total} (${summary.actionable} actionable, ${summary.informational} informational)`,
+  );
+  for (const group of summary.groups.slice(0, 6)) {
+    const label = group.actionable ? group.category : `${group.category} (info)`;
+    writeHuman(`  ${label}: ${group.count} × ${group.code}${group.files[0] ? `  [${group.files[0]}]` : ""}`);
+  }
 }
 export async function deltaCommand(root: string, args: ParsedArgs): Promise<number> {
   const failOn = stringFlag(args, "fail-on") ?? "newly-dead";

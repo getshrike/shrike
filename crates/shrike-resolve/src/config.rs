@@ -272,6 +272,7 @@ pub(crate) fn load_workspaces(
             continue;
         };
         let mut exports = BTreeMap::new();
+        let mut export_target_paths = Vec::new();
         let mut conditional_root = None;
         if let Some(map) = value.get("exports").and_then(serde_json::Value::as_object) {
             // `exports` is either a subpath map (`"."`, `"./react"`, ...) or a
@@ -279,11 +280,21 @@ pub(crate) fn load_workspaces(
             // bare form describes the package root and is common in small
             // libraries.
             if !map.keys().any(|key| key.starts_with('.')) {
-                conditional_root = export_target(&serde_json::Value::Object(map.clone()));
+                let root = serde_json::Value::Object(map.clone());
+                conditional_root = export_target(&root);
+                export_target_paths.extend(export_targets(&root));
             }
             for (key, target) in map {
-                if let Some(target) = export_target(target) {
-                    exports.insert(key.clone(), join_package_path(&directory, &target));
+                let targets = export_targets(target);
+                if let Some(target) = targets.first() {
+                    exports.insert(key.clone(), join_package_path(&directory, target));
+                }
+                // Every condition can name a distinct public source file
+                // (`react-server`, `worker`, `types`, ...). A package that
+                // publishes the same root through several conditions still
+                // has all of those source files as public API.
+                if key == "." || key.starts_with("./") {
+                    export_target_paths.extend(targets);
                 }
             }
         }
@@ -325,12 +336,17 @@ pub(crate) fn load_workspaces(
         if let Some(entry) = &entry {
             public_sources.insert(entry.clone());
         }
-        for (key, target) in &exports {
-            if key == "." || key.starts_with("./") {
-                public_sources.extend(export_source_files(&directory, target, files));
-            }
+        for target in &export_target_paths {
+            let target = join_package_path(&directory, target);
+            public_sources.extend(export_source_files(&directory, &target, files));
         }
         let script_files = package_script_files(&directory, &value, files);
+        // A nested example may reuse the root package's name. Keep the
+        // shallowest declaration so self-references resolve to the real
+        // package, not the example that consumes it.
+        if packages.contains_key(name) {
+            continue;
+        }
         packages.insert(
             name.to_string(),
             PackageInfo {
@@ -423,6 +439,7 @@ fn export_source_files(
     let Some(stem) = code_stem(stripped) else {
         return BTreeSet::new();
     };
+    let stem = strip_build_flavor(stem);
     let wildcard = stem.contains('*');
     // A bare `*` describes every published root module. Its source equivalents
     // live under `src/` or `source/`, so do not let it match tests/examples at
@@ -432,13 +449,23 @@ fn export_source_files(
     } else {
         &["", "src", "source"]
     };
-    let mut sources = BTreeSet::new();
+    let mut patterns = Vec::new();
     for root in roots {
-        let pattern = if root.is_empty() {
-            (*stem).to_string()
+        let prefix = if root.is_empty() {
+            String::new()
         } else {
-            format!("{root}/{stem}")
+            format!("{root}/")
         };
+        patterns.push(format!("{prefix}{stem}"));
+        // Conditional entries often use a flavor name for a file whose source
+        // is `index.<flavor>` (`dist/react-server.esm.mjs` is built from
+        // `src/index.react-server.ts`).
+        if !wildcard && stem != "index" && !stem.starts_with("index.") {
+            patterns.push(format!("{prefix}index.{stem}"));
+        }
+    }
+    let mut sources = BTreeSet::new();
+    for pattern in patterns {
         let pattern = join_package_path(directory, &pattern);
         for file in files {
             let Some(file_stem) = code_stem(file) else {
@@ -450,6 +477,30 @@ fn export_source_files(
         }
     }
     sources
+}
+
+/// Remove bundler flavor suffixes that describe a build variant rather than
+/// the source module name (`index.esm`, `index.cjs`, `index.min`, ...).
+fn strip_build_flavor(mut stem: &str) -> &str {
+    const FLAVORS: &[&str] = &[
+        ".esm",
+        ".esnext",
+        ".cjs",
+        ".umd",
+        ".min",
+        ".production",
+        ".development",
+        ".modern",
+        ".legacy",
+        ".browser",
+        ".node",
+        ".module",
+        ".main",
+    ];
+    while let Some(next) = FLAVORS.iter().find_map(|flavor| stem.strip_suffix(flavor)) {
+        stem = next;
+    }
+    stem
 }
 
 fn code_stem(path: &str) -> Option<&str> {
@@ -645,5 +696,18 @@ pub(crate) fn export_target(value: &serde_json::Value) -> Option<String> {
             .and_then(export_target),
         serde_json::Value::Array(items) => items.iter().find_map(export_target),
         _ => None,
+    }
+}
+
+/// Every file target named by an export condition, including condition
+/// branches that do not apply to a normal import (`types`, `react-server`,
+/// `worker`, ...). Public source detection uses these to keep all published
+/// entrypoints alive.
+fn export_targets(value: &serde_json::Value) -> Vec<String> {
+    match value {
+        serde_json::Value::String(target) => vec![target.clone()],
+        serde_json::Value::Object(map) => map.values().flat_map(export_targets).collect(),
+        serde_json::Value::Array(items) => items.iter().flat_map(export_targets).collect(),
+        _ => Vec::new(),
     }
 }

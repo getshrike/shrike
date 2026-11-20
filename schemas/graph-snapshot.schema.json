@@ -112,6 +112,12 @@
       "items": { "$ref": "#/$defs/symbolKey" },
       "uniqueItems": true
     },
+    "internalOnly": {
+      "type": "array",
+      "description": "Exported symbols that are live only because their own file references them. Not deletion candidates; reported for parity with unused-export tools.",
+      "items": { "$ref": "#/$defs/symbolKey" },
+      "uniqueItems": true
+    },
     "witnesses": {
       "type": "array",
       "description": "Shortest witness paths for live symbols. Optional in a minimal snapshot; required for proof and delta explanations.",
@@ -188,7 +194,10 @@
         "contentHash": { "$ref": "#/$defs/hash" },
         "parseStatus": { "type": "string", "enum": ["ok", "error", "skipped"] },
         "unparsed": { "type": "boolean", "default": false, "description": "True when parsing failed or the file was intentionally skipped; symbols in it are never candidates." },
-        "moduleKind": { "type": "string", "enum": ["Ts", "Tsx", "Js", "Jsx", "Json", "Declaration"] },
+        "moduleKind": {
+          "type": "string",
+          "enum": ["ts", "tsx", "js", "jsx", "mjs", "cjs", "dts", "mdx", "vue", "svelte", "astro"]
+        },
         "package": { "type": "string", "description": "Workspace package name, when the file belongs to one." },
         "generated": { "type": "boolean", "description": "Generated files are parsed for edges but excluded from deletion candidates by default." },
         "sizeBytes": { "type": "integer", "minimum": 0 },
@@ -268,7 +277,19 @@
           "items": { "$ref": "#/$defs/moduleKey" },
           "uniqueItems": true
         },
-        "unresolved": { "type": "array", "items": { "$ref": "#/$defs/unresolved" } }
+        "unresolved": { "type": "array", "items": { "$ref": "#/$defs/unresolved" } },
+        "external": {
+          "type": "array",
+          "description": "Specifiers the resolver classified as external packages.",
+          "items": { "$ref": "#/$defs/specifier" },
+          "uniqueItems": true
+        },
+        "typeRefs": {
+          "type": "array",
+          "description": "Module specifiers referenced from type positions. Dependency evidence, not runtime edges.",
+          "items": { "$ref": "#/$defs/specifier" },
+          "uniqueItems": true
+        }
       }
     },
     "entry": {
@@ -279,7 +300,29 @@
         "key": { "$ref": "#/$defs/entryKey" },
         "framework": {
           "type": "string",
-          "enum": ["next-app", "next-pages", "react", "package", "test", "config"]
+          "enum": [
+            "next-app",
+            "next-pages",
+            "react",
+            "remix",
+            "tanstack",
+            "expo",
+            "sveltekit",
+            "astro",
+            "nuxt",
+            "mdx",
+            "gatsby",
+            "vercel",
+            "package",
+            "packages",
+            "test",
+            "tests",
+            "config",
+            "executable",
+            "local",
+            "scripts",
+            "ambient"
+          ]
         },
         "kind": {
           "type": "string",
@@ -310,6 +353,30 @@
             "config",
             "package-export",
             "react-root",
+            "module",
+            "export",
+            "tool",
+            "route-export",
+            "entry",
+            "endpoint",
+            "endpoint-export",
+            "server",
+            "server-export",
+            "standalone",
+            "standalone-export",
+            "public-export",
+            "public-api",
+            "package-entry",
+            "script",
+            "lifecycle",
+            "lifecycle-export",
+            "function",
+            "function-export",
+            "root",
+            "root-reference",
+            "test-export",
+            "declaration",
+            "config-export",
             "custom"
           ]
         },
@@ -417,7 +484,7 @@
           "path": "src/index.ts",
           "contentHash": "blake3:2222222222222222222222222222222222222222222222222222222222222222",
           "parseStatus": "ok",
-          "moduleKind": "Ts",
+          "moduleKind": "ts",
           "generated": false
         }
       ],
@@ -440,7 +507,8 @@
           "file": "src/index.ts",
           "specifiers": [],
           "resolved": [],
-          "unresolved": []
+          "unresolved": [],
+          "external": []
         }
       ],
       "entries": [

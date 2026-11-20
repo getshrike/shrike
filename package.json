@@ -16,6 +16,8 @@
     "test": "node scripts/test.mjs",
     "test:rust": "cargo test --workspace",
     "test:node": "node --test \"packages/**/*.test.mjs\"",
+    "test:differential": "node scripts/differential.mjs",
+    "test:differential:update": "node scripts/differential.mjs --update",
     "test:e2e": "node scripts/e2e-prune.mjs",
     "check": "pnpm run build:ts && node scripts/check.mjs",
     "check:links": "node scripts/check-links.mjs",

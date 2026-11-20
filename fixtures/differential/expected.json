@@ -1,0 +1,29 @@
+{
+  "symbols": {
+    "agreed": [
+      "src/dynamic.ts#deadAfterDynamic",
+      "src/lib.ts#unused",
+      "src/ui.tsx#DeadButton"
+    ],
+    "shrikeOnly": [],
+    "toolOnly": [],
+    "internalOnly": [
+      "src/internal.ts#publicApi"
+    ]
+  },
+  "dependencies": {
+    "agreedUnused": [
+      "left-pad"
+    ],
+    "shrikeOnlyUnused": [],
+    "knipOnlyUnused": [
+      "react"
+    ],
+    "depcheckOnlyUnused": [
+      "typescript"
+    ],
+    "shrikeUnlisted": [],
+    "knipUnlisted": [],
+    "depcheckMissing": []
+  }
+}

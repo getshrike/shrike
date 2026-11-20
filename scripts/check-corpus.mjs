@@ -38,8 +38,36 @@ for (const entry of entries) {
     const [file] = String(item.symbol).split("#");
     if (file && !existsSync(join(directory, file))) failures.push(`case ${entry.id}: protected file missing: ${file}`);
   }
+  const protectedSymbols = new Set((entry.protected ?? []).map((item) => item.symbol));
+  for (const field of ["mustReport", "internalOnly"]) {
+    if (entry[field] !== undefined && !Array.isArray(entry[field])) {
+      failures.push(`case ${entry.id}: ${field} must be an array`);
+      continue;
+    }
+    for (const symbol of entry[field] ?? []) {
+      const [file] = String(symbol).split("#");
+      if (!file || !String(symbol).includes("#")) {
+        failures.push(`case ${entry.id}: ${field} symbol is not a symbol key: ${symbol}`);
+      } else if (!existsSync(join(directory, file))) {
+        failures.push(`case ${entry.id}: ${field} file missing: ${file}`);
+      }
+      if (protectedSymbols.has(symbol)) {
+        failures.push(`case ${entry.id}: ${symbol} is both protected and ${field}`);
+      }
+    }
+  }
+  for (const symbol of entry.mustReport ?? []) {
+    if ((entry.internalOnly ?? []).includes(symbol)) {
+      failures.push(`case ${entry.id}: ${symbol} is both must-report and internal-only`);
+    }
+  }
   if (readdirSync(directory).length === 0) failures.push(`case ${entry.id} is empty`);
 }
+
+const mustReportCases = entries.filter((entry) => (entry.mustReport ?? []).length > 0).length;
+const internalOnlyCases = entries.filter((entry) => (entry.internalOnly ?? []).length > 0).length;
+if (mustReportCases < 8) failures.push(`corpus has ${mustReportCases} must-report cases; minimum is 8`);
+if (internalOnlyCases < 1) failures.push("corpus needs at least one internal-only case");
 
 if (failures.length > 0) {
   for (const failure of failures) console.error(`FAIL ${failure}`);

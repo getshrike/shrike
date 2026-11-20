@@ -63,13 +63,22 @@ impl<'a> Builder<'a> {
             });
             if summary.parse_status != ParseStatus::Ok {
                 diagnostics.extend(summary.diagnostics.clone());
-                diagnostics.push(
-                    Diagnostic::warning(
-                        "unparsed_file",
-                        "file could not be parsed; its symbols are not deletion candidates",
-                    )
-                    .in_file(&summary.path),
+                let component = matches!(
+                    summary
+                        .path
+                        .rsplit_once('.')
+                        .map(|(_, extension)| extension),
+                    Some("vue" | "svelte" | "astro")
                 );
+                if !component {
+                    diagnostics.push(
+                        Diagnostic::warning(
+                            "unparsed_file",
+                            "file could not be parsed; its symbols are not deletion candidates",
+                        )
+                        .in_file(&summary.path),
+                    );
+                }
             }
         }
         self.diagnostics = diagnostics;
@@ -123,6 +132,21 @@ impl<'a> Builder<'a> {
         let summaries = self.summaries.clone();
         for summary in &summaries {
             if summary.parse_status != ParseStatus::Ok {
+                // Framework files with their own compilers (Svelte, Astro, Vue)
+                // are still entries. They have no parsed symbols, so only the
+                // module key exists; `detect_entries` marks it live.
+                if super::entries::framework_module(&summary.path).is_some() {
+                    self.add_symbol(
+                        summary,
+                        "__module__",
+                        "module",
+                        Span::default(),
+                        false,
+                        false,
+                    );
+                    self.exports.insert(summary.path.clone(), BTreeMap::new());
+                    self.locals.insert(summary.path.clone(), BTreeMap::new());
+                }
                 continue;
             }
             let module_key = module_symbol_key(&summary.path);

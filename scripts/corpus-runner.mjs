@@ -71,6 +71,7 @@ for (const entry of manifest.entries) {
   const snapshot = analyzed.snapshot;
   const keys = new Set(snapshot.symbols.map((symbol) => symbol.key));
   const candidates = new Set(snapshot.candidates);
+  const internalOnly = new Set(snapshot.internalOnly ?? []);
   candidateTotal += candidates.size;
 
   const protectedItems = [];
@@ -84,6 +85,24 @@ for (const entry of manifest.entries) {
       failures.push(`${entry.id}: ${item.symbol} (${item.reason})`);
     }
   }
+
+  // The other side of the matrix: a convention must not hide genuine dead
+  // code in the same fixture.
+  for (const symbol of entry.mustReport ?? []) {
+    if (!keys.has(symbol)) {
+      failures.push(`${entry.id}: must-report symbol missing from snapshot: ${symbol}`);
+    } else if (!candidates.has(symbol)) {
+      failures.push(`${entry.id}: expected candidate is live: ${symbol}`);
+    }
+  }
+  for (const symbol of entry.internalOnly ?? []) {
+    if (!keys.has(symbol)) {
+      failures.push(`${entry.id}: internal-only symbol missing from snapshot: ${symbol}`);
+    } else if (!internalOnly.has(symbol)) {
+      failures.push(`${entry.id}: expected internal-only symbol is not reported: ${symbol}`);
+    }
+  }
+
   if (protectedItems.length === 0) continue;
 
   const files = [...new Set(protectedItems.map((item) => item.symbol.split("#")[0]).filter(Boolean))].sort();

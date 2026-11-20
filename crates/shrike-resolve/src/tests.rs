@@ -90,6 +90,32 @@ fn maps_subpath_build_exports_to_source() {
 }
 
 #[test]
+fn maps_conditional_export_flavors_to_public_sources() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(temp.path().join("src")).unwrap();
+    fs::write(
+        temp.path().join("package.json"),
+        r#"{"name":"@corpus/forms","exports":{".":{"types":"./dist/index.d.ts","react-server":"./dist/react-server.esm.mjs","import":"./dist/index.esm.mjs","require":"./dist/index.cjs.js"}}}"#,
+    )
+    .unwrap();
+    fs::write(temp.path().join("src/index.ts"), "export const api = 1;").unwrap();
+    fs::write(
+        temp.path().join("src/index.react-server.ts"),
+        "export const serverApi = 1;",
+    )
+    .unwrap();
+    let files = vec![
+        "src/index.ts".to_string(),
+        "src/index.react-server.ts".to_string(),
+    ];
+    let resolver = Resolver::new(temp.path(), &files, &EngineConfig::default());
+    let package = resolver.package_for("src/index.ts").unwrap();
+    assert_eq!(package.entry.as_deref(), Some("src/index.ts"));
+    assert!(package.public_sources.contains("src/index.ts"));
+    assert!(package.public_sources.contains("src/index.react-server.ts"));
+}
+
+#[test]
 fn wildcard_exports_map_to_source_files() {
     let temp = tempfile::tempdir().unwrap();
     fs::create_dir_all(temp.path().join("src/middleware")).unwrap();
