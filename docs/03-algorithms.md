@@ -354,6 +354,9 @@ The same entry rule applies to conventions with their own compilers:
   `createServerFileRoute`), so a configured `routesDirectory` is covered; the
   `src/routes/**` convention remains as a fallback;
 - Expo Router: every module under `app/` once an `app/_layout` exists;
+  `+api` routes expose HTTP method handlers, `+native-intent` exposes
+  `redirectSystemPath`/`legacy_subscribe`, and `+middleware` exposes `default`
+  and `unstable_settings`;
 - SvelteKit: `src/routes/**/+page|+layout|+server|+error` exports and route
   modules (`.svelte` files have a module entry even though their body is not
   parsed);

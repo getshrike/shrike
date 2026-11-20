@@ -456,12 +456,25 @@ impl<'a> Builder<'a> {
             let expo_app = in_directory(path, "app/") || in_directory(path, "src/app/");
             if expo_app && !app_entry && (has_expo_layout || expo_import) {
                 add(self, module.clone(), "expo", "route", route.clone(), "both");
-                for name in [
+                let mut public_names = vec![
                     "default",
                     "unstable_settings",
                     "ErrorBoundary",
                     "getDerivedStateFromError",
-                ] {
+                ];
+                // `+api` routes are dispatched by HTTP method. Expo Router
+                // reads these named handlers directly from the route module.
+                if stem.ends_with("+api") {
+                    public_names
+                        .extend(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
+                }
+                // `+native-intent` is consulted before native deep links are
+                // resolved. `legacy_subscribe` is the alpha React Navigation
+                // bridge; both are framework-invoked exports.
+                if stem == "+native-intent" {
+                    public_names.extend(["redirectSystemPath", "legacy_subscribe"]);
+                }
+                for name in public_names {
                     if let Some(key) = self.resolve_export(path, name, &mut BTreeSet::new()) {
                         add(self, key, "expo", "route-export", route.clone(), "both");
                     }
@@ -1072,6 +1085,53 @@ mod tests {
             "app/layout.tsx#unusedLayoutHelper",
             "app/page.tsx#unusedPageHelper",
         ] {
+            assert!(
+                snapshot.candidates.iter().any(|candidate| candidate == key),
+                "{key} should remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn expo_api_routes_and_native_intent_exports_are_entries() {
+        let snapshot = snapshot(&[
+            (
+                "app/_layout.tsx",
+                "export default function Layout() { return null; }\n",
+            ),
+            (
+                "app/hello+api.ts",
+                "export function GET() { return new Response('ok'); }\nexport function POST() { return new Response('ok'); }\nexport function unusedApiHelper() { return 1; }\n",
+            ),
+            (
+                "app/+native-intent.tsx",
+                "export function redirectSystemPath({ path }: { path: string }) { return path; }\nexport function legacy_subscribe() {}\nexport function unusedIntentHelper() { return 1; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for name in ["GET", "POST"] {
+            let key = format!("app/hello+api.ts#{name}");
+            assert!(
+                entries.contains(&key.as_str()),
+                "Expo API method {name} must be public: {entries:?}"
+            );
+        }
+        for name in ["redirectSystemPath", "legacy_subscribe"] {
+            let key = format!("app/+native-intent.tsx#{name}");
+            assert!(
+                entries.contains(&key.as_str()),
+                "Expo native intent export {name} must be public: {entries:?}"
+            );
+        }
+        for key in [
+            "app/hello+api.ts#unusedApiHelper",
+            "app/+native-intent.tsx#unusedIntentHelper",
+        ] {
+            assert!(
+                !entries.contains(&key),
+                "an arbitrary Expo route export must not become public: {entries:?}"
+            );
             assert!(
                 snapshot.candidates.iter().any(|candidate| candidate == key),
                 "{key} should remain a candidate: {:?}",

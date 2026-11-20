@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 266,
+  "count": 267,
   "entries": [
     {
       "id": "page-entry-1",
@@ -4332,6 +4332,36 @@
       "mustReport": [
         "app/layout.tsx#unusedLayoutHelper",
         "app/page.tsx#unusedPageHelper"
+      ]
+    },
+    {
+      "id": "expo-api-routes",
+      "category": "expo",
+      "files": [
+        "app",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/hello+api.ts#GET",
+          "reason": "Expo Router dispatches HTTP methods to named route exports"
+        },
+        {
+          "symbol": "app/hello+api.ts#POST",
+          "reason": "Expo Router dispatches HTTP methods to named route exports"
+        },
+        {
+          "symbol": "app/+native-intent.tsx#redirectSystemPath",
+          "reason": "Expo Router invokes native-intent redirects before resolving deep links"
+        },
+        {
+          "symbol": "app/+native-intent.tsx#legacy_subscribe",
+          "reason": "Expo Router invokes the React Navigation linking bridge"
+        }
+      ],
+      "mustReport": [
+        "app/hello+api.ts#unusedApiHelper",
+        "app/+native-intent.tsx#unusedIntentHelper"
       ]
     }
   ]
