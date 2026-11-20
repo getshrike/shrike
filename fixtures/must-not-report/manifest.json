@@ -4423,11 +4423,22 @@
         {
           "symbol": "src/frontend/routes/home.tsx#loader",
           "reason": "React Router loader in a custom appDirectory"
+        },
+        {
+          "symbol": "src/frontend/route-modules/about.tsx#default",
+          "reason": "React Router route target named by the route config map"
+        },
+        {
+          "symbol": "src/frontend/route-modules/about.tsx#loader",
+          "reason": "React Router loader in a route target named by the route config map"
         }
       ],
       "mustReport": [
         "src/frontend/root.tsx#unusedRootHelper",
         "src/frontend/routes/home.tsx#unusedRouteHelper",
+        "src/frontend/route-modules/about.tsx#unusedAboutHelper",
+        "src/frontend/route-modules/unreferenced.tsx#default",
+        "src/frontend/route-modules/unreferenced.tsx#unusedUnreferencedHelper",
         "src/components/dead.tsx#deadThing"
       ]
     }
