@@ -363,10 +363,11 @@ The same entry rule applies to conventions with their own compilers:
   factory (`createFileRoute`, `createLazyFileRoute`, `createRootRoute`, or
   `createServerFileRoute`), so a configured `routesDirectory` is covered; the
   `src/routes/**` convention remains as a fallback;
-- Expo Router: every module under `app/` once an `app/_layout` exists;
-  `+api` routes expose HTTP method handlers, `+native-intent` exposes
-  `redirectSystemPath`/`legacy_subscribe`, and `+middleware` exposes `default`
-  and `unstable_settings`;
+- Expo Router: every module under `app/` or `src/app/` once a layout exists, or
+  under the `root` configured by the `expo-router` plugin in `app.json` /
+  `app.config.*`; `+api` routes expose HTTP method handlers, `+native-intent`
+  exposes `redirectSystemPath`/`legacy_subscribe`, and `+middleware` exposes
+  `default` and `unstable_settings`;
 - SvelteKit: `src/routes/**/+page|+layout|+server|+error` exports and route
   modules (`.svelte` files have a module entry even though their body is not
   parsed);

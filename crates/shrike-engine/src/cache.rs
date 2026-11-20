@@ -11,7 +11,7 @@ use crate::payloads::{CacheManifest, ManifestEntry};
 // Bump whenever graph construction, entry detection, edge resolution, or
 // reachability semantics change. The tool version alone is not enough: a local
 // rebuild at the same version must not reuse snapshots built by older logic.
-const ANALYSIS_VERSION: &str = "27";
+const ANALYSIS_VERSION: &str = "28";
 
 pub(crate) fn load_manifest(path: &Path) -> CacheManifest {
     fs::read(path)

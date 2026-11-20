@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 269,
+  "count": 270,
   "entries": [
     {
       "id": "page-entry-1",
@@ -4417,6 +4417,41 @@
       "mustReport": [
         "app/hello+api.ts#unusedApiHelper",
         "app/+native-intent.tsx#unusedIntentHelper"
+      ]
+    },
+    {
+      "id": "expo-custom-root",
+      "category": "expo",
+      "files": [
+        "app",
+        "app.json",
+        "src",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/routes/_layout.tsx#default",
+          "reason": "Expo Router renders the root layout from a configured plugin root"
+        },
+        {
+          "symbol": "src/routes/_layout.tsx#unstable_settings",
+          "reason": "Expo Router reads layout settings from a configured plugin root"
+        },
+        {
+          "symbol": "src/routes/index.tsx#default",
+          "reason": "Expo Router renders the index route from a configured plugin root"
+        },
+        {
+          "symbol": "src/routes/user/[id].tsx#default",
+          "reason": "Expo Router renders a dynamic route from a configured plugin root"
+        }
+      ],
+      "mustReport": [
+        "src/routes/_layout.tsx#unusedLayoutHelper",
+        "src/routes/index.tsx#unusedHomeHelper",
+        "src/routes/user/[id].tsx#unusedUserHelper",
+        "app/dead.tsx#deadOutsideRoot",
+        "src/components/dead.tsx#deadThing"
       ]
     },
     {
