@@ -194,6 +194,14 @@ pub struct FileSummary {
     pub module_refs: ModuleRefs,
     pub dynamic: Vec<DynamicRecord>,
     pub unknown: Vec<UnknownRecord>,
+    /// `declare module "..."` and `declare global` names. Their bodies are
+    /// type-level side effects and are always live once the file is compiled.
+    #[serde(default)]
+    pub ambient_modules: Vec<String>,
+    /// A shebang or documented `Usage:` header marks a manually invoked tool.
+    /// Tools are entrypoints without an import path, so they must stay live.
+    #[serde(default)]
+    pub executable: bool,
     pub generated: bool,
     pub diagnostics: Vec<Diagnostic>,
 }

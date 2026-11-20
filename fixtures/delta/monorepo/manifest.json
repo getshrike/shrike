@@ -12,5 +12,5 @@
       "packages/ui/src/util.ts#util": "removed-import"
     }
   },
-  "notes": ""
+  "notes": "Uses a deep workspace import so util stays internal; declared package subpath exports are public API entries and are intentionally protected."
 }

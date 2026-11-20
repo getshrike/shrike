@@ -1,0 +1,44 @@
+use std::collections::BTreeSet;
+
+use super::*;
+
+#[test]
+fn batch_impact_uses_orphan_spans_not_file_lines() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(directory.path().join("src")).expect("mkdir");
+    std::fs::write(
+        directory.path().join("src/a.ts"),
+        "export const one = 1;\n\nexport const two = () => {\n  return 2;\n};\n",
+    )
+    .expect("write");
+    let snapshot = shrike_graph::analyze_paths(
+        directory.path(),
+        &shrike_core::EngineConfig::default(),
+        &["src/a.ts".to_string()],
+    );
+    let one = snapshot.symbol("src/a.ts#one").expect("symbol");
+    let file = snapshot
+        .files
+        .iter()
+        .find(|file| file.path == "src/a.ts")
+        .expect("file");
+    assert!(file.lines > one.lines);
+    let batches =
+        crate::cascade::partition(&snapshot, &BTreeSet::from(["src/a.ts#one".to_string()]));
+    assert_eq!(batches.len(), 1);
+    assert_eq!(batches[0].lines, one.lines);
+    assert_eq!(batches[0].symbols, 1);
+    assert_eq!(batches[0].files, 1);
+}
+
+#[test]
+fn empty_snapshots_are_comparable_and_empty() {
+    let snapshot = shrike_graph::build_snapshot(
+        std::path::Path::new("."),
+        Vec::new(),
+        &shrike_core::EngineConfig::default(),
+    );
+    let delta = compute_delta(&snapshot, &snapshot, None, "a".into(), "b".into(), false);
+    assert!(delta.is_empty());
+    assert!(delta.incomparable.is_none());
+}

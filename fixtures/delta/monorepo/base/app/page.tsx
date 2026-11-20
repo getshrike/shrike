@@ -1,2 +1,2 @@
-import { util } from "@repo/ui/util";
+import { util } from "@repo/ui/src/util";
 export default function Page() { return util(); }

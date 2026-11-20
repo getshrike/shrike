@@ -161,6 +161,48 @@ test("config that does not export an object fails closed with exit 2", () => {
   }
 });
 
+test("TypeScript config loads in a CommonJS package", { skip: !hasEngine }, () => {
+  const directory = makeRepo("config-ts-cjs");
+  try {
+    write(directory, "package.json", JSON.stringify({ name: "config-ts-cjs", private: true }));
+    write(directory, "src/dead.ts", "export function dead() { return 1; }\n");
+    write(
+      directory,
+      "shrike.config.ts",
+      "const config = { checks: [{ name: 'smoke', command: 'node -e 0', required: true }] };\n" +
+        "export default config;\n",
+    );
+    const result = run(directory, ["scan", "--json"]);
+    assert.ok(result.status === 0 || result.status === 1, result.stderr);
+    assert.doesNotThrow(() => JSON.parse(result.stdout));
+    assert.deepEqual(
+      readdirSync(directory).filter((name) => name.startsWith(".shrike-config-")),
+      [],
+      "temporary config copy was not cleaned up",
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("CommonJS JavaScript config loads in a CommonJS package", { skip: !hasEngine }, () => {
+  const directory = makeRepo("config-js-cjs");
+  try {
+    write(directory, "package.json", JSON.stringify({ name: "config-js-cjs", private: true }));
+    write(directory, "src/dead.ts", "export function dead() { return 1; }\n");
+    write(
+      directory,
+      "shrike.config.js",
+      "module.exports = { checks: [{ name: 'smoke', command: 'node -e 0', required: true }] };\n",
+    );
+    const result = run(directory, ["scan", "--json"]);
+    assert.ok(result.status === 0 || result.status === 1, result.stderr);
+    assert.doesNotThrow(() => JSON.parse(result.stdout));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("--no-checks is refused before any analysis", () => {
   const directory = scratch("no-checks-flag");
   try {
@@ -585,6 +627,38 @@ test("prune runs the configured standard tier and records the test check", { ski
       ["typecheck", "lint", "test"],
     );
     assert.equal(receipt.outcome, "verified");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("prune --dry-run reports the plan without applying it", { skip: !hasEngine }, () => {
+  const directory = makeOrphanRepo("dry-run");
+  try {
+    const result = run(directory, ["prune", "--base", "main", "--dry-run", "--json"]);
+    assert.equal(result.status, 1, result.stderr);
+    const plan = JSON.parse(result.stdout);
+    assert.equal(plan.batches.length, 1);
+    assert.equal(existsSync(join(directory, "lib", "orphan.ts")), true);
+    assert.equal(existsSync(join(directory, ".shrike", "receipts")), false);
+    assert.equal(git(directory, ["branch", "--list", "shrike/*"]).trim(), "");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("prune --dry-run --json emits the plan directly when clean", { skip: !hasEngine }, () => {
+  const directory = makeRepo("dry-run-clean");
+  try {
+    write(directory, "README.md", "# clean\n");
+    git(directory, ["add", "-A"]);
+    git(directory, ["commit", "-q", "-m", "base"]);
+    const result = run(directory, ["prune", "--base", "main", "--dry-run", "--json"]);
+    assert.equal(result.status, 0, result.stderr);
+    const plan = JSON.parse(result.stdout);
+    assert.equal(plan.batches.length, 0);
+    assert.equal(plan.totals.symbols, 0);
+    assert.equal(existsSync(join(directory, ".shrike", "receipts")), false);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

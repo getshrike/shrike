@@ -1,0 +1,196 @@
+//! `oxc_parser` integration and summary extraction.
+//!
+//! Rule B2: semantics come from the AST, never from a text scan. The AST is
+//! dropped at the end of this function; only the summary survives.
+
+use oxc_parser::Parser;
+use oxc_span::SourceType;
+use shrike_core::{Diagnostic, LineIndex, content_hash};
+
+use crate::summary::{FileSummary, ModuleRefs, ParseStatus};
+
+mod collector;
+mod declarations;
+mod refs;
+mod statements;
+
+#[cfg(test)]
+mod tests;
+
+/// Parse a file from disk. I/O errors are reported as a skipped summary.
+#[must_use]
+pub fn parse_file(path: &str, source: &str) -> FileSummary {
+    parse_source(path, source)
+}
+
+/// Parse source text and build a deterministic summary.
+#[must_use]
+pub fn parse_source(path: &str, source: &str) -> FileSummary {
+    let hash = content_hash(source);
+    let module_kind = module_kind(path).to_string();
+    let line_index = LineIndex::new(source);
+    let line_count = line_index.line_count();
+    let generated = looks_generated(source);
+    let executable = looks_executable(path, source);
+
+    let source_type = match SourceType::from_path(path) {
+        Ok(source_type) => source_type,
+        Err(_) => {
+            return FileSummary {
+                path: path.to_string(),
+                content_hash: hash,
+                module_kind,
+                parse_status: ParseStatus::Skipped,
+                parse_message: Some("unsupported source extension".to_string()),
+                line_count,
+                directives: Vec::new(),
+                imports: Vec::new(),
+                declarations: Vec::new(),
+                local_exports: Vec::new(),
+                re_exports: Vec::new(),
+                export_alls: Vec::new(),
+                module_refs: ModuleRefs::default(),
+                ambient_modules: Vec::new(),
+                executable,
+                dynamic: Vec::new(),
+                unknown: Vec::new(),
+                generated,
+                diagnostics: vec![
+                    Diagnostic::warning(
+                        "unsupported_extension",
+                        "file is not a supported JavaScript or TypeScript source",
+                    )
+                    .in_file(path),
+                ],
+            };
+        }
+    };
+
+    let allocator = oxc_allocator::Allocator::default();
+    let parsed = Parser::new(&allocator, source, source_type).parse();
+    if !parsed.errors.is_empty() {
+        let message = parsed
+            .errors
+            .first()
+            .map_or_else(|| "parse error".to_string(), ToString::to_string);
+        let message = message.lines().next().unwrap_or("parse error").to_string();
+        return FileSummary {
+            path: path.to_string(),
+            content_hash: hash,
+            module_kind,
+            parse_status: ParseStatus::Error,
+            parse_message: Some(message.clone()),
+            line_count,
+            directives: Vec::new(),
+            imports: Vec::new(),
+            declarations: Vec::new(),
+            local_exports: Vec::new(),
+            re_exports: Vec::new(),
+            export_alls: Vec::new(),
+            module_refs: ModuleRefs::default(),
+            ambient_modules: Vec::new(),
+            executable,
+            dynamic: Vec::new(),
+            unknown: Vec::new(),
+            generated,
+            diagnostics: vec![Diagnostic::error("parse_error", message).in_file(path)],
+        };
+    }
+
+    let program = parsed.program;
+    let directives: Vec<String> = program
+        .directives
+        .iter()
+        .map(|directive| directive.directive.to_string())
+        .collect();
+
+    let mut summary = FileSummary {
+        path: path.to_string(),
+        content_hash: hash,
+        module_kind,
+        parse_status: ParseStatus::Ok,
+        parse_message: None,
+        line_count,
+        directives,
+        imports: Vec::new(),
+        declarations: Vec::new(),
+        local_exports: Vec::new(),
+        re_exports: Vec::new(),
+        export_alls: Vec::new(),
+        module_refs: ModuleRefs::default(),
+        ambient_modules: Vec::new(),
+        executable,
+        dynamic: Vec::new(),
+        unknown: Vec::new(),
+        generated,
+        diagnostics: Vec::new(),
+    };
+
+    for statement in &program.body {
+        statements::extract_statement(statement, source, &line_index, &mut summary);
+    }
+
+    refs::mark_local_exports(&mut summary);
+    refs::finalize_refs(&mut summary);
+    summary
+}
+
+fn module_kind(path: &str) -> &'static str {
+    let lower = path.to_ascii_lowercase();
+    if lower.ends_with(".d.ts") {
+        "dts"
+    } else if lower.ends_with(".tsx") {
+        "tsx"
+    } else if lower.ends_with(".ts") {
+        "ts"
+    } else if lower.ends_with(".jsx") {
+        "jsx"
+    } else if lower.ends_with(".mjs") {
+        "mjs"
+    } else if lower.ends_with(".cjs") {
+        "cjs"
+    } else {
+        "js"
+    }
+}
+
+/// Detect files that run without being imported.
+///
+/// A shebang is an unambiguous executable marker. A `Usage:` line in the
+/// leading documentation is the convention used by manual tooling scripts
+/// (`scripts/`, `tools/`, `bin/`) that a maintainer runs directly. Restricting
+/// the documentation check to tooling directories keeps ordinary library
+/// docs from suppressing candidates.
+fn looks_executable(path: &str, source: &str) -> bool {
+    let head: String = source.chars().take(4096).collect();
+    if head.starts_with("#!") {
+        return true;
+    }
+    let tooling = path.split('/').any(|segment| {
+        matches!(
+            segment,
+            "scripts" | "tools" | "bin" | "dev" | "hack" | "tasks"
+        )
+    });
+    if !tooling {
+        return false;
+    }
+    head.lines().take(40).any(|line| {
+        let line = line
+            .trim_start()
+            .trim_start_matches(['*', '/', '#', '!', ' '])
+            .trim_start();
+        line.get(..6)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("usage:"))
+    })
+}
+
+fn looks_generated(source: &str) -> bool {
+    let head: String = source.chars().take(4096).collect();
+    let lower = head.to_ascii_lowercase();
+    lower.contains("@generated")
+        || lower.contains("do not edit")
+        || lower.contains("auto-generated")
+        || lower.contains("autogenerated")
+        || lower.contains("this file is generated")
+}

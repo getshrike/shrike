@@ -12,6 +12,10 @@ pub struct Span {
     pub end: u32,
     pub line: u32,
     pub column: u32,
+    /// 1-based line containing the last byte of the span. Zero for a default
+    /// span; callers treat that as one line.
+    #[serde(default)]
+    pub end_line: u32,
 }
 
 impl Span {
@@ -22,6 +26,7 @@ impl Span {
             end,
             line,
             column,
+            end_line: line,
         }
     }
 
@@ -93,7 +98,11 @@ impl LineIndex {
         let column = source
             .get(line_start as usize..start as usize)
             .map_or(1, |prefix| prefix.chars().count() as u32 + 1);
-        Span::new(start, end, line, column)
+        let end_line = self.line_of(end.saturating_sub(1).max(start));
+        Span {
+            end_line,
+            ..Span::new(start, end, line, column)
+        }
     }
 
     /// 1-based line containing a byte offset.

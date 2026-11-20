@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { baseEnvironment } from "@shrike/verifier";
 import { ConfigError } from "./errors.ts";
@@ -135,6 +136,47 @@ export function mergeConfig(input: Partial<ShrikeConfig> = {}): ShrikeConfig {
  * the CLI, crash the host, or read process state. The child boundary enforces a
  * hard timeout and keeps a malformed config from taking the verifier down.
  */
+interface ConfigCandidate {
+  url: string;
+  cleanup: () => void;
+}
+
+/**
+ * Node chooses a `.ts` file's module format from the nearest `package.json`.
+ * A CommonJS project therefore treats an ESM `shrike.config.ts` as CommonJS
+ * and fails on `export default`. Copying the config to a temporary `.mts`
+ * (always ESM) in the same directory keeps relative imports working while
+ * removing that package-level ambiguity. A `.cts` fallback supports a config
+ * that uses CommonJS syntax.
+ */
+function executableConfigCandidates(path: string): ConfigCandidate[] {
+  const extension = extname(path).toLowerCase();
+  const candidates: ConfigCandidate[] = [];
+  const copy = (suffix: string): void => {
+    const temporary = join(dirname(path), `.shrike-config-${randomUUID()}${suffix}`);
+    try {
+      writeFileSync(temporary, readFileSync(path, "utf8"));
+      candidates.push({
+        url: pathToFileURL(temporary).href,
+        cleanup: () => rmSync(temporary, { force: true }),
+      });
+    } catch {
+      // A read-only directory cannot host a temporary copy; try the original.
+    }
+  };
+  if (extension === ".ts" || extension === ".mts" || extension === ".cts") {
+    copy(".mts");
+    copy(".cts");
+  } else {
+    candidates.push({ url: pathToFileURL(path).href, cleanup: () => {} });
+    if (extension === ".js" || extension === ".jsx") copy(".mjs");
+  }
+  if (candidates.length === 0) {
+    candidates.push({ url: pathToFileURL(path).href, cleanup: () => {} });
+  }
+  return candidates;
+}
+
 function loadExecutableConfig(path: string, root: string): Partial<ShrikeConfig> {
   const directory = mkdtempSync(join(tmpdir(), "shrike-config-"));
   const output = join(directory, "config.json");
@@ -145,48 +187,60 @@ function loadExecutableConfig(path: string, root: string): Partial<ShrikeConfig>
     const value = loaded.default ?? loaded.config ?? {};
     writeFileSync(process.env.SHRIKE_CONFIG_OUTPUT, JSON.stringify(value));
   `;
+  const candidates = executableConfigCandidates(path);
+  let lastError: string | undefined;
   try {
-    const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
-      cwd: root,
-      encoding: "utf8",
-      timeout: Number.isFinite(timeout) && timeout > 0 ? timeout : 5_000,
-      env: {
-        ...baseEnvironment(),
-        SHRIKE_CONFIG_URL: pathToFileURL(path).href,
-        SHRIKE_CONFIG_OUTPUT: output,
-      },
-    });
-    if (result.error) {
-      const code = (result.error as NodeJS.ErrnoException).code;
-      if (code === "ETIMEDOUT") {
-        throw new ConfigError(`config evaluation timed out after ${timeout}ms: ${path}`);
+    for (const candidate of candidates) {
+      try {
+        const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+          cwd: root,
+          encoding: "utf8",
+          timeout: Number.isFinite(timeout) && timeout > 0 ? timeout : 5_000,
+          env: {
+            ...baseEnvironment(),
+            SHRIKE_CONFIG_URL: candidate.url,
+            SHRIKE_CONFIG_OUTPUT: output,
+          },
+        });
+        if (result.error) {
+          const code = (result.error as NodeJS.ErrnoException).code;
+          if (code === "ETIMEDOUT") {
+            throw new ConfigError(`config evaluation timed out after ${timeout}ms: ${path}`);
+          }
+          lastError = result.error.message;
+          continue;
+        }
+        if (result.signal) {
+          throw new ConfigError(`config evaluation was terminated (${result.signal}): ${path}`);
+        }
+        if (result.status !== 0) {
+          lastError = (result.stderr ?? "").trim().split("\n").slice(-5).join("\n");
+          continue;
+        }
+        if (!existsSync(output)) {
+          lastError = "config did not produce a value";
+          continue;
+        }
+        const parsed: unknown = JSON.parse(readFileSync(output, "utf8"));
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+          throw new ConfigError(`config must export an object: ${path}`);
+        }
+        return parsed as Partial<ShrikeConfig>;
+      } finally {
+        rmSync(output, { force: true });
       }
-      throw new ConfigError(`could not evaluate ${path}: ${result.error.message}`);
     }
-    if (result.signal) {
-      throw new ConfigError(`config evaluation was terminated (${result.signal}): ${path}`);
-    }
-    if (result.status !== 0) {
-      const stderr = (result.stderr ?? "").trim().split("\n").slice(-5).join("\n");
-      throw new ConfigError(
-        `config evaluation failed (exit ${String(result.status)}): ${path}`,
-        stderr || undefined,
-      );
-    }
-    if (!existsSync(output)) {
-      throw new ConfigError(`config did not produce a value: ${path}`);
-    }
-    const parsed: unknown = JSON.parse(readFileSync(output, "utf8"));
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      throw new ConfigError(`config must export an object: ${path}`);
-    }
-    return parsed as Partial<ShrikeConfig>;
+    throw new ConfigError(
+      `config evaluation failed: ${path}`,
+      lastError || "no executable config form succeeded",
+    );
   } catch (error) {
     if (error instanceof ConfigError) throw error;
     throw new ConfigError(
       `could not load ${path}: ${error instanceof Error ? error.message : String(error)}`,
     );
   } finally {
+    for (const candidate of candidates) candidate.cleanup();
     rmSync(directory, { recursive: true, force: true });
   }
 }
