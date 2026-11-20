@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 264,
+  "count": 265,
   "entries": [
     {
       "id": "page-entry-1",
@@ -4272,6 +4272,28 @@
       ],
       "mustReport": [
         "app/components/dead.tsx#deadThing"
+      ]
+    },
+    {
+      "id": "tanstack-custom-routes-dir",
+      "category": "tanstack",
+      "files": [
+        "src",
+        "package.json",
+        "tsr.config.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/pages/index.tsx#Route",
+          "reason": "TanStack route factory marks a route in a configured directory"
+        },
+        {
+          "symbol": "src/pages/index.tsx#Home",
+          "reason": "the route component is referenced by the route object"
+        }
+      ],
+      "mustReport": [
+        "src/components/dead.tsx#deadThing"
       ]
     }
   ]

@@ -347,7 +347,10 @@ The same entry rule applies to conventions with their own compilers:
   `@remix-run/*`, so route modules need no imports of their own. The root route
   alone may also export `Layout`, the document shell, and `middleware` /
   `clientMiddleware` are framework-invoked like `loader` and `action`;
-- TanStack Router: `src/routes/**` `Route` objects;
+- TanStack Router: `Route`/`route` objects in modules that import a route
+  factory (`createFileRoute`, `createLazyFileRoute`, `createRootRoute`, or
+  `createServerFileRoute`), so a configured `routesDirectory` is covered; the
+  `src/routes/**` convention remains as a fallback;
 - Expo Router: every module under `app/` once an `app/_layout` exists;
 - SvelteKit: `src/routes/**/+page|+layout|+server|+error` exports and route
   modules (`.svelte` files have a module entry even though their body is not
