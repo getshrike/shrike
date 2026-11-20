@@ -348,10 +348,12 @@ The same entry rule applies to conventions with their own compilers:
   is detected package-wide from an `app/routes.ts` (or `react-router.config.*`)
   that imports `react-router`; every module under `app/routes/**` is then a
   route even when it imports only its generated `./+types/*` declarations.
-  Remix is detected package-wide from an `app/root` that imports
-  `@remix-run/*`, so route modules need no imports of their own. The root route
-  alone may also export `Layout`, the document shell, and `middleware` /
-  `clientMiddleware` are framework-invoked like `loader` and `action`;
+  When `react-router.config.*` sets `appDirectory`, the root, entry, and
+  `routes/` tree move with it. Remix is detected package-wide from an
+  `app/root` that imports `@remix-run/*`, so route modules need no imports of
+  their own. The root route alone may also export `Layout`, the document shell,
+  and `middleware` / `clientMiddleware` are framework-invoked like `loader` and
+  `action`;
 - TanStack Router: `Route`/`route` objects in modules that import a route
   factory (`createFileRoute`, `createLazyFileRoute`, `createRootRoute`, or
   `createServerFileRoute`), so a configured `routesDirectory` is covered; the
