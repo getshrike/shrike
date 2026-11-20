@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::fs;
 use std::path::Path;
 
 use shrike_core::ids::module_symbol_key;
@@ -8,6 +9,61 @@ use shrike_syntax::ParseStatus;
 use super::Builder;
 use crate::types::EntryRecord;
 use crate::util::route_of;
+
+/// Relative module paths named in a `next.config.*` file. Next.js loads these
+/// directly (custom image loader, cache handlers, Turbopack loaders/aliases),
+/// so they are entries even though no application module imports them. The
+/// scan is deliberately lexer-light but skips comments: any relative string is
+/// treated as a possible config reference, which fails closed.
+fn next_config_references(source: &str) -> Vec<String> {
+    let mut references = Vec::new();
+    let mut chars = source.chars().peekable();
+    while let Some(character) = chars.next() {
+        match character {
+            '/' if chars.peek() == Some(&'/') => {
+                for character in chars.by_ref() {
+                    if character == '\n' {
+                        break;
+                    }
+                }
+            }
+            '/' if chars.peek() == Some(&'*') => {
+                chars.next();
+                let mut previous = '\0';
+                for character in chars.by_ref() {
+                    if previous == '*' && character == '/' {
+                        break;
+                    }
+                    previous = character;
+                }
+            }
+            '\'' | '"' | '`' => {
+                let quote = character;
+                let mut value = String::new();
+                let mut interpolation = false;
+                while let Some(character) = chars.next() {
+                    if character == '\\' {
+                        if let Some(escaped) = chars.next() {
+                            value.push(escaped);
+                        }
+                    } else if character == quote {
+                        break;
+                    } else {
+                        if quote == '`' && character == '$' && chars.peek() == Some(&'{') {
+                            interpolation = true;
+                        }
+                        value.push(character);
+                    }
+                }
+                if !interpolation && (value.starts_with("./") || value.starts_with("../")) {
+                    references.push(value);
+                }
+            }
+            _ => {}
+        }
+    }
+    references
+}
 
 /// Vercel functions live under a project's `api/` directory when that project
 /// opts in with a sibling `vercel.json`. They are HTTP endpoints executed by
@@ -145,6 +201,39 @@ impl<'a> Builder<'a> {
                 router_packages.insert(package_directory.to_string());
             }
         }
+        // Next.js loads configured modules directly (custom image loader,
+        // cache handlers, Turbopack loaders/aliases). They are roots even
+        // though no application module imports them.
+        let analyzed: BTreeSet<&str> = summaries
+            .iter()
+            .map(|summary| summary.path.as_str())
+            .collect();
+        let mut next_config_modules: BTreeSet<String> = BTreeSet::new();
+        for summary in &summaries {
+            let file_name = summary.path.rsplit('/').next().unwrap_or("");
+            if !matches!(
+                file_name,
+                "next.config.js"
+                    | "next.config.mjs"
+                    | "next.config.cjs"
+                    | "next.config.ts"
+                    | "next.config.mts"
+                    | "next.config.cts"
+            ) {
+                continue;
+            }
+            let Ok(source) = fs::read_to_string(self.resolver.root().join(&summary.path)) else {
+                continue;
+            };
+            for specifier in next_config_references(&source) {
+                let resolved = self.resolver.resolve(&summary.path, &specifier);
+                if let Some(target) = resolved.target {
+                    if analyzed.contains(target.as_str()) {
+                        next_config_modules.insert(target);
+                    }
+                }
+            }
+        }
         for summary in &summaries {
             let path = summary.path.as_str();
             let package_directory = self
@@ -185,6 +274,30 @@ impl<'a> Builder<'a> {
             }
             if summary.executable {
                 add(self, module.clone(), "executable", "tool", None, "both");
+            }
+            if next_config_modules.contains(path) {
+                // Everything exported by a config-referenced module is
+                // reachable through the configuration (loaders may expose
+                // helper exports such as Turbopack's `raw`). Protect the whole
+                // surface rather than guessing which hook the tool calls.
+                for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                    add(
+                        self,
+                        key,
+                        "next-config",
+                        "config-reference-export",
+                        None,
+                        "both",
+                    );
+                }
+                add(
+                    self,
+                    module.clone(),
+                    "next-config",
+                    "config-reference",
+                    None,
+                    "both",
+                );
             }
             let file_name = path.rsplit('/').next().unwrap_or(path);
             let stem = file_name
@@ -1135,6 +1248,57 @@ mod tests {
             assert!(
                 snapshot.candidates.iter().any(|candidate| candidate == key),
                 "{key} should remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn next_config_referenced_modules_are_entries() {
+        let snapshot = snapshot(&[
+            (
+                "next.config.ts",
+                "// './lib/commented.ts' is documentation, not a loaded module\nconst config = {\n  images: { loaderFile: './image-loader.ts' },\n  cacheHandler: './cache-handler.ts',\n  turbopack: { rules: { '*.svg': { loaders: ['./loaders/svg.ts'] } } },\n};\nexport default config;\n",
+            ),
+            (
+                "image-loader.ts",
+                "export default function imageLoader() { return ''; }\n",
+            ),
+            ("cache-handler.ts", "export default class CacheHandler {}\n"),
+            (
+                "loaders/svg.ts",
+                "export default function svgLoader() {}\nexport const raw = true;\n",
+            ),
+            (
+                "lib/commented.ts",
+                "export function commentedReference() { return 1; }\n",
+            ),
+            ("lib/dead.ts", "export function deadThing() { return 1; }\n"),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for key in [
+            "image-loader.ts#default",
+            "cache-handler.ts#default",
+            "loaders/svg.ts#default",
+            "loaders/svg.ts#raw",
+        ] {
+            assert!(
+                entries.contains(&key),
+                "next.config reference {key} must be public: {entries:?}"
+            );
+            assert!(
+                !snapshot.candidates.iter().any(|candidate| candidate == key),
+                "next.config reference {key} must not be a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+        for key in [
+            "lib/commented.ts#commentedReference",
+            "lib/dead.ts#deadThing",
+        ] {
+            assert!(
+                snapshot.candidates.iter().any(|candidate| candidate == key),
+                "{key} must remain a candidate: {:?}",
                 snapshot.candidates
             );
         }

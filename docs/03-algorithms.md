@@ -298,7 +298,10 @@ a symbol is live.
 - segment config: `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`,
   `runtime`, `preferredRegion`, `maxDuration`; Cache Components config
   `ensureStatic` (16.4), `instant`/`prefetch` (16.3) and their
-  `unstable_instant`/`unstable_prefetch` predecessors (16.0-16.2).
+  `unstable_instant`/`unstable_prefetch` predecessors (16.0-16.2);
+- modules referenced only by a relative path in `next.config.*`
+  (`images.loaderFile`, `cacheHandler`/`cacheHandlers`, Turbopack loaders and
+  aliases): the module and all its exports are entries.
 
 ### 9.2 Next.js Pages Router
 
