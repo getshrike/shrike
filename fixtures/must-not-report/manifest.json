@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 262,
+  "count": 264,
   "entries": [
     {
       "id": "page-entry-1",
@@ -4205,6 +4205,73 @@
       ],
       "mustReport": [
         "src/other.ts#DeadExport"
+      ]
+    },
+    {
+      "id": "react-router-v7-routes",
+      "category": "react-router",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/routes.ts#default",
+          "reason": "React Router framework route config"
+        },
+        {
+          "symbol": "app/root.tsx#Layout",
+          "reason": "React Router renders the root Layout document shell"
+        },
+        {
+          "symbol": "app/routes/home.tsx#loader",
+          "reason": "React Router calls the route loader"
+        },
+        {
+          "symbol": "app/routes/home.tsx#middleware",
+          "reason": "React Router calls route middleware"
+        },
+        {
+          "symbol": "app/routes/home.tsx#default",
+          "reason": "React Router renders the route component"
+        },
+        {
+          "symbol": "app/routes/about.tsx#action",
+          "reason": "React Router calls the route action"
+        },
+        {
+          "symbol": "app/routes/about.tsx#clientMiddleware",
+          "reason": "React Router calls client middleware"
+        },
+        {
+          "symbol": "app/routes/about.tsx#default",
+          "reason": "React Router renders the route component"
+        }
+      ],
+      "mustReport": [
+        "app/components/dead.tsx#deadThing"
+      ]
+    },
+    {
+      "id": "remix-routes-without-imports",
+      "category": "remix",
+      "files": [
+        "app",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/root.tsx#default",
+          "reason": "Remix root route is framework-rendered"
+        },
+        {
+          "symbol": "app/routes/about._index.tsx#default",
+          "reason": "Remix route modules need no imports to be router-rendered"
+        }
+      ],
+      "mustReport": [
+        "app/components/dead.tsx#deadThing"
       ]
     }
   ]

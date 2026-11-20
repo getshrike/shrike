@@ -1,0 +1,10 @@
+{
+  "name": "corpus-react-router-v7-routes",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@react-router/dev": "^7.9.0",
+    "react": "^19.0.0",
+    "react-router": "^7.9.0"
+  }
+}
