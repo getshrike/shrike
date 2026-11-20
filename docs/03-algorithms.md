@@ -349,8 +349,11 @@ The same entry rule applies to conventions with their own compilers:
   that imports `react-router`; every module under `app/routes/**` is then a
   route even when it imports only its generated `./+types/*` declarations.
   When `react-router.config.*` sets `appDirectory`, the root, entry, and
-  `routes/` tree move with it. Remix is detected package-wide from an
-  `app/root` that imports `@remix-run/*`, so route modules need no imports of
+  `routes/` tree move with it. Route modules named by the route config map
+  (`index(...)`, `route(...)`, `layout(...)`, or a `file:` property) stay
+  protected even when they live outside `<appDirectory>/routes/`, matching the
+  path the router loads. Remix is detected package-wide from
+  an `app/root` that imports `@remix-run/*`, so route modules need no imports of
   their own. The root route alone may also export `Layout`, the document shell,
   and `middleware` / `clientMiddleware` are framework-invoked like `loader` and
   `action`;

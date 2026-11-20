@@ -224,6 +224,278 @@ fn react_router_app_directory(source: &str) -> Option<String> {
     None
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RouteHelper {
+    Index,
+    Route,
+    Layout,
+}
+
+fn route_helper(name: &str) -> Option<RouteHelper> {
+    match name {
+        "index" => Some(RouteHelper::Index),
+        "route" => Some(RouteHelper::Route),
+        "layout" => Some(RouteHelper::Layout),
+        _ => None,
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum RouteToken {
+    Ident(String),
+    Text(String),
+    Punct(char),
+}
+
+/// Tokenize a React Router route config well enough to find statically written
+/// `index`, `route`, `layout`, and `file:` targets. Comments, interpolation,
+/// and dynamic values are ignored rather than guessed at.
+fn route_config_tokens(source: &str) -> Vec<RouteToken> {
+    let mut tokens = Vec::new();
+    let mut chars = source.chars().peekable();
+    while let Some(character) = chars.next() {
+        match character {
+            '/' if chars.peek() == Some(&'/') => {
+                for character in chars.by_ref() {
+                    if character == '\n' {
+                        break;
+                    }
+                }
+            }
+            '/' if chars.peek() == Some(&'*') => {
+                chars.next();
+                let mut previous = '\0';
+                for character in chars.by_ref() {
+                    if previous == '*' && character == '/' {
+                        break;
+                    }
+                    previous = character;
+                }
+            }
+            '\'' | '"' | '`' => {
+                let quote = character;
+                let mut value = String::new();
+                let mut dynamic = false;
+                while let Some(character) = chars.next() {
+                    if character == '\\' {
+                        if let Some(escaped) = chars.next() {
+                            value.push(escaped);
+                        }
+                    } else if character == quote {
+                        break;
+                    } else {
+                        if quote == '`' && character == '$' && chars.peek() == Some(&'{') {
+                            dynamic = true;
+                        }
+                        value.push(character);
+                    }
+                }
+                if !dynamic {
+                    tokens.push(RouteToken::Text(value));
+                }
+            }
+            character if character.is_ascii_alphabetic() || matches!(character, '_' | '$') => {
+                let mut identifier = String::from(character);
+                while let Some(&next) = chars.peek() {
+                    if next.is_ascii_alphanumeric() || matches!(next, '_' | '$') {
+                        identifier.push(next);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                tokens.push(RouteToken::Ident(identifier));
+            }
+            character if character.is_ascii_digit() => {
+                while chars
+                    .peek()
+                    .is_some_and(|next| next.is_ascii_alphanumeric() || matches!(next, '.' | '_'))
+                {
+                    chars.next();
+                }
+            }
+            character if character.is_whitespace() => {}
+            character => tokens.push(RouteToken::Punct(character)),
+        }
+    }
+    tokens
+}
+
+/// Local aliases for the route helpers imported from a React Router module.
+fn route_helper_aliases(tokens: &[RouteToken]) -> BTreeMap<String, RouteHelper> {
+    let mut aliases = BTreeMap::new();
+    for (index, token) in tokens.iter().enumerate() {
+        let RouteToken::Ident(keyword) = token else {
+            continue;
+        };
+        if keyword != "import" {
+            continue;
+        }
+        let mut cursor = index + 1;
+        let mut source = None;
+        while let Some(token) = tokens.get(cursor) {
+            match token {
+                RouteToken::Text(value) => {
+                    source = Some(value.as_str());
+                    break;
+                }
+                RouteToken::Punct(';') => break,
+                _ => cursor += 1,
+            }
+        }
+        let Some(source) = source else {
+            continue;
+        };
+        if source != "react-router"
+            && !source.starts_with("react-router/")
+            && !source.starts_with("@react-router/")
+        {
+            continue;
+        }
+        let mut position = index + 1;
+        while position < cursor {
+            if let RouteToken::Ident(original) = &tokens[position] {
+                if original == "as" {
+                    if let Some(RouteToken::Ident(local)) = tokens.get(position + 1) {
+                        if let Some(RouteToken::Ident(imported)) =
+                            position.checked_sub(1).and_then(|at| tokens.get(at))
+                        {
+                            if let Some(helper) = route_helper(imported) {
+                                aliases.insert(local.clone(), helper);
+                            }
+                        }
+                    }
+                }
+            }
+            position += 1;
+        }
+    }
+    aliases
+}
+
+/// Arguments of one call, with an entry only when the argument is exactly one
+/// static string literal.
+fn route_call_arguments(tokens: &[RouteToken], open: usize) -> Option<Vec<Option<String>>> {
+    let mut arguments = Vec::new();
+    let mut current: Vec<&RouteToken> = Vec::new();
+    let mut depth = 0usize;
+    let mut index = open;
+    while let Some(token) = tokens.get(index) {
+        match token {
+            RouteToken::Punct('(' | '[' | '{') => {
+                depth += 1;
+                if depth > 1 {
+                    current.push(token);
+                }
+            }
+            RouteToken::Punct(')' | ']' | '}') => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    arguments.push(exactly_one_string(&current));
+                    return Some(arguments);
+                }
+                current.push(token);
+            }
+            RouteToken::Punct(',') if depth == 1 => {
+                arguments.push(exactly_one_string(&current));
+                current.clear();
+            }
+            _ => {
+                if depth >= 1 {
+                    current.push(token);
+                }
+            }
+        }
+        index += 1;
+    }
+    None
+}
+
+fn exactly_one_string(tokens: &[&RouteToken]) -> Option<String> {
+    match tokens {
+        [RouteToken::Text(value)] => Some(value.clone()),
+        _ => None,
+    }
+}
+
+/// Statically visible route module targets in a React Router route config.
+fn react_router_route_targets(source: &str) -> BTreeSet<String> {
+    let tokens = route_config_tokens(source);
+    let aliases = route_helper_aliases(&tokens);
+    let mut targets = BTreeSet::new();
+    let mut index = 0;
+    while let Some(token) = tokens.get(index) {
+        let RouteToken::Ident(identifier) = token else {
+            index += 1;
+            continue;
+        };
+        if identifier == "file" && matches!(tokens.get(index + 1), Some(RouteToken::Punct(':'))) {
+            if let Some(RouteToken::Text(value)) = tokens.get(index + 2) {
+                targets.insert(value.clone());
+            }
+        }
+        let helper = route_helper(identifier).or_else(|| aliases.get(identifier).copied());
+        if let Some(helper) = helper {
+            if matches!(tokens.get(index + 1), Some(RouteToken::Punct('('))) {
+                if let Some(arguments) = route_call_arguments(&tokens, index + 1) {
+                    let position = usize::from(helper == RouteHelper::Route);
+                    if let Some(Some(value)) = arguments.get(position) {
+                        targets.insert(value.clone());
+                    }
+                }
+            }
+        }
+        index += 1;
+    }
+    targets
+}
+
+/// Resolve a route config target against the package's app directory. Targets
+/// that escape the repository or do not name an analyzed module are ignored.
+fn resolve_route_target(
+    package_directory: &str,
+    app_directory: &str,
+    target: &str,
+    analyzed: &BTreeSet<&str>,
+) -> Option<String> {
+    let target = target.trim();
+    if target.is_empty() {
+        return None;
+    }
+    let target = target.strip_prefix("./").unwrap_or(target);
+    let target = target.trim_start_matches('/');
+    let mut parts: Vec<&str> = Vec::new();
+    for part in package_directory
+        .split('/')
+        .chain(app_directory.split('/'))
+        .chain(target.split('/'))
+    {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            _ => parts.push(part),
+        }
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    let candidate = parts.join("/");
+    if analyzed.contains(candidate.as_str()) {
+        return Some(candidate);
+    }
+    if Path::new(&candidate).extension().is_none() {
+        for extension in ["tsx", "ts", "jsx", "js", "mts", "mjs", "cts", "cjs"] {
+            let with_extension = format!("{candidate}.{extension}");
+            if analyzed.contains(with_extension.as_str()) {
+                return Some(with_extension);
+            }
+        }
+    }
+    None
+}
+
 impl<'a> Builder<'a> {
     pub(super) fn detect_entries(&mut self) {
         let summaries = self.summaries.clone();
@@ -345,6 +617,43 @@ impl<'a> Builder<'a> {
                     if analyzed.contains(target.as_str()) {
                         next_config_modules.insert(target);
                     }
+                }
+            }
+        }
+        // React Router route configs name route modules as strings. The router
+        // imports them at runtime, so files named outside `<appDirectory>/routes/`
+        // are still route modules and must keep their framework exports.
+        let mut router_route_files: BTreeSet<String> = BTreeSet::new();
+        for summary in &summaries {
+            let package_directory = self
+                .resolver
+                .package_for(&summary.path)
+                .map_or("", |package| package.directory.as_str());
+            let Some(app_directory) = router_packages.get(package_directory) else {
+                continue;
+            };
+            let relative = summary
+                .path
+                .strip_prefix(package_directory)
+                .unwrap_or(&summary.path)
+                .trim_start_matches('/');
+            let prefix = format!("{app_directory}/routes.");
+            if !relative.starts_with(&prefix)
+                || !matches!(
+                    relative.rsplit('.').next(),
+                    Some("ts" | "tsx" | "js" | "jsx" | "mts" | "mjs" | "cts" | "cjs")
+                )
+            {
+                continue;
+            }
+            let Ok(source) = fs::read_to_string(self.resolver.root().join(&summary.path)) else {
+                continue;
+            };
+            for target in react_router_route_targets(&source) {
+                if let Some(path) =
+                    resolve_route_target(package_directory, app_directory, &target, &analyzed)
+                {
+                    router_route_files.insert(path);
                 }
             }
         }
@@ -600,7 +909,8 @@ impl<'a> Builder<'a> {
             // module, including files named `page.tsx`. The per-file import
             // check remains for standalone/Remix layouts without a routes
             // config.
-            let router_route = in_directory(path, &format!("{router_app}/routes/"))
+            let router_route = (router_route_files.contains(path)
+                || in_directory(path, &format!("{router_app}/routes/")))
                 && (has_router_package || (router_import && stem != "page"));
             if (router_import || has_router_package) && (router_entry || router_route) {
                 add(
@@ -1468,6 +1778,91 @@ mod tests {
             "src/frontend/root.tsx#unusedRootHelper",
             "src/frontend/routes/home.tsx#unusedRouteHelper",
             "src/components/dead.tsx#deadThing",
+        ] {
+            assert!(
+                snapshot.candidates.iter().any(|candidate| candidate == key),
+                "{key} must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn react_router_route_config_targets_outside_routes_are_entries() {
+        let snapshot = snapshot(&[
+            (
+                "react-router.config.ts",
+                "export default { appDirectory: 'src/frontend' };\n",
+            ),
+            (
+                "src/frontend/routes.ts",
+                "import { index, layout, route as r } from '@react-router/dev/routes';\n\
+                 // route('ignored', 'route-modules/comment-only.tsx');\n\
+                 export default [\n\
+                   index('route-modules/home.tsx'),\n\
+                   r('about', './route-modules/about.tsx'),\n\
+                   layout('shell.tsx', [r('login', 'route-modules/login.tsx')]),\n\
+                   { path: 'contact', file: 'route-modules/contact.tsx' },\n\
+                 ];\n",
+            ),
+            (
+                "src/frontend/root.tsx",
+                "export default function Root() { return null; }\n",
+            ),
+            (
+                "src/frontend/route-modules/home.tsx",
+                "export default function Home() { return null; }\nexport function loader() { return null; }\nexport function unusedHomeHelper() { return 1; }\n",
+            ),
+            (
+                "src/frontend/route-modules/about.tsx",
+                "export default function About() { return null; }\nexport function loader() { return null; }\nexport function unusedAboutHelper() { return 1; }\n",
+            ),
+            (
+                "src/frontend/route-modules/login.tsx",
+                "export default function Login() { return null; }\n",
+            ),
+            (
+                "src/frontend/route-modules/contact.tsx",
+                "export default function Contact() { return null; }\n",
+            ),
+            (
+                "src/frontend/shell.tsx",
+                "export default function Shell() { return null; }\n",
+            ),
+            (
+                "src/frontend/route-modules/comment-only.tsx",
+                "export default function CommentOnly() { return null; }\n",
+            ),
+            (
+                "src/frontend/route-modules/unreferenced.tsx",
+                "export default function Unreferenced() { return null; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for key in [
+            "src/frontend/route-modules/home.tsx#default",
+            "src/frontend/route-modules/home.tsx#loader",
+            "src/frontend/route-modules/about.tsx#default",
+            "src/frontend/route-modules/about.tsx#loader",
+            "src/frontend/route-modules/login.tsx#default",
+            "src/frontend/route-modules/contact.tsx#default",
+            "src/frontend/shell.tsx#default",
+        ] {
+            assert!(
+                entries.contains(&key),
+                "route config target {key} must be public: {entries:?}"
+            );
+            assert!(
+                !snapshot.candidates.iter().any(|candidate| candidate == key),
+                "route config target {key} must not be a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+        for key in [
+            "src/frontend/route-modules/home.tsx#unusedHomeHelper",
+            "src/frontend/route-modules/about.tsx#unusedAboutHelper",
+            "src/frontend/route-modules/comment-only.tsx#default",
+            "src/frontend/route-modules/unreferenced.tsx#default",
         ] {
             assert!(
                 snapshot.candidates.iter().any(|candidate| candidate == key),
