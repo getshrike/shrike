@@ -1,0 +1,10 @@
+{
+  "name": "react-router-custom-app-dir",
+  "private": true,
+  "dependencies": {
+    "@react-router/dev": "^7.9.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router": "^7.9.0"
+  }
+}

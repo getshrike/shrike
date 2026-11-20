@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -122,12 +122,114 @@ pub(super) fn framework_module(path: &str) -> Option<(&'static str, &'static str
     None
 }
 
+/// Normalize a React Router `appDirectory` setting. Only a relative directory
+/// with no traversal is accepted; anything else falls back to the default.
+fn normalize_app_directory(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.starts_with('/') {
+        return None;
+    }
+    let value = value
+        .strip_prefix("./")
+        .unwrap_or(value)
+        .trim_end_matches('/');
+    if value.is_empty()
+        || value
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return None;
+    }
+    Some(value.to_string())
+}
+
+/// Read the statically written `appDirectory` from a React Router config
+/// source. React Router defaults to `app` when the option is absent.
+fn react_router_app_directory(source: &str) -> Option<String> {
+    let mut chars = source.chars().peekable();
+    let mut identifier = String::new();
+    while let Some(character) = chars.next() {
+        match character {
+            '/' if chars.peek() == Some(&'/') => {
+                for character in chars.by_ref() {
+                    if character == '\n' {
+                        break;
+                    }
+                }
+                identifier.clear();
+            }
+            '/' if chars.peek() == Some(&'*') => {
+                chars.next();
+                let mut previous = '\0';
+                for character in chars.by_ref() {
+                    if previous == '*' && character == '/' {
+                        break;
+                    }
+                    previous = character;
+                }
+                identifier.clear();
+            }
+            '\'' | '"' | '`' => {
+                let quote = character;
+                while let Some(character) = chars.next() {
+                    if character == '\\' {
+                        chars.next();
+                    } else if character == quote {
+                        break;
+                    }
+                }
+                identifier.clear();
+            }
+            character if character.is_ascii_alphanumeric() || character == '_' => {
+                identifier.push(character);
+            }
+            character if character.is_whitespace() => {}
+
+            ':' if identifier == "appDirectory" => {
+                while chars
+                    .peek()
+                    .is_some_and(|character| character.is_whitespace())
+                {
+                    chars.next();
+                }
+                let &quote = chars.peek()?;
+                if !matches!(quote, '\'' | '"' | '`') {
+                    return None;
+                }
+                chars.next();
+                let mut value = String::new();
+                let mut interpolation = false;
+                while let Some(character) = chars.next() {
+                    if character == '\\' {
+                        if let Some(escaped) = chars.next() {
+                            value.push(escaped);
+                        }
+                    } else if character == quote {
+                        break;
+                    } else {
+                        if quote == '`' && character == '$' && chars.peek() == Some(&'{') {
+                            interpolation = true;
+                        }
+                        value.push(character);
+                    }
+                }
+                if interpolation {
+                    return None;
+                }
+                return normalize_app_directory(&value);
+            }
+            _ => identifier.clear(),
+        }
+    }
+    None
+}
+
 impl<'a> Builder<'a> {
     pub(super) fn detect_entries(&mut self) {
         let summaries = self.summaries.clone();
         let mut expo_layout_packages: BTreeSet<String> = BTreeSet::new();
         let mut nuxt_config_packages: BTreeSet<String> = BTreeSet::new();
-        let mut router_packages: BTreeSet<String> = BTreeSet::new();
+        let mut router_packages: BTreeMap<String, String> = BTreeMap::new();
         for summary in &summaries {
             let package_directory = self
                 .resolver
@@ -165,9 +267,19 @@ impl<'a> Builder<'a> {
             // instead of importing them. A route module may import only its
             // generated `./+types/*` types, so the package-level config is the
             // reliable signal that every file under `app/routes/` is a route.
+            // The config may move the app directory, so read `appDirectory`.
             // Remix has no route map, but its root module always imports the
             // framework; use that to protect routes that have no imports.
             let router_config = matches!(
+                relative,
+                "react-router.config.ts"
+                    | "react-router.config.js"
+                    | "react-router.config.mts"
+                    | "react-router.config.cts"
+                    | "react-router.config.mjs"
+                    | "react-router.config.cjs"
+            );
+            let router_routes = matches!(
                 relative,
                 "app/routes.ts"
                     | "app/routes.js"
@@ -175,12 +287,6 @@ impl<'a> Builder<'a> {
                     | "app/routes.cts"
                     | "app/routes.mjs"
                     | "app/routes.cjs"
-                    | "react-router.config.ts"
-                    | "react-router.config.js"
-                    | "react-router.config.mts"
-                    | "react-router.config.cts"
-                    | "react-router.config.mjs"
-                    | "react-router.config.cjs"
             );
             let router_root = matches!(
                 relative,
@@ -195,10 +301,18 @@ impl<'a> Builder<'a> {
                 .imports
                 .iter()
                 .any(|import| import.source.starts_with("@remix-run/"));
-            if (router_config && imports_router)
+            if router_config {
+                let app_directory = fs::read_to_string(self.resolver.root().join(&summary.path))
+                    .ok()
+                    .and_then(|source| react_router_app_directory(&source))
+                    .unwrap_or_else(|| "app".to_string());
+                router_packages.insert(package_directory.to_string(), app_directory);
+            } else if (router_routes && imports_router)
                 || (router_root && (imports_router || imports_remix))
             {
-                router_packages.insert(package_directory.to_string());
+                router_packages
+                    .entry(package_directory.to_string())
+                    .or_insert_with(|| "app".to_string());
             }
         }
         // Next.js loads configured modules directly (custom image loader,
@@ -242,7 +356,10 @@ impl<'a> Builder<'a> {
                 .map_or("", |package| package.directory.as_str());
             let has_expo_layout = expo_layout_packages.contains(package_directory);
             let has_nuxt_config = nuxt_config_packages.contains(package_directory);
-            let has_router_package = router_packages.contains(package_directory);
+            let has_router_package = router_packages.contains_key(package_directory);
+            let router_app = router_packages
+                .get(package_directory)
+                .map_or("app", String::as_str);
             let module = module_symbol_key(path);
             let add = |builder: &mut Self,
                        symbol: String,
@@ -455,30 +572,35 @@ impl<'a> Builder<'a> {
                     || import.source.starts_with("@react-router/")
             });
             let router_entry = [
-                "app/root.tsx",
-                "app/root.ts",
-                "app/root.jsx",
-                "app/root.js",
-                "app/entry.client.tsx",
-                "app/entry.client.ts",
-                "app/entry.client.jsx",
-                "app/entry.client.js",
-                "app/entry.server.tsx",
-                "app/entry.server.ts",
-                "app/entry.server.jsx",
-                "app/entry.server.js",
-                "app/routes.ts",
-                "app/routes.js",
+                "root.tsx",
+                "root.ts",
+                "root.jsx",
+                "root.js",
+                "entry.client.tsx",
+                "entry.client.ts",
+                "entry.client.jsx",
+                "entry.client.js",
+                "entry.server.tsx",
+                "entry.server.ts",
+                "entry.server.jsx",
+                "entry.server.js",
+                "routes.ts",
+                "routes.js",
+                "routes.mts",
+                "routes.cts",
+                "routes.mjs",
+                "routes.cjs",
             ]
             .iter()
-            .any(|relative| at_package_root(path, relative));
-            let router_root = ["app/root.tsx", "app/root.ts", "app/root.jsx", "app/root.js"]
+            .any(|relative| at_package_root(path, &format!("{router_app}/{relative}")));
+            let router_root = ["root.tsx", "root.ts", "root.jsx", "root.js"]
                 .iter()
-                .any(|relative| at_package_root(path, relative));
-            // In framework mode every `app/routes/` file is a route module,
-            // including files named `page.tsx`. The per-file import check
-            // remains for standalone/Remix layouts without a routes config.
-            let router_route = in_directory(path, "app/routes/")
+                .any(|relative| at_package_root(path, &format!("{router_app}/{relative}")));
+            // In framework mode every `<appDirectory>/routes/` file is a route
+            // module, including files named `page.tsx`. The per-file import
+            // check remains for standalone/Remix layouts without a routes
+            // config.
+            let router_route = in_directory(path, &format!("{router_app}/routes/"))
                 && (has_router_package || (router_import && stem != "page"));
             if (router_import || has_router_package) && (router_entry || router_route) {
                 add(
@@ -1295,6 +1417,57 @@ mod tests {
         for key in [
             "lib/commented.ts#commentedReference",
             "lib/dead.ts#deadThing",
+        ] {
+            assert!(
+                snapshot.candidates.iter().any(|candidate| candidate == key),
+                "{key} must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn react_router_custom_app_directory_is_detected() {
+        let snapshot = snapshot(&[
+            (
+                "react-router.config.ts",
+                "import type { Config } from '@react-router/dev/config';\nexport default { appDirectory: 'src/frontend' } satisfies Config;\n",
+            ),
+            (
+                "src/frontend/root.tsx",
+                "export function Layout() { return null; }\nexport default function Root() { return null; }\nexport function unusedRootHelper() { return 1; }\n",
+            ),
+            ("src/frontend/routes.ts", "export default [];\n"),
+            (
+                "src/frontend/routes/home.tsx",
+                "export function loader() { return null; }\nexport default function Home() { return null; }\nexport function unusedRouteHelper() { return 1; }\n",
+            ),
+            (
+                "src/components/dead.tsx",
+                "export function deadThing() { return 1; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for key in [
+            "src/frontend/root.tsx#default",
+            "src/frontend/root.tsx#Layout",
+            "src/frontend/routes/home.tsx#default",
+            "src/frontend/routes/home.tsx#loader",
+        ] {
+            assert!(
+                entries.contains(&key),
+                "custom appDirectory entry {key} must be public: {entries:?}"
+            );
+            assert!(
+                !snapshot.candidates.iter().any(|candidate| candidate == key),
+                "custom appDirectory entry {key} must not be a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+        for key in [
+            "src/frontend/root.tsx#unusedRootHelper",
+            "src/frontend/routes/home.tsx#unusedRouteHelper",
+            "src/components/dead.tsx#deadThing",
         ] {
             assert!(
                 snapshot.candidates.iter().any(|candidate| candidate == key),

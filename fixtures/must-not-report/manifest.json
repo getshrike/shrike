@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 268,
+  "count": 269,
   "entries": [
     {
       "id": "page-entry-1",
@@ -4397,6 +4397,38 @@
       "mustReport": [
         "app/hello+api.ts#unusedApiHelper",
         "app/+native-intent.tsx#unusedIntentHelper"
+      ]
+    },
+    {
+      "id": "react-router-custom-app-dir",
+      "category": "react-router",
+      "files": [
+        "react-router.config.ts",
+        "src",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/frontend/root.tsx#default",
+          "reason": "React Router root route in a custom appDirectory"
+        },
+        {
+          "symbol": "src/frontend/root.tsx#Layout",
+          "reason": "React Router root document shell in a custom appDirectory"
+        },
+        {
+          "symbol": "src/frontend/routes/home.tsx#default",
+          "reason": "React Router route component in a custom appDirectory"
+        },
+        {
+          "symbol": "src/frontend/routes/home.tsx#loader",
+          "reason": "React Router loader in a custom appDirectory"
+        }
+      ],
+      "mustReport": [
+        "src/frontend/root.tsx#unusedRootHelper",
+        "src/frontend/routes/home.tsx#unusedRouteHelper",
+        "src/components/dead.tsx#deadThing"
       ]
     }
   ]
