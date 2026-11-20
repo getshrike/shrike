@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 267,
+  "count": 268,
   "entries": [
     {
       "id": "page-entry-1",
@@ -4332,6 +4332,41 @@
       "mustReport": [
         "app/layout.tsx#unusedLayoutHelper",
         "app/page.tsx#unusedPageHelper"
+      ]
+    },
+    {
+      "id": "next-config-references",
+      "category": "next-config",
+      "files": [
+        "app",
+        "lib",
+        "loaders",
+        "next.config.ts",
+        "package.json",
+        "image-loader.ts",
+        "cache-handler.ts"
+      ],
+      "protected": [
+        {
+          "symbol": "image-loader.ts#default",
+          "reason": "Next.js loads images.loaderFile directly from next.config"
+        },
+        {
+          "symbol": "cache-handler.ts#default",
+          "reason": "Next.js loads cacheHandler directly from next.config"
+        },
+        {
+          "symbol": "loaders/svg-loader.ts#default",
+          "reason": "Turbopack invokes the configured SVG loader"
+        },
+        {
+          "symbol": "loaders/svg-loader.ts#raw",
+          "reason": "Turbopack loader helper exports are part of the loader surface"
+        }
+      ],
+      "mustReport": [
+        "lib/dead.ts#deadThing",
+        "lib/commented.ts#commentedReference"
       ]
     },
     {
