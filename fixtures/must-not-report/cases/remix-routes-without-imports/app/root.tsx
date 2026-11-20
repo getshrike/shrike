@@ -14,3 +14,10 @@ export default function App() {
     </html>
   );
 }
+
+export function CatchBoundary() {
+  return <main>Caught</main>;
+}
+
+export const shouldReload = () => false;
+export const unstable_shouldReload = () => false;

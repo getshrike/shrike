@@ -4233,6 +4233,10 @@
           "reason": "React Router calls route middleware"
         },
         {
+          "symbol": "app/routes/home.tsx#unstable_middleware",
+          "reason": "React Router 7.3-7.8 called the unstable middleware export"
+        },
+        {
           "symbol": "app/routes/home.tsx#default",
           "reason": "React Router renders the route component"
         },
@@ -4243,6 +4247,10 @@
         {
           "symbol": "app/routes/about.tsx#clientMiddleware",
           "reason": "React Router calls client middleware"
+        },
+        {
+          "symbol": "app/routes/about.tsx#unstable_clientMiddleware",
+          "reason": "React Router 7.3-7.8 called the unstable client middleware export"
         },
         {
           "symbol": "app/routes/about.tsx#default",
@@ -4264,6 +4272,18 @@
         {
           "symbol": "app/root.tsx#default",
           "reason": "Remix root route is framework-rendered"
+        },
+        {
+          "symbol": "app/root.tsx#CatchBoundary",
+          "reason": "Remix v1 renders CatchBoundary for thrown responses"
+        },
+        {
+          "symbol": "app/root.tsx#shouldReload",
+          "reason": "Remix v1 called the route shouldReload hook"
+        },
+        {
+          "symbol": "app/root.tsx#unstable_shouldReload",
+          "reason": "Remix v1 called the route unstable_shouldReload hook"
         },
         {
           "symbol": "app/routes/about._index.tsx#default",
