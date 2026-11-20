@@ -270,6 +270,66 @@ fn expo_router_root(source: &str) -> Option<String> {
     None
 }
 
+/// Relative module paths named by Expo config plugins. Expo resolves local
+/// config plugins (for example `plugins: ["./plugins/with-thing"]`) while
+/// reading the app config, without importing them from application code. The
+/// tokenizer ignores comments and dynamic values; scanning the whole `plugins`
+/// value, including a local `const plugins = [...]`, catches aliases and
+/// wrapper calls while staying limited to that property.
+fn expo_config_plugin_paths(source: &str) -> Vec<String> {
+    let tokens = route_config_tokens(source);
+    let mut paths = BTreeSet::new();
+    for (index, token) in tokens.iter().enumerate() {
+        let key = match token {
+            RouteToken::Ident(key) | RouteToken::Text(key) => key,
+            _ => continue,
+        };
+        if key != "plugins" {
+            continue;
+        }
+        // `plugins: [...]` (object property) or `const plugins = [...]`
+        // (local binding that is later passed to Expo). Both values may be
+        // wrapped in helper calls or spread into the final array.
+        let start = match tokens.get(index + 1) {
+            Some(RouteToken::Punct(':')) | Some(RouteToken::Punct('=')) => index + 2,
+            _ => continue,
+        };
+        let mut depth = 0usize;
+        let mut cursor = start;
+        while let Some(token) = tokens.get(cursor) {
+            match token {
+                RouteToken::Punct('(') | RouteToken::Punct('[') | RouteToken::Punct('{') => {
+                    depth += 1;
+                }
+                RouteToken::Punct(')') | RouteToken::Punct(']') | RouteToken::Punct('}') => {
+                    if depth == 0 {
+                        break;
+                    }
+                    depth -= 1;
+                }
+                RouteToken::Punct(',') | RouteToken::Punct(';') if depth == 0 => break,
+                // Plugin names are array elements (or the first element of a
+                // `[name, options]` tuple), optionally wrapped in a call such
+                // as `require.resolve`. Skip object option values: strings
+                // there are settings or asset paths, not loaded modules.
+                RouteToken::Text(value)
+                    if depth <= 2
+                        && !matches!(
+                            cursor.checked_sub(1).and_then(|at| tokens.get(at)),
+                            Some(RouteToken::Punct(':'))
+                        )
+                        && (value.starts_with("./") || value.starts_with("../")) =>
+                {
+                    paths.insert(value.clone());
+                }
+                _ => {}
+            }
+            cursor += 1;
+        }
+    }
+    paths.into_iter().collect()
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RouteHelper {
     Index,
@@ -545,14 +605,20 @@ fn resolve_route_target(
 impl<'a> Builder<'a> {
     pub(super) fn detect_entries(&mut self) {
         let summaries = self.summaries.clone();
+        let analyzed: BTreeSet<&str> = summaries
+            .iter()
+            .map(|summary| summary.path.as_str())
+            .collect();
         let mut expo_layout_packages: BTreeSet<String> = BTreeSet::new();
         let mut expo_roots: BTreeMap<String, String> = BTreeMap::new();
+        let mut expo_config_modules: BTreeSet<String> = BTreeSet::new();
         let mut nuxt_config_packages: BTreeSet<String> = BTreeSet::new();
         let mut router_packages: BTreeMap<String, String> = BTreeMap::new();
         // Expo Router reads its route root from the `expo-router` config
-        // plugin in the app config. These files are usually JSON and are not
-        // parsed as modules, so read them from each workspace package.
-        // `app.config.*` takes precedence over `app.json` when both exist.
+        // plugin in the app config. The same file may name local config
+        // plugins by path. These files are usually JSON and are not parsed as
+        // modules, so read them from each workspace package. `app.config.*`
+        // takes precedence over `app.json` when both exist.
         for package in self.resolver.packages() {
             for file_name in [
                 "app.json",
@@ -572,6 +638,15 @@ impl<'a> Builder<'a> {
                 let Ok(source) = fs::read_to_string(self.resolver.root().join(&relative)) else {
                     continue;
                 };
+                // Expo resolves local config plugins when it loads the app
+                // config. They are entries even when nothing imports them.
+                for specifier in expo_config_plugin_paths(&source) {
+                    if let Some(target) = self.resolver.resolve(&relative, &specifier).target {
+                        if analyzed.contains(target.as_str()) {
+                            expo_config_modules.insert(target);
+                        }
+                    }
+                }
                 let Some(root) = expo_router_root(&source) else {
                     continue;
                 };
@@ -682,10 +757,6 @@ impl<'a> Builder<'a> {
         // Next.js loads configured modules directly (custom image loader,
         // cache handlers, Turbopack loaders/aliases). They are roots even
         // though no application module imports them.
-        let analyzed: BTreeSet<&str> = summaries
-            .iter()
-            .map(|summary| summary.path.as_str())
-            .collect();
         let mut next_config_modules: BTreeSet<String> = BTreeSet::new();
         for summary in &summaries {
             let file_name = summary.path.rsplit('/').next().unwrap_or("");
@@ -813,6 +884,29 @@ impl<'a> Builder<'a> {
                     self,
                     module.clone(),
                     "next-config",
+                    "config-reference",
+                    None,
+                    "both",
+                );
+            }
+            if expo_config_modules.contains(path) {
+                // Expo resolves local config plugins without an import. Their
+                // default export is the plugin function, and helper exports
+                // are part of the same loaded module surface.
+                for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                    add(
+                        self,
+                        key,
+                        "expo-config",
+                        "config-reference-export",
+                        None,
+                        "both",
+                    );
+                }
+                add(
+                    self,
+                    module.clone(),
+                    "expo-config",
                     "config-reference",
                     None,
                     "both",
@@ -1415,6 +1509,7 @@ mod tests {
     use shrike_core::EngineConfig;
     use tempfile::tempdir;
 
+    use super::expo_config_plugin_paths;
     use super::expo_router_root;
     use crate::discovery::analyze_paths;
     use crate::types::GraphSnapshot;
@@ -1774,6 +1869,40 @@ mod tests {
     }
 
     #[test]
+    fn expo_config_plugin_paths_are_static_only() {
+        assert_eq!(
+            expo_config_plugin_paths(
+                r#"{"expo":{"plugins":["./plugins/with-thing",["expo-router",{"root":"./app"}]]}}"#
+            ),
+            vec!["./plugins/with-thing"]
+        );
+        assert_eq!(
+            expo_config_plugin_paths(
+                "const plugins = ['./plugins/a', ['expo-router', { root: './app' }]];\nexport default { plugins };\n"
+            ),
+            vec!["./plugins/a"]
+        );
+        assert_eq!(
+            expo_config_plugin_paths(
+                "export default { plugins: [require.resolve('./plugins/b')] };\n"
+            ),
+            vec!["./plugins/b"]
+        );
+        assert_eq!(
+            expo_config_plugin_paths(
+                "// plugins: ['./commented']\nexport default { name: 'x' };\n"
+            ),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            expo_config_plugin_paths(
+                "export default { name: './plugins/not-a-plugin', plugins: [someValue] };\n"
+            ),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
     fn expo_router_custom_root_routes_are_entries() {
         let snapshot = snapshot(&[
             (
@@ -1835,6 +1964,58 @@ mod tests {
                 snapshot.candidates
             );
         }
+    }
+
+    #[test]
+    fn expo_config_plugins_are_entries() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"expo-plugin-app","main":"expo-router/entry","dependencies":{"expo":"^54.0.0","expo-router":"^6.0.0","react":"^19.0.0","react-native":"^0.81.0"}}"#,
+            ),
+            (
+                "app.json",
+                r#"{"expo":{"plugins":["./plugins/with-thing",["expo-router",{"root":"./app"}]]}}"#,
+            ),
+            (
+                "app/_layout.tsx",
+                "import { Stack } from 'expo-router';\nexport default function Layout() { return <Stack />; }\n",
+            ),
+            (
+                "app/index.tsx",
+                "export default function Index() { return null; }\n",
+            ),
+            (
+                "plugins/with-thing.ts",
+                "export default function withThing(config: object) { return config; }\nexport function helper() { return true; }\nexport function unusedPluginExport() { return 1; }\n",
+            ),
+            ("src/dead.ts", "export function deadThing() { return 1; }\n"),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for key in [
+            "plugins/with-thing.ts#__module__",
+            "plugins/with-thing.ts#default",
+            "plugins/with-thing.ts#helper",
+            "plugins/with-thing.ts#unusedPluginExport",
+        ] {
+            assert!(
+                entries.contains(&key),
+                "local Expo config plugin surface {key} must be an entry: {entries:?}"
+            );
+            assert!(
+                !snapshot.candidates.iter().any(|candidate| candidate == key),
+                "local Expo config plugin surface {key} must not be a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+        assert!(
+            snapshot
+                .candidates
+                .iter()
+                .any(|candidate| candidate == "src/dead.ts#deadThing"),
+            "an unrelated module must remain a candidate: {:?}",
+            snapshot.candidates
+        );
     }
 
     #[test]

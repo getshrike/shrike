@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "expo-config-plugins",
+    "plugins": [
+      "./plugins/with-thing",
+      ["expo-router", { "root": "./app" }]
+    ]
+  }
+}

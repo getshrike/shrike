@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 270,
+  "count": 271,
   "entries": [
     {
       "id": "page-entry-1",
@@ -4452,6 +4452,31 @@
         "src/routes/user/[id].tsx#unusedUserHelper",
         "app/dead.tsx#deadOutsideRoot",
         "src/components/dead.tsx#deadThing"
+      ]
+    },
+    {
+      "id": "expo-config-plugins",
+      "category": "expo",
+      "files": [
+        "app",
+        "app.json",
+        "plugins",
+        "src",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "plugins/with-thing.ts#default",
+          "reason": "Expo resolves the local config plugin named in app.json"
+        },
+        {
+          "symbol": "plugins/with-thing.ts#helper",
+          "reason": "The loaded config plugin module's helper exports are part of its surface"
+        }
+      ],
+      "mustReport": [
+        "plugins/unused.ts#default",
+        "src/dead.ts#deadThing"
       ]
     },
     {
