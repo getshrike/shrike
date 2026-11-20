@@ -11,8 +11,10 @@ use crate::summary::{FileSummary, ModuleRefs, ParseStatus};
 
 mod collector;
 mod declarations;
+mod mdx;
 mod refs;
 mod statements;
+mod type_refs;
 
 #[cfg(test)]
 mod tests;
@@ -33,9 +35,54 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
     let generated = looks_generated(source);
     let executable = looks_executable(path, source);
 
+    if path.to_ascii_lowercase().ends_with(".mdx") {
+        return mdx::parse(
+            path,
+            source,
+            hash,
+            &line_index,
+            line_count,
+            generated,
+            executable,
+        );
+    }
+
     let source_type = match SourceType::from_path(path) {
-        Ok(source_type) => source_type,
+        Ok(source_type) => {
+            let lower = path.to_ascii_lowercase();
+            if lower.ends_with(".js") {
+                // Modern `.js` files are ESM and commonly contain JSX
+                // (Next.js, Gatsby, Create React App). Treat them as modules so
+                // top-level await and import/export parse correctly.
+                SourceType::mjs().with_jsx(true)
+            } else if lower.ends_with(".mjs") || lower.ends_with(".cjs") {
+                source_type.with_jsx(true)
+            } else {
+                source_type
+            }
+        }
         Err(_) => {
+            let component = matches!(
+                path.rsplit_once('.').map(|(_, extension)| extension),
+                Some("vue" | "svelte" | "astro")
+            );
+            let diagnostics = if component {
+                vec![
+                    Diagnostic::info(
+                        "framework_component",
+                        "framework component body is not parsed; it is never a deletion candidate",
+                    )
+                    .in_file(path),
+                ]
+            } else {
+                vec![
+                    Diagnostic::warning(
+                        "unsupported_extension",
+                        "file is not a supported JavaScript or TypeScript source",
+                    )
+                    .in_file(path),
+                ]
+            };
             return FileSummary {
                 path: path.to_string(),
                 content_hash: hash,
@@ -50,18 +97,14 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
                 re_exports: Vec::new(),
                 export_alls: Vec::new(),
                 module_refs: ModuleRefs::default(),
+                type_refs: Vec::new(),
+                type_imports: Vec::new(),
                 ambient_modules: Vec::new(),
                 executable,
                 dynamic: Vec::new(),
                 unknown: Vec::new(),
                 generated,
-                diagnostics: vec![
-                    Diagnostic::warning(
-                        "unsupported_extension",
-                        "file is not a supported JavaScript or TypeScript source",
-                    )
-                    .in_file(path),
-                ],
+                diagnostics,
             };
         }
     };
@@ -88,6 +131,8 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
             re_exports: Vec::new(),
             export_alls: Vec::new(),
             module_refs: ModuleRefs::default(),
+            type_refs: Vec::new(),
+            type_imports: Vec::new(),
             ambient_modules: Vec::new(),
             executable,
             dynamic: Vec::new(),
@@ -118,6 +163,8 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
         re_exports: Vec::new(),
         export_alls: Vec::new(),
         module_refs: ModuleRefs::default(),
+        type_refs: Vec::new(),
+        type_imports: Vec::new(),
         ambient_modules: Vec::new(),
         executable,
         dynamic: Vec::new(),
@@ -130,6 +177,9 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
         statements::extract_statement(statement, source, &line_index, &mut summary);
     }
 
+    let type_refs = type_refs::collect(&program, source);
+    summary.type_refs = type_refs.modules;
+    summary.type_imports = type_refs.imports;
     refs::mark_local_exports(&mut summary);
     refs::finalize_refs(&mut summary);
     summary
@@ -149,6 +199,14 @@ fn module_kind(path: &str) -> &'static str {
         "mjs"
     } else if lower.ends_with(".cjs") {
         "cjs"
+    } else if lower.ends_with(".mdx") {
+        "mdx"
+    } else if lower.ends_with(".vue") {
+        "vue"
+    } else if lower.ends_with(".svelte") {
+        "svelte"
+    } else if lower.ends_with(".astro") {
+        "astro"
     } else {
         "js"
     }

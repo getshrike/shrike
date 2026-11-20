@@ -486,14 +486,14 @@ Rules:
 ```text
 scripts/
 ├── validate-schemas.mjs
-├── corpus.mjs
+├── corpus-runner.mjs
+├── differential.mjs
 ├── delta-fixtures.mjs
-├── verification-fixtures.mjs
-├── bench.mjs
+├── run-fixtures.mjs
+├── verify-fixtures.mjs
 ├── check-links.mjs
 ├── check-docs.mjs
-├── release.mjs
-└── package-binary.mjs
+└── check-package.mjs
 ```
 
 Rules:
@@ -519,7 +519,7 @@ Rules:
 ```
 
 - `ci.yml`: Rust fmt/clippy/test, Node lint/typecheck/test, schema validation,
-  fixture suite.
+  fixture suite, and the pinned knip/depcheck differential gate.
 - `corpus.yml`: must-not-report corpus on every PR and nightly on the labeled
   set.
 - `bench.yml`: performance regression on `main`, not on every PR.

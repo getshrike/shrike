@@ -9,10 +9,13 @@ pub(super) fn merge_refs(target: &mut ModuleRefs, source: &RefCollector) {
     target
         .identifiers
         .extend(source.identifiers.iter().cloned());
+    target.free.extend(source.free.iter().cloned());
     target.members.extend(source.members.iter().cloned());
     target.jsx.extend(source.jsx.iter().cloned());
     target.identifiers.sort();
     target.identifiers.dedup();
+    target.free.sort();
+    target.free.dedup();
     target.jsx.sort();
     target.jsx.dedup();
     target.members.sort_by(|a, b| {
@@ -28,6 +31,8 @@ pub(super) fn finalize_refs(summary: &mut FileSummary) {
     for declaration in &mut summary.declarations {
         declaration.references.identifiers.sort();
         declaration.references.identifiers.dedup();
+        declaration.references.free.sort();
+        declaration.references.free.dedup();
         declaration.references.jsx.sort();
         declaration.references.jsx.dedup();
         declaration.references.members.sort_by(|a, b| {
@@ -40,6 +45,8 @@ pub(super) fn finalize_refs(summary: &mut FileSummary) {
     }
     summary.module_refs.identifiers.sort();
     summary.module_refs.identifiers.dedup();
+    summary.module_refs.free.sort();
+    summary.module_refs.free.dedup();
     summary.module_refs.jsx.sort();
     summary.module_refs.jsx.dedup();
     summary.module_refs.members.sort_by(|a, b| {

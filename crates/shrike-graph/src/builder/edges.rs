@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use shrike_core::Span;
 use shrike_core::ids::{module_symbol_key, symbol_key};
-use shrike_syntax::ParseStatus;
+use shrike_syntax::{MemberAccess, ParseStatus};
 
 use super::Builder;
 use crate::types::UnknownRecord;
@@ -58,50 +58,8 @@ impl<'a> Builder<'a> {
                         }
                     }
                 }
-                for member in &refs.members {
-                    if let Some(target_file) = self
-                        .namespaces
-                        .get(&summary.path)
-                        .and_then(|map| map.get(&member.object))
-                    {
-                        match &member.property {
-                            Some(property) => {
-                                if let Some(target) =
-                                    self.resolve_export(target_file, property, &mut BTreeSet::new())
-                                {
-                                    self.edges.push(edge(
-                                        &source,
-                                        &target,
-                                        "reference",
-                                        "certain",
-                                        &summary.path,
-                                        declaration.span,
-                                    ));
-                                } else {
-                                    self.unknowns.push(UnknownRecord {
-                                        reason: format!("unknown member `{}`", member.object),
-                                        scope: "module".to_string(),
-                                        package: self.package_of.get(&summary.path).cloned(),
-                                        file: summary.path.clone(),
-                                        span: declaration.span,
-                                    });
-                                }
-                            }
-                            None => {
-                                self.unknowns.push(UnknownRecord {
-                                    reason: format!(
-                                        "computed member access on `{}`",
-                                        member.object
-                                    ),
-                                    scope: "module".to_string(),
-                                    package: self.package_of.get(&summary.path).cloned(),
-                                    file: summary.path.clone(),
-                                    span: declaration.span,
-                                });
-                            }
-                        }
-                    }
-                }
+                self.add_member_edges(&source, &summary.path, declaration.span, &refs.members);
+                self.mark_namespace_value_uses(&summary.path, declaration.span, &refs.free);
             }
             // Module-level references keep top-level side effects and roots live.
             for identifier in &summary.module_refs.identifiers {
@@ -128,6 +86,17 @@ impl<'a> Builder<'a> {
                     ));
                 }
             }
+            self.add_member_edges(
+                &module,
+                &summary.path,
+                Span::default(),
+                &summary.module_refs.members,
+            );
+            self.mark_namespace_value_uses(
+                &summary.path,
+                Span::default(),
+                &summary.module_refs.free,
+            );
             for re_export in &summary.re_exports {
                 let source = symbol_key(&summary.path, &re_export.exported);
                 if let Some(target_file) = self
@@ -168,6 +137,70 @@ impl<'a> Builder<'a> {
                     }
                 }
             }
+        }
+    }
+
+    fn add_member_edges(&mut self, source: &str, path: &str, span: Span, members: &[MemberAccess]) {
+        for member in members {
+            let Some(target_file) = self
+                .namespaces
+                .get(path)
+                .and_then(|map| map.get(&member.object))
+            else {
+                continue;
+            };
+            match &member.property {
+                Some(property) => {
+                    if let Some(target) =
+                        self.resolve_export(target_file, property, &mut BTreeSet::new())
+                    {
+                        self.edges
+                            .push(edge(source, &target, "reference", "certain", path, span));
+                    } else {
+                        self.unknowns.push(UnknownRecord {
+                            reason: format!("unknown member `{}`", member.object),
+                            scope: "module".to_string(),
+                            package: self.package_of.get(path).cloned(),
+                            file: target_file.clone(),
+                            span,
+                        });
+                    }
+                }
+                None => {
+                    self.unknowns.push(UnknownRecord {
+                        reason: format!("computed member access on `{}`", member.object),
+                        scope: "module".to_string(),
+                        package: self.package_of.get(path).cloned(),
+                        file: target_file.clone(),
+                        span,
+                    });
+                }
+            }
+        }
+    }
+
+    /// A namespace binding used as a value (`const all = { ...UI }`, a
+    /// destructured `const { Button } = UI`, `Object.keys(UI)`) can reach any
+    /// export. Widen only that target module rather than guessing one member.
+    fn mark_namespace_value_uses(&mut self, path: &str, span: Span, free: &[String]) {
+        let mut targets = Vec::new();
+        if let Some(namespaces) = self.namespaces.get(path) {
+            for identifier in free {
+                if let Some(target) = namespaces.get(identifier) {
+                    targets.push(target.clone());
+                }
+            }
+        }
+        targets.sort();
+        targets.dedup();
+        for target in targets {
+            self.unknowns.push(UnknownRecord {
+                reason: format!("namespace import used as a value in `{path}`"),
+                scope: "module".to_string(),
+                package: self.package_of.get(path).cloned(),
+                file: target,
+                span,
+            });
         }
     }
 

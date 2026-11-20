@@ -5,7 +5,7 @@ import { CliError, ExitCode, isCliError, UsageError } from "./errors.ts";
 import { writeJson, writeJsonError, writeStderr } from "./output.ts";
 import { printHelp } from "./render.ts";
 import {
-  cacheCommand, deltaCommand, evidenceCommand, initCommand, planCommand, proofCommand,
+  cacheCommand, deltaCommand, depsCommand, evidenceCommand, initCommand, planCommand, proofCommand,
   receiptCommand, recoverCommand, scanCommand, versionCommand,
 } from "./commands/basic.ts";
 import { pruneCommand } from "./commands/prune.ts";
@@ -31,6 +31,7 @@ async function main(argv: string[]): Promise<number> {
     case "version": return versionCommand(args);
     case "init": return initCommand(root, args);
     case "scan": return scanCommand(root, args);
+    case "deps": return depsCommand(root, args);
     case "delta": return deltaCommand(root, args);
     case "plan": return planCommand(root, args);
     case "prune": return pruneCommand(root, args);

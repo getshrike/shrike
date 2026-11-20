@@ -148,6 +148,7 @@ impl<'a> Builder<'a> {
             };
         }
         let (live, witnesses, mut proofs) = self.reachability();
+        let internal_only = self.internal_only(&live);
         let candidates: Vec<String> = self
             .symbols
             .iter()
@@ -178,6 +179,7 @@ impl<'a> Builder<'a> {
             sccs,
             live: live.into_iter().collect(),
             candidates: candidates.clone(),
+            internal_only,
             witnesses: witnesses
                 .into_iter()
                 .filter(|witness| !witness.path.is_empty())

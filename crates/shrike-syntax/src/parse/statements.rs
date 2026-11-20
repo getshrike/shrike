@@ -243,6 +243,7 @@ pub(super) fn extract_statement(
                 .module_refs
                 .identifiers
                 .extend(refs.identifiers.iter().cloned());
+            summary.module_refs.free.extend(refs.free.iter().cloned());
             summary
                 .module_refs
                 .members

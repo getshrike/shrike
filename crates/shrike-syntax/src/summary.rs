@@ -80,6 +80,13 @@ pub struct MemberAccess {
 #[serde(rename_all = "camelCase")]
 pub struct ModuleRefs {
     pub identifiers: Vec<String>,
+    /// Identifier references that are not the object of a member access.
+    ///
+    /// A namespace import used this way (`const all = { ...UI }`, or a
+    /// destructured `const { Button } = UI`) can reach any export, so the graph
+    /// treats it as a module-scoped unknown instead of guessing a member.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub free: Vec<String>,
     pub members: Vec<MemberAccess>,
     pub jsx: Vec<String>,
 }
@@ -157,6 +164,12 @@ pub struct DynamicRecord {
     pub kind: DynamicKind,
     pub specifier: DynamicSpecifier,
     pub span: Span,
+    /// Export names proven by a static destructuring or member access at the
+    /// import site, such as `const { getDb } = await import("./db")` or
+    /// `(await import("./x")).default`. `None` means the namespace may be used
+    /// in an unknown shape and every export must stay live.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imported: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -173,6 +186,17 @@ pub struct UnknownRecord {
     pub reason: String,
     pub scope: UnknownScope,
     pub span: Span,
+}
+
+/// A type-position import that names a specific export, such as
+/// `import("./types").Config` or JSDoc `@type {import("./types").Config}`.
+/// The module specifier alone is dependency evidence; the qualifier keeps the
+/// type declaration live.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeImportRecord {
+    pub source: String,
+    pub imported: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -192,6 +216,15 @@ pub struct FileSummary {
     pub re_exports: Vec<ReExportRecord>,
     pub export_alls: Vec<ExportAllRecord>,
     pub module_refs: ModuleRefs,
+    /// Module specifiers referenced from type positions: TypeScript
+    /// `import("pkg")` types and JSDoc `@type {import("pkg").X}` tags. These
+    /// are dependency evidence, not runtime graph edges.
+    #[serde(default)]
+    pub type_refs: Vec<String>,
+    /// Type-position imports with an export qualifier. These create symbol
+    /// liveness edges without pretending to be runtime imports.
+    #[serde(default)]
+    pub type_imports: Vec<TypeImportRecord>,
     pub dynamic: Vec<DynamicRecord>,
     pub unknown: Vec<UnknownRecord>,
     /// `declare module "..."` and `declare global` names. Their bodies are

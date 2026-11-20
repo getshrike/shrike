@@ -13,7 +13,9 @@ pub mod hash;
 pub mod ids;
 pub mod span;
 
-pub use config::{BatchPolicy, EngineConfig, EntryPolicy, normalize_relative};
+pub use config::{
+    BatchPolicy, ClientBoundaryPolicy, EngineConfig, EntryPolicy, normalize_relative,
+};
 pub use diagnostic::{Diagnostic, Severity};
 pub use error::{ShrikeError, ShrikeResult};
 pub use hash::{content_hash, hash_bytes, hash_json, short_hash};

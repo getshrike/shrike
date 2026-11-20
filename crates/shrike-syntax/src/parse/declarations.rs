@@ -221,6 +221,7 @@ pub(super) fn function_record(
         .references
         .identifiers
         .retain(|id| id != &record.name);
+    record.references.free.retain(|id| id != &record.name);
     (record, dynamic, unknown)
 }
 
@@ -252,6 +253,7 @@ pub(super) fn class_record(
         .references
         .identifiers
         .retain(|id| id != &record.name);
+    record.references.free.retain(|id| id != &record.name);
     (record, dynamic, unknown)
 }
 

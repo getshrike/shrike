@@ -19,6 +19,7 @@ export interface CheckConfig {
 
 export type VerificationTier = "fast" | "standard" | "full";
 export type VerificationMode = "worktree" | "in-place";
+export type ClientBoundaryPolicy = "graph" | "protect";
 
 export interface VerificationConfig {
   mode: VerificationMode;
@@ -51,6 +52,15 @@ export interface ShrikeConfig {
   entryPolicy: "local" | "production";
   testEntries: boolean;
   includeGenerated: boolean;
+  /**
+   * `graph` (default) treats a `"use client"`/`"use server"` directive as a
+   * boundary marker and lets normal reachability decide liveness. `protect`
+   * also seeds every export in those files as an entry (the pre-1.1
+   * fail-closed behavior).
+   */
+  clientBoundaryPolicy: ClientBoundaryPolicy;
+  /** Dependency names that must never be reported as unused. */
+  ignoreDependencies: string[];
   publicApi: string[];
   generated: string[];
   batchPolicy: {
@@ -68,7 +78,18 @@ export interface ShrikeConfig {
 
 export const DEFAULT_CONFIG: ShrikeConfig = {
   schemaVersion: "1.0",
-  include: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs"],
+  include: [
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.js",
+    "**/*.jsx",
+    "**/*.mjs",
+    "**/*.cjs",
+    "**/*.mdx",
+    "**/*.svelte",
+    "**/*.vue",
+    "**/*.astro",
+  ],
   ignore: [
     "node_modules/**", ".git/**", ".next/**", ".shrike/**", "dist/**", "build/**",
     "out/**", "coverage/**", ".turbo/**", ".vercel/**", "*.min.js", "*.generated.*",
@@ -78,6 +99,8 @@ export const DEFAULT_CONFIG: ShrikeConfig = {
   entryPolicy: "local",
   testEntries: true,
   includeGenerated: false,
+  clientBoundaryPolicy: "graph",
+  ignoreDependencies: [],
   publicApi: [],
   generated: [],
   batchPolicy: { maxSymbols: 50, maxFiles: 10, maxLiveGraphPercent: 5, allowOversized: false },
@@ -274,6 +297,7 @@ export function engineConfig(config: ShrikeConfig): Record<string, unknown> {
     build: _build,
     cacheDir: _cacheDir,
     schemaVersion: _schemaVersion,
+    ignoreDependencies: _ignoreDependencies,
     ...rest
   } = config;
   return rest;

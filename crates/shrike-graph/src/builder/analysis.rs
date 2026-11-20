@@ -115,6 +115,43 @@ impl<'a> Builder<'a> {
         (live, witnesses, proofs)
     }
 
+    /// Exported symbols that are live only because their own file references
+    /// them. A cross-file edge proves external use; same-file `re-export`
+    /// aliases propagate that proof to the local symbol they expose.
+    pub(super) fn internal_only(&self, live: &BTreeSet<String>) -> Vec<String> {
+        let mut external: BTreeSet<String> = BTreeSet::new();
+        for edge in &self.edges {
+            if file_of(&edge.source) != file_of(&edge.target) {
+                external.insert(edge.target.clone());
+            }
+        }
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for edge in &self.edges {
+                if edge.kind == "re-export"
+                    && file_of(&edge.source) == file_of(&edge.target)
+                    && external.contains(&edge.source)
+                    && external.insert(edge.target.clone())
+                {
+                    changed = true;
+                }
+            }
+        }
+        self.symbols
+            .iter()
+            .filter(|symbol| {
+                symbol.exported
+                    && !symbol.entry
+                    && !symbol.public_api
+                    && !symbol.generated
+                    && live.contains(&symbol.key)
+                    && !external.contains(&symbol.key)
+            })
+            .map(|symbol| symbol.key.clone())
+            .collect()
+    }
+
     pub(super) fn sccs(&self) -> Vec<Vec<String>> {
         // Tarjan over symbol keys, iterative to avoid recursion limits.
         let keys: Vec<&str> = self
@@ -193,4 +230,10 @@ impl<'a> Builder<'a> {
         });
         components
     }
+}
+
+fn file_of(symbol_key: &str) -> &str {
+    symbol_key
+        .split_once('#')
+        .map_or(symbol_key, |(file, _)| file)
 }

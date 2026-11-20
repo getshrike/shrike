@@ -1,21 +1,118 @@
 use std::collections::BTreeSet;
+use std::path::Path;
 
-use shrike_core::EntryPolicy;
 use shrike_core::ids::module_symbol_key;
+use shrike_core::{ClientBoundaryPolicy, EntryPolicy};
 use shrike_syntax::ParseStatus;
 
 use super::Builder;
 use crate::types::EntryRecord;
 use crate::util::route_of;
 
+/// Vercel functions live under a project's `api/` directory when that project
+/// opts in with a sibling `vercel.json`. They are HTTP endpoints executed by
+/// the platform, not imported by application code.
+fn is_vercel_function(root: &Path, path: &str) -> bool {
+    let mut search = 0;
+    while let Some(offset) = path[search..].find("api/") {
+        let index = search + offset;
+        let boundary = index == 0 || path.as_bytes()[index - 1] == b'/';
+        if boundary && root.join(&path[..index]).join("vercel.json").is_file() {
+            return true;
+        }
+        search = index + 4;
+    }
+    false
+}
+
+/// Whether `path` is inside `directory`, either at the repository root or in a
+/// nested workspace package. Framework conventions are package-relative.
+fn in_directory(path: &str, directory: &str) -> bool {
+    path.starts_with(directory) || path.contains(&format!("/{directory}"))
+}
+
+/// Whether `path` is exactly `relative` at the repository root or at the root
+/// of a nested workspace package.
+fn at_package_root(path: &str, relative: &str) -> bool {
+    path == relative || path.ends_with(&format!("/{relative}"))
+}
+
+/// Framework files that are executed by convention even when the TypeScript
+/// parser does not understand their extension. These files are never deletion
+/// candidates, but their module symbol is an entry.
+pub(super) fn framework_module(path: &str) -> Option<(&'static str, &'static str)> {
+    let lower = path.to_ascii_lowercase();
+    if lower.ends_with(".svelte") && in_directory(&lower, "src/routes/") {
+        let name = lower.rsplit('/').next().unwrap_or("");
+        if name.starts_with("+page") || name.starts_with("+layout") || name.starts_with("+error") {
+            return Some(("sveltekit", "route"));
+        }
+    }
+    if lower.ends_with(".astro") && in_directory(&lower, "src/pages/") {
+        return Some(("astro", "page"));
+    }
+    if lower.ends_with(".vue") {
+        // Nuxt 3 keeps routes at the project root; Nuxt 4 and srcDir setups
+        // move them under `app/` or `src/`. Any of those locations is a route
+        // component, never a deletable module.
+        let name = lower.rsplit('/').next().unwrap_or("");
+        if matches!(name, "app.vue" | "error.vue")
+            || in_directory(&lower, "pages/")
+            || in_directory(&lower, "layouts/")
+        {
+            return Some(("nuxt", "route"));
+        }
+    }
+    None
+}
+
 impl<'a> Builder<'a> {
     pub(super) fn detect_entries(&mut self) {
         let summaries = self.summaries.clone();
-        for summary in &summaries {
-            if summary.parse_status != ParseStatus::Ok {
-                continue;
+        let mut expo_layout_packages: BTreeSet<String> = BTreeSet::new();
+        let mut nuxt_config_packages: BTreeSet<String> = BTreeSet::new();
+        for file in &self.files {
+            let package_directory = self
+                .resolver
+                .package_for(&file.path)
+                .map_or("", |package| package.directory.as_str());
+            let relative = file
+                .path
+                .strip_prefix(package_directory)
+                .unwrap_or(&file.path)
+                .trim_start_matches('/');
+            if matches!(
+                relative,
+                "app/_layout.tsx"
+                    | "app/_layout.ts"
+                    | "app/_layout.jsx"
+                    | "app/_layout.js"
+                    | "src/app/_layout.tsx"
+                    | "src/app/_layout.ts"
+                    | "src/app/_layout.jsx"
+                    | "src/app/_layout.js"
+            ) {
+                expo_layout_packages.insert(package_directory.to_string());
             }
+            if matches!(
+                relative,
+                "nuxt.config.ts"
+                    | "nuxt.config.js"
+                    | "nuxt.config.mjs"
+                    | "nuxt.config.mts"
+                    | "nuxt.config.cts"
+            ) {
+                nuxt_config_packages.insert(package_directory.to_string());
+            }
+        }
+        for summary in &summaries {
             let path = summary.path.as_str();
+            let package_directory = self
+                .resolver
+                .package_for(path)
+                .map_or("", |package| package.directory.as_str());
+            let has_expo_layout = expo_layout_packages.contains(package_directory);
+            let has_nuxt_config = nuxt_config_packages.contains(package_directory);
             let module = module_symbol_key(path);
             let add = |builder: &mut Self,
                        symbol: String,
@@ -39,6 +136,12 @@ impl<'a> Builder<'a> {
                     });
                 }
             };
+            if summary.parse_status != ParseStatus::Ok {
+                if let Some((framework, kind)) = framework_module(path) {
+                    add(self, module, framework, kind, route_of(path), "both");
+                }
+                continue;
+            }
             if summary.executable {
                 add(self, module.clone(), "executable", "tool", None, "both");
             }
@@ -49,20 +152,31 @@ impl<'a> Builder<'a> {
             let route = route_of(path);
             let is_app = path.starts_with("app/") || path.contains("/app/");
             let is_pages = path.starts_with("pages/") || path.contains("/pages/");
-            // Next.js middleware/proxy live at the project root (or `src/`),
-            // not under `app/`, but they are still framework entrypoints.
-            let root_convention = matches!(stem, "middleware" | "proxy")
-                && path
-                    .strip_suffix(".tsx")
-                    .or_else(|| path.strip_suffix(".ts"))
-                    .or_else(|| path.strip_suffix(".jsx"))
-                    .or_else(|| path.strip_suffix(".js"))
-                    .is_some_and(|base| {
-                        matches!(
-                            base,
-                            "middleware" | "proxy" | "src/middleware" | "src/proxy"
-                        )
-                    });
+            // Next.js middleware/proxy and the MDX component map live at the
+            // project root (or `src/`), not under `app/`, but they are still
+            // framework entrypoints.
+            let root_convention = matches!(
+                stem,
+                "middleware" | "proxy" | "mdx-components" | "instrumentation-client"
+            ) && path
+                .strip_suffix(".tsx")
+                .or_else(|| path.strip_suffix(".ts"))
+                .or_else(|| path.strip_suffix(".jsx"))
+                .or_else(|| path.strip_suffix(".js"))
+                .is_some_and(|base| {
+                    [
+                        "middleware",
+                        "proxy",
+                        "mdx-components",
+                        "instrumentation-client",
+                        "src/middleware",
+                        "src/proxy",
+                        "src/mdx-components",
+                        "src/instrumentation-client",
+                    ]
+                    .iter()
+                    .any(|relative| at_package_root(base, relative))
+                });
             let app_entry = (is_app
                 && matches!(
                     stem,
@@ -73,6 +187,9 @@ impl<'a> Builder<'a> {
                         | "error"
                         | "global-error"
                         | "not-found"
+                        | "global-not-found"
+                        | "forbidden"
+                        | "unauthorized"
                         | "route"
                         | "default"
                         | "sitemap"
@@ -90,12 +207,14 @@ impl<'a> Builder<'a> {
                 || root_convention;
             let pages_entry = is_pages;
             if app_entry || pages_entry {
-                for name in [
+                let mut public_names: Vec<&str> = vec![
                     "default",
                     "page",
                     "layout",
                     "route",
                     "metadata",
+                    "Head",
+                    "pageQuery",
                     "generateMetadata",
                     "viewport",
                     "generateViewport",
@@ -108,6 +227,7 @@ impl<'a> Builder<'a> {
                     "register",
                     "onRequestError",
                     "onRequestInit",
+                    "onRouterTransitionStart",
                     "proxy",
                     "middleware",
                     "config",
@@ -118,6 +238,7 @@ impl<'a> Builder<'a> {
                     "dynamicParams",
                     "preferredRegion",
                     "maxDuration",
+                    "experimental_ppr",
                     "GET",
                     "POST",
                     "PUT",
@@ -125,7 +246,24 @@ impl<'a> Builder<'a> {
                     "DELETE",
                     "HEAD",
                     "OPTIONS",
-                ] {
+                ];
+                // Metadata image routes export a small, fixed API. Keep it scoped
+                // to those files so a `size` export on a page is still analyzed.
+                if matches!(
+                    stem,
+                    "icon" | "apple-icon" | "opengraph-image" | "twitter-image"
+                ) {
+                    public_names.extend(["size", "contentType", "alt", "generateImageMetadata"]);
+                }
+                if stem == "mdx-components" {
+                    public_names.push("useMDXComponents");
+                }
+                // Next.js calls `reportWebVitals` when it is exported from the
+                // Pages Router `_app` file, but it is not imported by code.
+                if stem == "_app" {
+                    public_names.push("reportWebVitals");
+                }
+                for name in public_names {
                     if let Some(key) = self.resolve_export(path, name, &mut BTreeSet::new()) {
                         add(
                             self,
@@ -142,10 +280,212 @@ impl<'a> Builder<'a> {
                     module.clone(),
                     if app_entry { "next-app" } else { "next-pages" },
                     "module",
-                    route,
+                    route.clone(),
                     "both",
                 );
             }
+            // Remix and React Router route modules are called by the router,
+            // not imported by application code.
+            let router_import = summary.imports.iter().any(|import| {
+                import.source.starts_with("@remix-run/")
+                    || import.source == "react-router"
+                    || import.source.starts_with("react-router/")
+                    || import.source.starts_with("@react-router/")
+            });
+            let router_entry = [
+                "app/root.tsx",
+                "app/root.ts",
+                "app/root.jsx",
+                "app/root.js",
+                "app/entry.client.tsx",
+                "app/entry.client.ts",
+                "app/entry.client.jsx",
+                "app/entry.client.js",
+                "app/entry.server.tsx",
+                "app/entry.server.ts",
+                "app/entry.server.jsx",
+                "app/entry.server.js",
+                "app/routes.ts",
+                "app/routes.js",
+            ]
+            .iter()
+            .any(|relative| at_package_root(path, relative));
+            let router_route = in_directory(path, "app/routes/") && stem != "page";
+            if router_import && (router_entry || router_route) {
+                add(
+                    self,
+                    module.clone(),
+                    "remix",
+                    if router_entry { "entry" } else { "route" },
+                    route.clone(),
+                    "both",
+                );
+                for name in [
+                    "default",
+                    "loader",
+                    "clientLoader",
+                    "action",
+                    "clientAction",
+                    "meta",
+                    "links",
+                    "headers",
+                    "ErrorBoundary",
+                    "HydrateFallback",
+                    "shouldRevalidate",
+                    "handle",
+                    "Component",
+                    "config",
+                ] {
+                    if let Some(key) = self.resolve_export(path, name, &mut BTreeSet::new()) {
+                        add(self, key, "remix", "route-export", route.clone(), "both");
+                    }
+                }
+            }
+
+            // TanStack Router file routes export a `Route` object consumed by
+            // the generated route tree.
+            let tanstack_import = summary
+                .imports
+                .iter()
+                .any(|import| import.source.starts_with("@tanstack/"));
+            if tanstack_import && in_directory(path, "src/routes/") {
+                add(
+                    self,
+                    module.clone(),
+                    "tanstack",
+                    "route",
+                    route.clone(),
+                    "both",
+                );
+                for name in ["Route", "route"] {
+                    if let Some(key) = self.resolve_export(path, name, &mut BTreeSet::new()) {
+                        add(self, key, "tanstack", "route-export", route.clone(), "both");
+                    }
+                }
+            }
+
+            // Expo Router uses `app/` with `_layout` files and `+` special
+            // routes. A layout is the strong signal that the tree is Expo.
+            let expo_import = summary
+                .imports
+                .iter()
+                .any(|import| import.source.starts_with("expo-router"));
+            // Expo Router treats every module under `app/` as a route. The
+            // `_layout` file is the strong signal that the tree is Expo rather
+            // than Next; a direct `expo-router` import is the weaker one.
+            let expo_app = in_directory(path, "app/") || in_directory(path, "src/app/");
+            if expo_app && !app_entry && (has_expo_layout || expo_import) {
+                add(self, module.clone(), "expo", "route", route.clone(), "both");
+                for name in [
+                    "default",
+                    "unstable_settings",
+                    "ErrorBoundary",
+                    "getDerivedStateFromError",
+                ] {
+                    if let Some(key) = self.resolve_export(path, name, &mut BTreeSet::new()) {
+                        add(self, key, "expo", "route-export", route.clone(), "both");
+                    }
+                }
+            }
+
+            // SvelteKit route modules export `load`, actions, and page options
+            // that the framework calls directly.
+            let sveltekit_route = in_directory(path, "src/routes/")
+                && (stem.starts_with("+page")
+                    || stem.starts_with("+layout")
+                    || stem.starts_with("+server")
+                    || stem.starts_with("+error"));
+            if sveltekit_route {
+                add(
+                    self,
+                    module.clone(),
+                    "sveltekit",
+                    "route",
+                    route.clone(),
+                    "both",
+                );
+                for name in [
+                    "load",
+                    "actions",
+                    "entries",
+                    "prerender",
+                    "ssr",
+                    "csr",
+                    "trailingSlash",
+                    "config",
+                    "GET",
+                    "POST",
+                    "PUT",
+                    "PATCH",
+                    "DELETE",
+                    "HEAD",
+                    "OPTIONS",
+                ] {
+                    if let Some(key) = self.resolve_export(path, name, &mut BTreeSet::new()) {
+                        add(
+                            self,
+                            key,
+                            "sveltekit",
+                            "route-export",
+                            route.clone(),
+                            "both",
+                        );
+                    }
+                }
+            }
+
+            // Astro endpoints under `src/pages` are HTTP handlers.
+            let astro_endpoint = in_directory(path, "src/pages/")
+                && summary
+                    .imports
+                    .iter()
+                    .any(|import| import.source == "astro" || import.source.starts_with("astro:"));
+            if astro_endpoint {
+                add(
+                    self,
+                    module.clone(),
+                    "astro",
+                    "endpoint",
+                    route.clone(),
+                    "server",
+                );
+                for name in ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] {
+                    if let Some(key) = self.resolve_export(path, name, &mut BTreeSet::new()) {
+                        add(
+                            self,
+                            key,
+                            "astro",
+                            "endpoint-export",
+                            route.clone(),
+                            "server",
+                        );
+                    }
+                }
+            }
+
+            // Nuxt/Nitro server routes and plugins are loaded by convention.
+            let nuxt_entry = has_nuxt_config
+                && (in_directory(path, "server/api/")
+                    || in_directory(path, "server/routes/")
+                    || in_directory(path, "server/middleware/")
+                    || in_directory(path, "plugins/")
+                    || in_directory(path, "middleware/"));
+            if nuxt_entry {
+                add(
+                    self,
+                    module.clone(),
+                    "nuxt",
+                    "server",
+                    route.clone(),
+                    "server",
+                );
+                for name in ["default", "handler"] {
+                    if let Some(key) = self.resolve_export(path, name, &mut BTreeSet::new()) {
+                        add(self, key, "nuxt", "server-export", route.clone(), "server");
+                    }
+                }
+            }
+
             // Ambient declarations and declaration files describe types that
             // are visible program-wide (or are published API), not values that
             // can be proven unused from the module graph. Never propose them.
@@ -167,7 +507,9 @@ impl<'a> Builder<'a> {
                     add(self, key, "ambient", "declaration", None, "both");
                 }
             }
-            if summary.has_directive("use server") || summary.has_directive("use client") {
+            if summary.has_directive("use client")
+                && self.config.client_boundary_policy == ClientBoundaryPolicy::Protect
+            {
                 for (name, key) in self.exports.get(path).cloned().unwrap_or_default() {
                     let _ = name;
                     add(self, key, "react", "client-boundary", None, "both");
@@ -175,6 +517,13 @@ impl<'a> Builder<'a> {
                 add(self, module.clone(), "react", "module", None, "both");
             }
             if summary.has_directive("use server") {
+                if self.config.client_boundary_policy == ClientBoundaryPolicy::Protect {
+                    for (name, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                        let _ = name;
+                        add(self, key, "react", "client-boundary", None, "both");
+                    }
+                    add(self, module.clone(), "react", "module", None, "both");
+                }
                 add(
                     self,
                     module.clone(),
@@ -186,7 +535,10 @@ impl<'a> Builder<'a> {
             }
             let test = path.contains(".test.")
                 || path.contains(".spec.")
+                || path.contains(".test-d.")
                 || path.contains("__tests__/")
+                || path.contains("__typetest__/")
+                || path.contains("__mocks__/")
                 || path.contains("/__fixtures__/")
                 || path.contains("/fixtures/")
                 || path.contains("/e2e/")
@@ -194,13 +546,62 @@ impl<'a> Builder<'a> {
                 || path.starts_with("tests/")
                 || path.contains("/test/")
                 || path.contains("/tests/");
+            let story = path.contains(".stories.")
+                || path.contains(".story.")
+                || path.starts_with(".storybook/")
+                || path.contains("/.storybook/");
             if self.config.test_entries
                 && self.config.entry_policy != EntryPolicy::Production
-                && test
+                && (test || story)
             {
                 add(self, module.clone(), "tests", "test", None, "both");
                 for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
                     add(self, key, "tests", "test-export", None, "both");
+                }
+            }
+            // Standalone examples, benchmarks, and repository scripts are run
+            // directly rather than imported. Under the local policy they are
+            // roots, not dead code.
+            let local_root = path.starts_with("examples/")
+                || path.starts_with("example/")
+                || path.starts_with("demo/")
+                || path.starts_with("playground/")
+                || path.starts_with("playgrounds/")
+                || path.starts_with("benchmarks/")
+                || path.starts_with("scripts/");
+            if self.config.entry_policy != EntryPolicy::Production && local_root {
+                add(self, module.clone(), "local", "standalone", None, "both");
+                for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                    add(self, key, "local", "standalone-export", None, "both");
+                }
+            }
+            // Gatsby loads lifecycle files by convention and pages under
+            // `src/pages`; both are executed directly by the framework.
+            let gatsby_lifecycle = matches!(
+                stem,
+                "gatsby-config" | "gatsby-node" | "gatsby-browser" | "gatsby-ssr" | "gatsby-shared"
+            );
+            if self.config.entry_policy != EntryPolicy::Production && gatsby_lifecycle {
+                add(self, module.clone(), "gatsby", "lifecycle", None, "both");
+                for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                    add(self, key, "gatsby", "lifecycle-export", None, "both");
+                }
+            }
+            // Gatsby functions under `src/api` are HTTP endpoints executed by
+            // the framework, not imported by application code.
+            let gatsby_function = path.starts_with("src/api/") || path.contains("/src/api/");
+            if self.config.entry_policy != EntryPolicy::Production && gatsby_function {
+                add(self, module.clone(), "gatsby", "function", None, "server");
+                for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                    add(self, key, "gatsby", "function-export", None, "server");
+                }
+            }
+            if self.config.entry_policy != EntryPolicy::Production
+                && is_vercel_function(self.resolver.root(), path)
+            {
+                add(self, module.clone(), "vercel", "function", None, "server");
+                for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                    add(self, key, "vercel", "function-export", None, "server");
                 }
             }
             // Build/test tool configs are consumed directly by the tool, so
@@ -485,6 +886,549 @@ mod tests {
         assert!(
             entries.contains(&"source/index.ts#__module__"),
             "{entries:?}"
+        );
+    }
+
+    #[test]
+    fn next_interrupt_routes_and_image_metadata_are_entries() {
+        let snapshot = snapshot(&[
+            (
+                "app/layout.tsx",
+                "export default function Layout() { return null; }\n",
+            ),
+            (
+                "app/page.tsx",
+                "export default function Page() { return null; }\nexport const helper = 1;\n",
+            ),
+            (
+                "app/forbidden.tsx",
+                "export default function Forbidden() { return null; }\n",
+            ),
+            (
+                "app/unauthorized.tsx",
+                "export default function Unauthorized() { return null; }\n",
+            ),
+            (
+                "app/icon.tsx",
+                "export const size = { width: 32 };\nexport const contentType = 'image/png';\nexport default function Icon() { return null; }\n",
+            ),
+            (
+                "app/opengraph-image.tsx",
+                "export const size = { width: 1200 };\nexport const contentType = 'image/png';\nexport default function Image() { return null; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        assert!(
+            entries.contains(&"app/forbidden.tsx#default"),
+            "{entries:?}"
+        );
+        assert!(
+            entries.contains(&"app/unauthorized.tsx#default"),
+            "{entries:?}"
+        );
+        assert!(entries.contains(&"app/icon.tsx#size"), "{entries:?}");
+        assert!(entries.contains(&"app/icon.tsx#contentType"), "{entries:?}");
+        assert!(
+            entries.contains(&"app/opengraph-image.tsx#size"),
+            "{entries:?}"
+        );
+        assert!(
+            entries.contains(&"app/opengraph-image.tsx#contentType"),
+            "{entries:?}"
+        );
+        assert!(
+            !entries.contains(&"app/page.tsx#helper"),
+            "a page's arbitrary export must not become public: {entries:?}"
+        );
+        assert!(
+            snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "app/page.tsx#helper"),
+            "the page helper should remain a candidate: {:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn jsx_namespace_members_keep_the_used_export_live() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "import * as UI from '../components/ui';\nexport default function Page() { return <UI.Button />; }\n",
+            ),
+            (
+                "components/ui.tsx",
+                "export function Button() { return null; }\nexport function DeadButton() { return null; }\n",
+            ),
+        ]);
+        assert!(
+            !snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "components/ui.tsx#Button"),
+            "the JSX namespace member must stay live: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "components/ui.tsx#DeadButton"),
+            "an unused namespace export must remain a candidate: {:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn namespace_values_widen_the_target_module() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "import * as UI from '../components/ui';\nconst all = { ...UI };\nexport default function Page() { return <div>{Object.keys(all).length}</div>; }\n",
+            ),
+            (
+                "components/ui.tsx",
+                "export function Button() { return null; }\nexport function DeadButton() { return null; }\n",
+            ),
+        ]);
+        assert!(
+            !snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "components/ui.tsx#DeadButton"),
+            "a namespace value use must conservatively protect every export: {:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn type_position_imports_keep_the_named_type_live() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "import { JsDocValue } from '../src/jsdoc.js';\nexport const inline: import('../src/types').InlineType = { id: 'x' };\nexport default function Page() { return <div>{JsDocValue.name}</div>; }\n",
+            ),
+            (
+                "src/jsdoc.js",
+                "/** @type {import('./types').JSDocType} */\nexport const JsDocValue = { name: 'x' };\n",
+            ),
+            (
+                "src/types.ts",
+                "export interface JSDocType { name: string }\nexport interface InlineType { id: string }\nexport interface DeadType { dead: true }\n",
+            ),
+        ]);
+        for live in ["src/types.ts#JSDocType", "src/types.ts#InlineType"] {
+            assert!(
+                !snapshot.candidates.iter().any(|key| key == live),
+                "{live} is used from a type position: {:?}",
+                snapshot.candidates
+            );
+        }
+        assert!(
+            snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "src/types.ts#DeadType"),
+            "an unused type must remain a candidate: {:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn destructured_dynamic_imports_keep_only_named_exports_live() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "import { load } from '../src/loader';\nexport default function Page() { return <div>{load()}</div>; }\n",
+            ),
+            (
+                "src/loader.ts",
+                "export async function load() {\n  const { used } = await import('./mod');\n  return used;\n}\n",
+            ),
+            (
+                "src/mod.ts",
+                "export const used = 1;\nexport const dead = 2;\n",
+            ),
+        ]);
+        assert!(
+            !snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "src/mod.ts#used"),
+            "the destructured export must stay live: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "src/mod.ts#dead"),
+            "an export the destructuring does not read must be a candidate: {:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn member_dynamic_imports_keep_only_the_accessed_export_live() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "import { load } from '../src/loader';\nexport default function Page() { return <div>{load()}</div>; }\n",
+            ),
+            (
+                "src/loader.ts",
+                "export async function load() {\n  const used = (await import('./mod')).used;\n  return used;\n}\n",
+            ),
+            (
+                "src/mod.ts",
+                "export const used = 1;\nexport const dead = 2;\n",
+            ),
+        ]);
+        assert!(
+            !snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "src/mod.ts#used"),
+            "{:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "src/mod.ts#dead"),
+            "{:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn unknown_dynamic_import_usage_keeps_all_exports_live() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "import { load } from '../src/loader';\nexport default function Page() { return <div>{load()}</div>; }\n",
+            ),
+            (
+                "src/loader.ts",
+                "export async function load() {\n  const mod = await import('./mod');\n  return mod.used;\n}\n",
+            ),
+            (
+                "src/mod.ts",
+                "export const used = 1;\nexport const other = 2;\n",
+            ),
+        ]);
+        for key in ["src/mod.ts#used", "src/mod.ts#other"] {
+            assert!(
+                !snapshot.candidates.iter().any(|candidate| candidate == key),
+                "a namespace binding can be used in unknown ways: {key} {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn unresolved_dynamic_import_name_keeps_all_exports_live() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "import { load } from '../src/loader';\nexport default function Page() { return <div>{load()}</div>; }\n",
+            ),
+            (
+                "src/loader.ts",
+                "export async function load() {\n  const { missing } = await import('./mod');\n  return missing;\n}\n",
+            ),
+            (
+                "src/mod.ts",
+                "export const used = 1;\nexport const other = 2;\n",
+            ),
+        ]);
+        for key in ["src/mod.ts#used", "src/mod.ts#other"] {
+            assert!(
+                !snapshot.candidates.iter().any(|candidate| candidate == key),
+                "an unresolved destructured name must widen instead of narrowing: {key} {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn pages_app_report_web_vitals_is_a_framework_export() {
+        let snapshot = snapshot(&[(
+            "pages/_app.tsx",
+            "export default function App() { return null; }\nexport function reportWebVitals() {}\nexport function unusedAppExport() {}\n",
+        )]);
+        let entries = entry_symbols(&snapshot);
+        assert!(
+            entries.contains(&"pages/_app.tsx#reportWebVitals"),
+            "{entries:?}"
+        );
+        assert!(
+            snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "pages/_app.tsx#unusedAppExport"),
+            "an arbitrary _app export must remain a candidate: {:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn mdx_imports_and_component_map_are_reachable() {
+        let snapshot = snapshot(&[
+            (
+                "app/layout.tsx",
+                "export default function Layout() { return null; }\n",
+            ),
+            (
+                "app/page.mdx",
+                "import { Widget } from '../components/widget';\n\n# Hello\n\n<Widget />\n",
+            ),
+            (
+                "components/widget.tsx",
+                "export function Widget() { return null; }\n",
+            ),
+            (
+                "mdx-components.tsx",
+                "export function useMDXComponents(components: Record<string, unknown>) { return components; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        assert!(
+            entries.contains(&"mdx-components.tsx#useMDXComponents"),
+            "{entries:?}"
+        );
+        assert!(
+            !snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "components/widget.tsx#Widget"),
+            "MDX imports must keep the component live: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            !snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "mdx-components.tsx#useMDXComponents"),
+            "{:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn router_and_meta_framework_routes_are_entries() {
+        let snapshot = snapshot(&[
+            (
+                "app/root.tsx",
+                "import { Outlet } from '@remix-run/react';\nexport default function Root() { return <Outlet />; }\nexport function loader() { return null; }\n",
+            ),
+            (
+                "app/routes/users.$id.tsx",
+                "import { useLoaderData } from '@remix-run/react';\nexport async function loader() { return null; }\nexport default function User() { return null; }\n",
+            ),
+            (
+                "src/routes/posts.tsx",
+                "import { createFileRoute } from '@tanstack/react-router';\nexport const Route = createFileRoute('/posts')({});\n",
+            ),
+            (
+                "app/_layout.tsx",
+                "import { Stack } from 'expo-router';\nexport default function Layout() { return <Stack />; }\n",
+            ),
+            (
+                "app/index.tsx",
+                "export default function Index() { return null; }\n",
+            ),
+            (
+                "app/profile.tsx",
+                "export default function Profile() { return null; }\n",
+            ),
+            (
+                "src/routes/+page.ts",
+                "export function load() { return {}; }\n",
+            ),
+            (
+                "src/pages/health.ts",
+                "import type { APIRoute } from 'astro';\nexport const GET: APIRoute = () => new Response('ok');\n",
+            ),
+            ("nuxt.config.ts", "export default defineNuxtConfig({});\n"),
+            (
+                "server/api/hello.ts",
+                "export default defineEventHandler(() => 'hello');\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        assert!(entries.contains(&"app/root.tsx#default"), "{entries:?}");
+        assert!(
+            entries.contains(&"app/routes/users.$id.tsx#loader"),
+            "{entries:?}"
+        );
+        assert!(
+            entries.contains(&"src/routes/posts.tsx#Route"),
+            "{entries:?}"
+        );
+        assert!(entries.contains(&"app/_layout.tsx#default"), "{entries:?}");
+        assert!(entries.contains(&"app/index.tsx#default"), "{entries:?}");
+        assert!(
+            entries.contains(&"app/profile.tsx#default"),
+            "every Expo app module is a route: {entries:?}"
+        );
+        assert!(entries.contains(&"src/routes/+page.ts#load"), "{entries:?}");
+        assert!(entries.contains(&"src/pages/health.ts#GET"), "{entries:?}");
+        assert!(
+            entries.contains(&"server/api/hello.ts#default"),
+            "{entries:?}"
+        );
+    }
+
+    #[test]
+    fn skipped_framework_files_are_entries() {
+        let snapshot = snapshot(&[
+            ("src/routes/+page.svelte", "<h1>Hello</h1>\n"),
+            ("src/pages/index.astro", "---\n---\n<h1>Hello</h1>\n"),
+            ("pages/index.vue", "<template><div /></template>\n"),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        assert!(
+            entries.contains(&"src/routes/+page.svelte#__module__"),
+            "{entries:?}"
+        );
+        assert!(
+            entries.contains(&"src/pages/index.astro#__module__"),
+            "{entries:?}"
+        );
+        assert!(
+            entries.contains(&"pages/index.vue#__module__"),
+            "{entries:?}"
+        );
+    }
+
+    #[test]
+    fn exported_symbols_used_only_in_their_own_file_are_reported_separately() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "import { bootstrap } from '../src/registry';\nexport default function Page() { bootstrap(); return null; }\n",
+            ),
+            (
+                "src/registry.ts",
+                "export function helper() { return 1; }\n\
+                 export function publicApi() { return helper(); }\n\
+                 export function bootstrap() { return { publicApi }; }\n",
+            ),
+        ]);
+        assert!(
+            snapshot
+                .internal_only
+                .iter()
+                .any(|key| key == "src/registry.ts#publicApi"),
+            "{:?}",
+            snapshot.internal_only
+        );
+        assert!(
+            snapshot
+                .internal_only
+                .iter()
+                .any(|key| key == "src/registry.ts#helper"),
+            "{:?}",
+            snapshot.internal_only
+        );
+        assert!(
+            !snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "src/registry.ts#publicApi"),
+            "{:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn nuxt_app_dir_and_expo_src_app_are_entries() {
+        let snapshot = snapshot(&[
+            ("nuxt.config.ts", "export default defineNuxtConfig({});\n"),
+            ("app/pages/index.vue", "<template><div /></template>\n"),
+            (
+                "src/app/_layout.tsx",
+                "import { Stack } from 'expo-router';\nexport default function Layout() { return <Stack />; }\n",
+            ),
+            (
+                "src/app/index.tsx",
+                "export default function Index() { return null; }\n",
+            ),
+            (
+                "app/routes.ts",
+                "import { type RouteConfig, index } from '@react-router/dev/routes';\nexport default [index('routes/home.tsx')] satisfies RouteConfig;\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        assert!(
+            entries.contains(&"app/pages/index.vue#__module__"),
+            "{entries:?}"
+        );
+        assert!(
+            entries.contains(&"src/app/_layout.tsx#default"),
+            "{entries:?}"
+        );
+        assert!(
+            entries.contains(&"src/app/index.tsx#default"),
+            "{entries:?}"
+        );
+        assert!(entries.contains(&"app/routes.ts#default"), "{entries:?}");
+    }
+
+    #[test]
+    fn framework_component_imports_do_not_create_dangling_edges() {
+        let snapshot = snapshot(&[
+            ("src/main.ts", "import App from './App.vue';\nApp();\n"),
+            ("src/App.vue", "<template><div /></template>\n"),
+        ]);
+        for edge in &snapshot.edges {
+            assert!(
+                snapshot
+                    .symbols
+                    .iter()
+                    .any(|symbol| symbol.key == edge.source),
+                "missing source symbol for edge: {edge:?}"
+            );
+            assert!(
+                snapshot
+                    .symbols
+                    .iter()
+                    .any(|symbol| symbol.key == edge.target),
+                "missing target symbol for edge: {edge:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn internal_only_aliases_follow_external_use() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "import { publicName } from '../src/registry';\nexport default function Page() { publicName(); return null; }\n",
+            ),
+            (
+                "src/registry.ts",
+                "function helper() { return 1; }\nexport { helper as publicName };\nexport function unused() { return 2; }\n",
+            ),
+        ]);
+        assert!(
+            !snapshot
+                .internal_only
+                .iter()
+                .any(|key| key == "src/registry.ts#helper"),
+            "an exported alias makes the local symbol externally visible: {:?}",
+            snapshot.internal_only
+        );
+        assert!(
+            snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "src/registry.ts#unused"),
+            "{:?}",
+            snapshot.candidates
         );
     }
 }

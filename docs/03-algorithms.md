@@ -283,11 +283,14 @@ a symbol is live.
 ### 9.1 Next.js App Router
 
 - `page`, `layout`, `template`, `loading`, `error`, `global-error`, `not-found`,
-  `route`, `default`;
+  `forbidden`, `unauthorized`, `route`, `default`;
 - `sitemap`, `robots`, `manifest`, `icon`, `apple-icon`, `opengraph-image`,
   `twitter-image`;
+- image-route metadata: `size`, `contentType`, `alt`, `generateImageMetadata`
+  (scoped to image-route stems, never global);
 - `proxy.ts` (Next.js 16) and `middleware.ts` (15) exports;
 - `instrumentation.ts` and `instrumentation-client.ts` `register`;
+- `mdx-components.tsx` `useMDXComponents` and the MDX ESM boundary;
 - `"use server"` module exports (async functions);
 - `"use client"` module exports (client boundary);
 - metadata exports: `metadata`, `generateMetadata`, `viewport`,
@@ -321,6 +324,57 @@ a symbol is live.
 - `next.config`, `postcss.config`, `tailwind.config`, `eslint.config`,
   `tsconfig`;
 - test runner config.
+
+### 9.6 MDX
+
+MDX is analyzed at its ESM boundary only: top-level `import` and `export`
+statements are parsed with byte offsets preserved, while the Markdown/JSX body
+is opaque. Every MDX declaration is treated as referenced by the body, so an MDX
+component is never proposed for deletion. Imports from MDX are normal graph
+edges, which keeps the components it renders live. Fenced code blocks and YAML
+frontmatter are ignored.
+
+### 9.7 Additional framework routers
+
+The same entry rule applies to conventions with their own compilers:
+
+- Remix / React Router: `app/root`, `entry.client`, `entry.server`, and
+  `app/routes/**` loader/action/meta/error exports;
+- TanStack Router: `src/routes/**` `Route` objects;
+- Expo Router: every module under `app/` once an `app/_layout` exists;
+- SvelteKit: `src/routes/**/+page|+layout|+server|+error` exports and route
+  modules (`.svelte` files have a module entry even though their body is not
+  parsed);
+- Astro: `src/pages/**` endpoint handlers and page modules;
+- Nuxt: `server/api`, `server/routes`, `server/middleware`, `plugins`,
+  `middleware`, `app.vue`, and `pages/**` route modules.
+
+### 9.8 Internal-only exports
+
+An exported symbol that is live only because its own file references it is
+reported in `internalOnly`, separately from `candidates`. It is not a deletion
+candidate: the export may be part of a public surface the graph cannot see, and
+same-file re-export aliases propagate the proof. This gives parity with
+unused-export tools without turning a conservative graph into a false positive.
+
+### 9.9 Dependency evidence
+
+Dependency analysis is deliberately asymmetric: it prefers a false negative to a
+false positive. A declared package is kept when any of these hold:
+
+- a runtime specifier resolves to it;
+- a type-position reference names it (`import("pkg").Config`, JSDoc
+  `@type {import("pkg").X}`); type positions never create `unlisted` findings,
+  because a tool config's types are often supplied transitively;
+- it is an `@types/*` package whose runtime target is used, an ambient global
+  package, or listed in `compilerOptions.types`;
+- it is a requirement of a used package (peer/optional/known ecosystem map);
+- a framework entry implies it (`next`/`react`/`react-dom` for Next.js,
+  `astro` for Astro, and so on).
+
+An import that is only available through a declared dependency's peer or
+optional requirements is reported as `transitive` (informational), not
+`unlisted`. `shrike prune` never removes dependencies.
 
 **Rule E1:** an entry is never deleted, regardless of reference count.
 
@@ -405,6 +459,20 @@ bounded scopes, from most to least precise:
 | `obj[key]` with literal keys | key set | `probable` | edges to the values |
 | `obj[expr]` | module scope | `unknown` | all exports of the module's namespace are live |
 | `globalThis[name]` | repo scope | `unknown` | all files are live; deletion is refused |
+
+A literal dynamic import also narrows which exports stay live when the consumed
+names are statically visible:
+
+| Form | Live exports |
+|---|---|
+| `const { a, b } = await import('./m')` | `a` and `b` only |
+| `const c = (await import('./m')).c` | `c` only |
+| `const ns = await import('./m')`, `.then(...)`, rest/computed destructuring, or an empty pattern | every export |
+| a name that does not resolve through the target's re-exports | every export |
+
+**Rule G5:** export narrowing fails closed. Any shape that could use the
+namespace as a value, including identifier-bound namespaces and `.then`, and any
+unresolved name widens to every export instead of guessing.
 
 **Rule G1:** an `unknown` edge is never silently ignored. It is reported in the
 proof trace and in `shrike proof`.

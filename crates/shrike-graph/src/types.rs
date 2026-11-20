@@ -61,6 +61,14 @@ pub struct ModuleRecord {
     pub specifiers: Vec<String>,
     pub resolved: Vec<String>,
     pub unresolved: Vec<String>,
+    /// Specifiers classified as external packages by the resolver. This is the
+    /// only list dependency analysis may treat as npm package evidence.
+    #[serde(default)]
+    pub external: Vec<String>,
+    /// Type-position module references (`import("pkg")` types and JSDoc
+    /// `@type {import("pkg").X}`). Dependency evidence, never runtime edges.
+    #[serde(default)]
+    pub type_refs: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -105,6 +113,11 @@ pub struct GraphSnapshot {
     pub sccs: Vec<Vec<String>>,
     pub live: Vec<String>,
     pub candidates: Vec<String>,
+    /// Exported symbols that are live only because their own module references
+    /// them. They are not deletion candidates; this list exists for parity with
+    /// tools that report unused exports.
+    #[serde(default)]
+    pub internal_only: Vec<String>,
     pub witnesses: Vec<WitnessRecord>,
     pub proofs: Vec<ProofRecord>,
     pub unknowns: Vec<UnknownRecord>,

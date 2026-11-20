@@ -14,11 +14,11 @@
     },
     "include": {
       "type": "array",
-      "description": "Glob set to inventory. Default: [\"**/*.ts\",\"**/*.tsx\",\"**/*.js\",\"**/*.jsx\",\"**/*.mjs\",\"**/*.cjs\"].",
+      "description": "Glob set to inventory. Default: [\"**/*.ts\",\"**/*.tsx\",\"**/*.js\",\"**/*.jsx\",\"**/*.mjs\",\"**/*.cjs\",\"**/*.mdx\",\"**/*.svelte\",\"**/*.vue\",\"**/*.astro\"].",
       "items": { "type": "string", "minLength": 1 },
       "minItems": 1,
       "uniqueItems": true,
-      "default": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs"]
+      "default": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs", "**/*.mdx", "**/*.svelte", "**/*.vue", "**/*.astro"]
     },
     "ignore": {
       "type": "array",
@@ -69,6 +69,19 @@
       "type": "boolean",
       "default": false,
       "description": "Treat generated files as deletion candidates. Generated files are always parsed for edges. Default: false."
+    },
+    "clientBoundaryPolicy": {
+      "type": "string",
+      "enum": ["graph", "protect"],
+      "default": "graph",
+      "description": "How `\"use client\"` and `\"use server\"` files seed liveness. graph (default) lets normal import reachability decide; protect also seeds every export in a boundary file as an entry. Default: \"graph\"."
+    },
+    "ignoreDependencies": {
+      "type": "array",
+      "description": "Dependency names that are never reported as unused by `shrike scan` or `shrike deps`. Default: [].",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "default": []
     },
     "publicApi": {
       "type": "array",

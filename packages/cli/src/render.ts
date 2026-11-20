@@ -32,6 +32,7 @@ Usage: shrike <command> [options]
 Commands:
   init                 Create shrike.config.ts and ignore .shrike/
   scan                 Current-state dead-code evidence
+  deps                 Unused and unlisted dependencies
   delta --base <ref>   Whole-graph PR orphan delta
   plan --base <ref>    Deletion batches and blast radius
   prune --base <ref> [--build <path>]  Apply, verify, commit batches (branch only)
