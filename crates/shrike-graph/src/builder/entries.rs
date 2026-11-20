@@ -279,6 +279,14 @@ impl<'a> Builder<'a> {
                     "dynamicParams",
                     "preferredRegion",
                     "maxDuration",
+                    // Cache Components segment config. `instant` and `prefetch`
+                    // replaced their `unstable_` spellings in Next.js 16.3;
+                    // keep the older names for projects on 16.0-16.2.
+                    "ensureStatic",
+                    "instant",
+                    "unstable_instant",
+                    "prefetch",
+                    "unstable_prefetch",
                     "experimental_ppr",
                     "GET",
                     "POST",
@@ -1020,6 +1028,56 @@ mod tests {
             "the page helper should remain a candidate: {:?}",
             snapshot.candidates
         );
+    }
+
+    #[test]
+    fn next_cache_components_segment_config_is_public() {
+        let snapshot = snapshot(&[
+            (
+                "app/layout.tsx",
+                "export const ensureStatic = 'navigation';\nexport const instant = true;\nexport const prefetch = 'partial';\nexport const unstable_instant = true;\nexport const unstable_prefetch = 'force-disabled';\nexport function unusedLayoutHelper() { return 1; }\nexport default function Layout() { return null; }\n",
+            ),
+            (
+                "app/page.tsx",
+                "export const instant = { level: 'warning' };\nexport function unusedPageHelper() { return 1; }\nexport default function Page() { return null; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for name in [
+            "ensureStatic",
+            "instant",
+            "unstable_instant",
+            "prefetch",
+            "unstable_prefetch",
+        ] {
+            let key = format!("app/layout.tsx#{name}");
+            assert!(
+                entries.contains(&key.as_str()),
+                "segment config {name} must be public: {entries:?}"
+            );
+        }
+        assert!(
+            entries.contains(&"app/page.tsx#instant"),
+            "page segment config must be public: {entries:?}"
+        );
+        assert!(
+            !entries.contains(&"app/layout.tsx#unusedLayoutHelper"),
+            "an arbitrary layout export must not become public: {entries:?}"
+        );
+        assert!(
+            !entries.contains(&"app/page.tsx#unusedPageHelper"),
+            "an arbitrary page export must not become public: {entries:?}"
+        );
+        for key in [
+            "app/layout.tsx#unusedLayoutHelper",
+            "app/page.tsx#unusedPageHelper",
+        ] {
+            assert!(
+                snapshot.candidates.iter().any(|candidate| candidate == key),
+                "{key} should remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
     }
 
     #[test]

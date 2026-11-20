@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 265,
+  "count": 266,
   "entries": [
     {
       "id": "page-entry-1",
@@ -4294,6 +4294,44 @@
       ],
       "mustReport": [
         "src/components/dead.tsx#deadThing"
+      ]
+    },
+    {
+      "id": "next-route-segment-config",
+      "category": "next-segment-config",
+      "files": [
+        "app",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/layout.tsx#ensureStatic",
+          "reason": "Cache Components static-output requirement is read by the framework"
+        },
+        {
+          "symbol": "app/layout.tsx#instant",
+          "reason": "instant navigation config is read by the framework"
+        },
+        {
+          "symbol": "app/layout.tsx#prefetch",
+          "reason": "prefetch segment config is read by the framework"
+        },
+        {
+          "symbol": "app/layout.tsx#unstable_instant",
+          "reason": "pre-16.3 instant navigation config is read by the framework"
+        },
+        {
+          "symbol": "app/layout.tsx#unstable_prefetch",
+          "reason": "pre-16.3 prefetch config is read by the framework"
+        },
+        {
+          "symbol": "app/page.tsx#instant",
+          "reason": "page-level instant navigation config is read by the framework"
+        }
+      ],
+      "mustReport": [
+        "app/layout.tsx#unusedLayoutHelper",
+        "app/page.tsx#unusedPageHelper"
       ]
     }
   ]

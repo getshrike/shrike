@@ -296,7 +296,9 @@ a symbol is live.
 - metadata exports: `metadata`, `generateMetadata`, `viewport`,
   `generateViewport`, `generateStaticParams`, `generateSitemaps`;
 - segment config: `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`,
-  `runtime`, `preferredRegion`, `maxDuration`.
+  `runtime`, `preferredRegion`, `maxDuration`; Cache Components config
+  `ensureStatic` (16.4), `instant`/`prefetch` (16.3) and their
+  `unstable_instant`/`unstable_prefetch` predecessors (16.0-16.2).
 
 ### 9.2 Next.js Pages Router
 
