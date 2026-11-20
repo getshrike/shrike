@@ -71,15 +71,16 @@ impl<'a> Builder<'a> {
         let summaries = self.summaries.clone();
         let mut expo_layout_packages: BTreeSet<String> = BTreeSet::new();
         let mut nuxt_config_packages: BTreeSet<String> = BTreeSet::new();
-        for file in &self.files {
+        let mut router_packages: BTreeSet<String> = BTreeSet::new();
+        for summary in &summaries {
             let package_directory = self
                 .resolver
-                .package_for(&file.path)
+                .package_for(&summary.path)
                 .map_or("", |package| package.directory.as_str());
-            let relative = file
+            let relative = summary
                 .path
                 .strip_prefix(package_directory)
-                .unwrap_or(&file.path)
+                .unwrap_or(&summary.path)
                 .trim_start_matches('/');
             if matches!(
                 relative,
@@ -104,6 +105,45 @@ impl<'a> Builder<'a> {
             ) {
                 nuxt_config_packages.insert(package_directory.to_string());
             }
+            // React Router framework mode maps route modules from `app/routes.ts`
+            // instead of importing them. A route module may import only its
+            // generated `./+types/*` types, so the package-level config is the
+            // reliable signal that every file under `app/routes/` is a route.
+            // Remix has no route map, but its root module always imports the
+            // framework; use that to protect routes that have no imports.
+            let router_config = matches!(
+                relative,
+                "app/routes.ts"
+                    | "app/routes.js"
+                    | "app/routes.mts"
+                    | "app/routes.cts"
+                    | "app/routes.mjs"
+                    | "app/routes.cjs"
+                    | "react-router.config.ts"
+                    | "react-router.config.js"
+                    | "react-router.config.mts"
+                    | "react-router.config.cts"
+                    | "react-router.config.mjs"
+                    | "react-router.config.cjs"
+            );
+            let router_root = matches!(
+                relative,
+                "app/root.tsx" | "app/root.ts" | "app/root.jsx" | "app/root.js"
+            );
+            let imports_router = summary.imports.iter().any(|import| {
+                import.source == "react-router"
+                    || import.source.starts_with("react-router/")
+                    || import.source.starts_with("@react-router/")
+            });
+            let imports_remix = summary
+                .imports
+                .iter()
+                .any(|import| import.source.starts_with("@remix-run/"));
+            if (router_config && imports_router)
+                || (router_root && (imports_router || imports_remix))
+            {
+                router_packages.insert(package_directory.to_string());
+            }
         }
         for summary in &summaries {
             let path = summary.path.as_str();
@@ -113,6 +153,7 @@ impl<'a> Builder<'a> {
                 .map_or("", |package| package.directory.as_str());
             let has_expo_layout = expo_layout_packages.contains(package_directory);
             let has_nuxt_config = nuxt_config_packages.contains(package_directory);
+            let has_router_package = router_packages.contains(package_directory);
             let module = module_symbol_key(path);
             let add = |builder: &mut Self,
                        symbol: String,
@@ -310,8 +351,15 @@ impl<'a> Builder<'a> {
             ]
             .iter()
             .any(|relative| at_package_root(path, relative));
-            let router_route = in_directory(path, "app/routes/") && stem != "page";
-            if router_import && (router_entry || router_route) {
+            let router_root = ["app/root.tsx", "app/root.ts", "app/root.jsx", "app/root.js"]
+                .iter()
+                .any(|relative| at_package_root(path, relative));
+            // In framework mode every `app/routes/` file is a route module,
+            // including files named `page.tsx`. The per-file import check
+            // remains for standalone/Remix layouts without a routes config.
+            let router_route = in_directory(path, "app/routes/")
+                && (has_router_package || (router_import && stem != "page"));
+            if (router_import || has_router_package) && (router_entry || router_route) {
                 add(
                     self,
                     module.clone(),
@@ -326,6 +374,8 @@ impl<'a> Builder<'a> {
                     "clientLoader",
                     "action",
                     "clientAction",
+                    "middleware",
+                    "clientMiddleware",
                     "meta",
                     "links",
                     "headers",
@@ -337,6 +387,13 @@ impl<'a> Builder<'a> {
                     "config",
                 ] {
                     if let Some(key) = self.resolve_export(path, name, &mut BTreeSet::new()) {
+                        add(self, key, "remix", "route-export", route.clone(), "both");
+                    }
+                }
+                // The root route alone may export `Layout`, the document shell
+                // React Router wraps around the default component.
+                if router_root {
+                    if let Some(key) = self.resolve_export(path, "Layout", &mut BTreeSet::new()) {
                         add(self, key, "remix", "route-export", route.clone(), "both");
                     }
                 }
@@ -1401,6 +1458,104 @@ mod tests {
             "{entries:?}"
         );
         assert!(entries.contains(&"app/routes.ts#default"), "{entries:?}");
+    }
+
+    #[test]
+    fn react_router_route_modules_with_generated_types_are_entries() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"rr7-app","type":"module","dependencies":{"react-router":"^7.9.0","@react-router/dev":"^7.9.0"}}"#,
+            ),
+            (
+                "app/routes.ts",
+                "import { type RouteConfig, index, route } from '@react-router/dev/routes';\n\
+                 export default [index('routes/home.tsx'), route('about', 'routes/about.tsx')] satisfies RouteConfig;\n",
+            ),
+            (
+                "app/root.tsx",
+                "import { Outlet } from 'react-router';\n\
+                 export function Layout({ children }: { children: React.ReactNode }) { return <html><body>{children}</body></html>; }\n\
+                 export default function Root() { return <Outlet />; }\n",
+            ),
+            (
+                "app/routes/home.tsx",
+                "import type { Route } from './+types/home';\n\
+                 export function loader({}: Route.LoaderArgs) { return { title: 'Home' }; }\n\
+                 export const middleware = [];\n\
+                 export default function Home({ loaderData }: Route.ComponentProps) { return <main>{loaderData.title}</main>; }\n",
+            ),
+            (
+                "app/routes/about.tsx",
+                "import type { Route } from './+types/about';\n\
+                 export async function action({ request }: Route.ActionArgs) { return request.formData(); }\n\
+                 export const clientMiddleware = [];\n\
+                 export default function About() { return <main>About</main>; }\n",
+            ),
+            (
+                "app/components/dead.tsx",
+                "export function deadThing() { return 1; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for symbol in [
+            "app/root.tsx#Layout",
+            "app/routes/home.tsx#loader",
+            "app/routes/home.tsx#middleware",
+            "app/routes/home.tsx#default",
+            "app/routes/about.tsx#action",
+            "app/routes/about.tsx#clientMiddleware",
+            "app/routes/about.tsx#default",
+        ] {
+            assert!(
+                entries.contains(&symbol),
+                "missing entry {symbol}: {entries:?}"
+            );
+        }
+        assert!(
+            snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "app/components/dead.tsx#deadThing"),
+            "non-route modules must still be analyzed: {:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn remix_route_modules_without_imports_are_entries() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"remix-app","type":"module","dependencies":{"@remix-run/node":"^2.15.0","@remix-run/react":"^2.15.0"}}"#,
+            ),
+            (
+                "app/root.tsx",
+                "import { Outlet } from '@remix-run/react';\n\
+                 export default function App() { return <Outlet />; }\n",
+            ),
+            (
+                "app/routes/about._index.tsx",
+                "export default function About() { return <main>About</main>; }\n",
+            ),
+            (
+                "app/components/dead.tsx",
+                "export function deadThing() { return 1; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        assert!(
+            entries.contains(&"app/routes/about._index.tsx#default"),
+            "a Remix route with no imports is still router-rendered: {entries:?}"
+        );
+        assert!(
+            snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "app/components/dead.tsx#deadThing"),
+            "non-route modules must still be analyzed: {:?}",
+            snapshot.candidates
+        );
     }
 
     #[test]

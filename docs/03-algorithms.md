@@ -339,7 +339,14 @@ frontmatter are ignored.
 The same entry rule applies to conventions with their own compilers:
 
 - Remix / React Router: `app/root`, `entry.client`, `entry.server`, and
-  `app/routes/**` loader/action/meta/error exports;
+  `app/routes/**` loader/action/meta/error exports. React Router framework mode
+  is detected package-wide from an `app/routes.ts` (or `react-router.config.*`)
+  that imports `react-router`; every module under `app/routes/**` is then a
+  route even when it imports only its generated `./+types/*` declarations.
+  Remix is detected package-wide from an `app/root` that imports
+  `@remix-run/*`, so route modules need no imports of their own. The root route
+  alone may also export `Layout`, the document shell, and `middleware` /
+  `clientMiddleware` are framework-invoked like `loader` and `action`;
 - TanStack Router: `src/routes/**` `Route` objects;
 - Expo Router: every module under `app/` once an `app/_layout` exists;
 - SvelteKit: `src/routes/**/+page|+layout|+server|+error` exports and route
