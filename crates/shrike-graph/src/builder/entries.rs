@@ -122,9 +122,10 @@ pub(super) fn framework_module(path: &str) -> Option<(&'static str, &'static str
     None
 }
 
-/// Normalize a React Router `appDirectory` setting. Only a relative directory
-/// with no traversal is accepted; anything else falls back to the default.
-fn normalize_app_directory(value: &str) -> Option<String> {
+/// Normalize a framework directory setting (React Router `appDirectory` or
+/// Expo Router `root`). Only a relative directory with no traversal is
+/// accepted; anything else falls back to the framework default.
+fn normalize_framework_directory(value: &str) -> Option<String> {
     let value = value.trim();
     if value.starts_with('/') {
         return None;
@@ -216,9 +217,54 @@ fn react_router_app_directory(source: &str) -> Option<String> {
                 if interpolation {
                     return None;
                 }
-                return normalize_app_directory(&value);
+                return normalize_framework_directory(&value);
             }
             _ => identifier.clear(),
+        }
+    }
+    None
+}
+
+/// Read the statically written `root` option of the `expo-router` config
+/// plugin. Expo Router defaults to `app` when the option is absent.
+fn expo_router_root(source: &str) -> Option<String> {
+    let tokens = route_config_tokens(source);
+    for (index, token) in tokens.iter().enumerate() {
+        let RouteToken::Text(plugin) = token else {
+            continue;
+        };
+        if plugin != "expo-router" {
+            continue;
+        }
+        if !matches!(tokens.get(index + 1), Some(RouteToken::Punct(',')))
+            || !matches!(tokens.get(index + 2), Some(RouteToken::Punct('{')))
+        {
+            continue;
+        }
+        let mut depth = 0usize;
+        let mut cursor = index + 2;
+        while let Some(token) = tokens.get(cursor) {
+            match token {
+                RouteToken::Punct('{') => depth += 1,
+                RouteToken::Punct('}') => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                RouteToken::Ident(key) | RouteToken::Text(key)
+                    if depth == 1
+                        && key == "root"
+                        && matches!(tokens.get(cursor + 1), Some(RouteToken::Punct(':'))) =>
+                {
+                    if let Some(RouteToken::Text(value)) = tokens.get(cursor + 2) {
+                        return normalize_framework_directory(value);
+                    }
+                    return None;
+                }
+                _ => {}
+            }
+            cursor += 1;
         }
     }
     None
@@ -500,8 +546,44 @@ impl<'a> Builder<'a> {
     pub(super) fn detect_entries(&mut self) {
         let summaries = self.summaries.clone();
         let mut expo_layout_packages: BTreeSet<String> = BTreeSet::new();
+        let mut expo_roots: BTreeMap<String, String> = BTreeMap::new();
         let mut nuxt_config_packages: BTreeSet<String> = BTreeSet::new();
         let mut router_packages: BTreeMap<String, String> = BTreeMap::new();
+        // Expo Router reads its route root from the `expo-router` config
+        // plugin in the app config. These files are usually JSON and are not
+        // parsed as modules, so read them from each workspace package.
+        // `app.config.*` takes precedence over `app.json` when both exist.
+        for package in self.resolver.packages() {
+            for file_name in [
+                "app.json",
+                "app.config.json",
+                "app.config.js",
+                "app.config.mjs",
+                "app.config.cjs",
+                "app.config.ts",
+                "app.config.mts",
+                "app.config.cts",
+            ] {
+                let relative = if package.directory.is_empty() {
+                    file_name.to_string()
+                } else {
+                    format!("{}/{file_name}", package.directory)
+                };
+                let Ok(source) = fs::read_to_string(self.resolver.root().join(&relative)) else {
+                    continue;
+                };
+                let Some(root) = expo_router_root(&source) else {
+                    continue;
+                };
+                if file_name == "app.json" {
+                    expo_roots.entry(package.directory.clone()).or_insert(root);
+                } else {
+                    expo_roots.insert(package.directory.clone(), root);
+                }
+            }
+        }
+        // A layout is the strong signal that a directory tree is Expo Router.
+        // Detect it before the entry pass so file order cannot hide routes.
         for summary in &summaries {
             let package_directory = self
                 .resolver
@@ -512,19 +594,29 @@ impl<'a> Builder<'a> {
                 .strip_prefix(package_directory)
                 .unwrap_or(&summary.path)
                 .trim_start_matches('/');
-            if matches!(
-                relative,
-                "app/_layout.tsx"
-                    | "app/_layout.ts"
-                    | "app/_layout.jsx"
-                    | "app/_layout.js"
-                    | "src/app/_layout.tsx"
-                    | "src/app/_layout.ts"
-                    | "src/app/_layout.jsx"
-                    | "src/app/_layout.js"
-            ) {
+            let layout = |root: &str| {
+                ["tsx", "ts", "jsx", "js"]
+                    .iter()
+                    .any(|extension| relative == format!("{root}/_layout.{extension}"))
+            };
+            let is_layout = match expo_roots.get(package_directory) {
+                Some(root) => layout(root),
+                None => layout("app") || layout("src/app"),
+            };
+            if is_layout {
                 expo_layout_packages.insert(package_directory.to_string());
             }
+        }
+        for summary in &summaries {
+            let package_directory = self
+                .resolver
+                .package_for(&summary.path)
+                .map_or("", |package| package.directory.as_str());
+            let relative = summary
+                .path
+                .strip_prefix(package_directory)
+                .unwrap_or(&summary.path)
+                .trim_start_matches('/');
             if matches!(
                 relative,
                 "nuxt.config.ts"
@@ -669,6 +761,7 @@ impl<'a> Builder<'a> {
             let router_app = router_packages
                 .get(package_directory)
                 .map_or("app", String::as_str);
+            let expo_root = expo_roots.get(package_directory).cloned();
             let module = module_symbol_key(path);
             let add = |builder: &mut Self,
                        symbol: String,
@@ -1004,11 +1097,17 @@ impl<'a> Builder<'a> {
                 .imports
                 .iter()
                 .any(|import| import.source.starts_with("expo-router"));
-            // Expo Router treats every module under `app/` as a route. The
-            // `_layout` file is the strong signal that the tree is Expo rather
-            // than Next; a direct `expo-router` import is the weaker one.
-            let expo_app = in_directory(path, "app/") || in_directory(path, "src/app/");
-            if expo_app && !app_entry && (has_expo_layout || expo_import) {
+            // Expo Router treats every module under its configured root as a
+            // route. The default is `app/` or `src/app/`, but the `expo-router`
+            // config plugin can move it (for example `src/routes`). The
+            // `_layout` file and a configured root are strong signals that the
+            // tree is Expo rather than Next; a direct `expo-router` import is
+            // the weaker one.
+            let expo_app = match expo_root.as_deref() {
+                Some(root) => in_directory(path, &format!("{root}/")),
+                None => in_directory(path, "app/") || in_directory(path, "src/app/"),
+            };
+            if expo_app && !app_entry && (has_expo_layout || expo_import || expo_root.is_some()) {
                 add(self, module.clone(), "expo", "route", route.clone(), "both");
                 let mut public_names = vec![
                     "default",
@@ -1316,6 +1415,7 @@ mod tests {
     use shrike_core::EngineConfig;
     use tempfile::tempdir;
 
+    use super::expo_router_root;
     use crate::discovery::analyze_paths;
     use crate::types::GraphSnapshot;
 
@@ -1642,6 +1742,96 @@ mod tests {
             assert!(
                 snapshot.candidates.iter().any(|candidate| candidate == key),
                 "{key} should remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn expo_router_root_is_read_from_app_config() {
+        assert_eq!(
+            expo_router_root(r#"{"expo":{"plugins":[["expo-router",{"root":"./src/routes"}]]}}"#)
+                .as_deref(),
+            Some("src/routes")
+        );
+        assert_eq!(
+            expo_router_root(
+                "export default { expo: { plugins: [['expo-router', { root: 'src/features' }]] } };"
+            )
+            .as_deref(),
+            Some("src/features")
+        );
+        assert_eq!(
+            expo_router_root(
+                "export default { expo: { plugins: [['expo-router', { root: someValue }]] } };"
+            ),
+            None
+        );
+        assert_eq!(
+            expo_router_root(r#"{"expo":{"plugins":["expo-router"]}}"#),
+            None
+        );
+    }
+
+    #[test]
+    fn expo_router_custom_root_routes_are_entries() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"expo-app","main":"expo-router/entry","dependencies":{"expo":"^54.0.0","expo-router":"^6.0.0"}}"#,
+            ),
+            (
+                "app.config.ts",
+                "export default { expo: { plugins: [['expo-router', { root: './src/routes' }]] } };\n",
+            ),
+            (
+                "src/routes/_layout.tsx",
+                "import { Stack } from 'expo-router';\nexport const unstable_settings = { initialRouteName: 'index' };\nexport default function Layout() { return <Stack />; }\nexport function unusedLayoutHelper() { return 1; }\n",
+            ),
+            (
+                "src/routes/index.tsx",
+                "export default function Home() { return null; }\nexport function unusedHomeHelper() { return 1; }\n",
+            ),
+            (
+                "src/routes/user/[id].tsx",
+                "export default function User() { return null; }\nexport function unusedUserHelper() { return 1; }\n",
+            ),
+            (
+                "app/dead.tsx",
+                "export function deadOutsideRoot() { return 1; }\n",
+            ),
+            (
+                "src/components/dead.tsx",
+                "export function deadThing() { return 1; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for key in [
+            "src/routes/_layout.tsx#default",
+            "src/routes/_layout.tsx#unstable_settings",
+            "src/routes/index.tsx#default",
+            "src/routes/user/[id].tsx#default",
+        ] {
+            assert!(
+                entries.contains(&key),
+                "custom Expo root entry {key} must be public: {entries:?}"
+            );
+            assert!(
+                !snapshot.candidates.iter().any(|candidate| candidate == key),
+                "custom Expo root entry {key} must not be a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+        for key in [
+            "src/routes/_layout.tsx#unusedLayoutHelper",
+            "src/routes/index.tsx#unusedHomeHelper",
+            "src/routes/user/[id].tsx#unusedUserHelper",
+            "app/dead.tsx#deadOutsideRoot",
+            "src/components/dead.tsx#deadThing",
+        ] {
+            assert!(
+                snapshot.candidates.iter().any(|candidate| candidate == key),
+                "{key} must remain a candidate: {:?}",
                 snapshot.candidates
             );
         }
