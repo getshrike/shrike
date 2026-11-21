@@ -814,6 +814,57 @@ boundary under a documented condition, or fallow's list diverges.
 
 ---
 
+## D-026 — App Router route conflicts are error diagnostics
+
+**Decision:** Shrike reports two Next.js App Router conflicts as error
+diagnostics, never as dead-code findings: `route_collision` when two
+`page`/`route` leaves in one app root resolve to the same URL, and
+`dynamic_segment_name_conflict` when sibling dynamic segments at one tree
+position use different spellings. Both reuse one path-based route-tree
+primitive. The app root is `<package>/app` or `<package>/src/app`, anchored on
+the owning package; route groups are transparent, parallel slots fork the URL
+namespace, and private/intercepting subtrees are excluded. The checks require
+the owning package to declare `next`.
+
+**Alternatives considered:**
+
+- Treat a collision as a dead-code finding. Neither file is necessarily dead:
+  the developer may delete either owner, or move one to a different URL. A
+  deletion claim would be wrong.
+- Use fallow's project-wide Next gate. That flags a React-only workspace
+  package with an app-shaped directory whenever a sibling declares `next`,
+  even though that package's directory is not a Next app root. Shrike's
+  per-package gate is the same precision it already uses for Next entry
+  conventions.
+- Only check `page` files. A `route` handler and a page share one URL
+  namespace in Next.js, so page+route is a collision too.
+- Treat different dynamic spellings as a route collision. `next build`
+  succeeds on that shape; the failure is at request time, so it gets a
+  separate diagnostic.
+
+**Why:** Read fallow 3.45.0's `route_tree.rs`, `route_collision.rs`, and
+`dynamic_segment_name_conflict.rs`. On `/tmp/opencode/route-conflict-probe`,
+fallow reports 8 collisions and 3 dynamic conflicts; Shrike reports the same
+8 + 3 once the sibling package declares Next, and only 6 + 3 when it does not.
+The probe covers route groups, page+route, the root URL, parallel slots,
+`[id]` vs `[slug]`, a layout proving a dynamic directory, private folders,
+intercepting routes, and a React-only package control.
+
+**Consequences:**
+
+- The new diagnostics group under `routing` and are actionable in the CLI
+  summary. They do not change candidates, entries, or unused files.
+- `ANALYSIS_VERSION` is bumped to 62 so cached snapshots include the new
+  diagnostics.
+- Page-extension parsing is extracted to
+  `Builder::configured_page_extensions` so entry detection and route-conflict
+  detection share the same dotted-extension handling.
+
+**Revisit if:** Next.js allows two URL owners under a documented condition, or
+fallow's route-tree semantics diverge.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -882,6 +933,7 @@ external app, credential, or participant.
 | D-023 | Cypress specs and support files are module entries | accepted |
 | D-024 | `scripts/` files are entries only when referenced | accepted |
 | D-025 | `"use client"` server-only exports are advisory warnings | accepted |
+| D-026 | App Router route conflicts are error diagnostics | accepted |
 
 ## Rejected ideas
 

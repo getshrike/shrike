@@ -319,6 +319,29 @@ exports, `export type`, and `export { metadata } from "./server"` re-exports
 are not flagged. The warning is advisory: it never removes a candidate or
 suppresses an entry.
 
+### 7.5 Route conflicts
+
+Two App Router files can make Next.js reject or crash a route without any dead
+code. Shrike reports both as error diagnostics, never as findings:
+
+- `route_collision`: two `page`/`route` leaves in one app root resolve to the
+  same URL. Next.js fails the build with "You cannot have two parallel pages
+  that resolve to the same path". A page and a route handler share the URL
+  namespace.
+- `dynamic_segment_name_conflict`: sibling dynamic segments at one tree
+  position use different spellings (`[id]` vs `[slug]`). `next build` succeeds,
+  but the route throws the first time it is resolved.
+
+The URL is a pure function of the path: route groups `(x)` are stripped,
+parallel `@slot` segments fork the namespace (two slots may own the same URL),
+and private `_folder` plus intercepting `(.)`/`(..)`/`(...)` subtrees are not
+routable participants. The app root is `<package>/app` or `<package>/src/app`;
+a bare `app` directory is never an app root. Both checks require the owning
+package to declare `next`, so a React-only workspace package with an
+app-shaped directory is left alone. This is deliberately more precise than
+fallow 3.45.0's project-wide gate, which flags that package when a sibling
+declares Next.
+
 ---
 
 ## 8. Proxy, middleware, metadata
