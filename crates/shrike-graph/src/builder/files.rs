@@ -487,6 +487,37 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// Value exports of a `"use server"` module that Next.js rejects as
+    /// actions. The runtime validator throws when an export is not a function,
+    /// and the TypeScript plugin rejects variable initializers that cannot be
+    /// async functions, so this is a build-failure diagnostic. The parser only
+    /// records the definite union; arrows, function expressions, calls, and
+    /// identifiers are skipped because they may be Promise-returning functions.
+    pub(super) fn detect_invalid_server_exports(&mut self) {
+        if !self.project_uses_rsc_directives() {
+            return;
+        }
+        let summaries = self.summaries.clone();
+        for summary in &summaries {
+            if summary.parse_status != ParseStatus::Ok {
+                continue;
+            }
+            for export in &summary.invalid_server_exports {
+                self.diagnostics.push(
+                    Diagnostic::warning(
+                        "invalid_server_export",
+                        format!(
+                            "`{}` cannot be exported from a \"use server\" module; Next.js requires every action export to be an async function",
+                            export.name
+                        ),
+                    )
+                    .in_file(&summary.path)
+                    .at(export.span),
+                );
+            }
+        }
+    }
+
     /// Whether the project uses a React Server Components bundler. The gate is
     /// project-wide, matching fallow 3.45.0's `project_uses_rsc_directives`:
     /// a shared module may be compiled by a sibling RSC app even when its own

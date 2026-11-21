@@ -3406,6 +3406,107 @@ mod tests {
     }
 
     #[test]
+    fn invalid_server_exports_are_project_gated_warnings() {
+        let next_snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "packages/plain/package.json",
+                r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/actions.ts",
+                "\"use server\";\nexport const count = 1;\nexport const action = async () => 2;\nexport function declared() { return 3; }\nexport class Direct {}\n",
+            ),
+            (
+                "src/values.ts",
+                "\"use server\";\nconst local = \"text\";\nexport { local as alias };\nexport enum Kind { A }\n",
+            ),
+            ("src/default.ts", "\"use server\";\nexport default 42;\n"),
+            (
+                "src/mixed.ts",
+                "\"use server\";\nexport const wrapped = (1 as number);\nexport const later = makeAction();\nexport const maybe = someIdentifier;\nexport default class {}\nexport { remote } from \"./remote\";\nexport type Payload = string;\n",
+            ),
+            ("src/no-directive.ts", "export const count = 1;\n"),
+            (
+                "packages/plain/src/values.ts",
+                "\"use server\";\nexport const count = 1;\n",
+            ),
+        ]);
+        let mut invalid: Vec<(&str, u32)> = next_snapshot
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "invalid_server_export")
+            .map(|diagnostic| {
+                (
+                    diagnostic.file.as_deref().unwrap_or(""),
+                    diagnostic.span.map_or(0, |span| span.line),
+                )
+            })
+            .collect();
+        invalid.sort_unstable();
+        assert_eq!(
+            invalid,
+            vec![
+                ("app/actions.ts", 2),
+                // A shared package inside an RSC project is compiled in the
+                // consuming app's context, so the project-level gate applies.
+                ("packages/plain/src/values.ts", 2),
+                ("src/default.ts", 2),
+                ("src/mixed.ts", 2),
+                // The local alias is anchored on its export specifier, the enum
+                // on its declaration.
+                ("src/values.ts", 3),
+                ("src/values.ts", 4),
+            ],
+            "{:?}",
+            next_snapshot.diagnostics
+        );
+        assert!(
+            next_snapshot
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "invalid_server_export")
+                .all(|diagnostic| {
+                    diagnostic.severity == shrike_core::Severity::Warning
+                        && diagnostic.message.contains("async function")
+                        && diagnostic.message.contains("\"use server\"")
+                }),
+            "invalid server exports are warnings that name the boundary: {:?}",
+            next_snapshot.diagnostics
+        );
+
+        // A project without an RSC bundler, and a tree with no manifest at
+        // all, are not enough evidence to claim a Next.js build failure.
+        let react_only = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/actions.ts",
+                "\"use server\";\nexport const count = 1;\n",
+            ),
+        ]);
+        let missing_manifest = snapshot(&[(
+            "app/actions.ts",
+            "\"use server\";\nexport const count = 1;\n",
+        )]);
+        for control in [&react_only, &missing_manifest] {
+            assert!(
+                control
+                    .diagnostics
+                    .iter()
+                    .all(|diagnostic| diagnostic.code != "invalid_server_export"),
+                "no positive RSC bundler evidence: {:?}",
+                control.diagnostics
+            );
+        }
+    }
+
+    #[test]
     fn misplaced_rsc_directives_are_project_gated_warnings() {
         let next_snapshot = snapshot(&[
             (

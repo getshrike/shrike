@@ -121,6 +121,72 @@ const notExported = async () => { "use server"; return 6; };
 }
 
 #[test]
+fn records_definitely_invalid_server_exports() {
+    let parsed = summary(
+        r#"
+"use server";
+export const count = 1;
+export const payload = { id: 1 };
+export const list = [1, 2];
+export let uninitialized;
+export enum Kind { A }
+const local = "text";
+export { local as alias };
+export const wrapped = (1 as number);
+export const action = async () => 1;
+export const later = makeAction();
+export const maybe = someIdentifier;
+export function declared() { return 1; }
+export class Direct {}
+export { remote } from "./remote";
+export type Payload = string;
+export declare const ambient: string;
+declare const localAmbient: string;
+export { localAmbient };
+"#,
+        "src/actions.ts",
+    );
+    let invalid: Vec<(&str, u32)> = parsed
+        .invalid_server_exports
+        .iter()
+        .map(|record| (record.name.as_str(), record.span.line))
+        .collect();
+    assert_eq!(
+        invalid,
+        vec![
+            ("Kind", 7),
+            ("alias", 9),
+            ("count", 3),
+            ("list", 5),
+            ("payload", 4),
+            ("uninitialized", 6),
+            ("wrapped", 10),
+        ],
+        "only definitely non-callable values are recorded"
+    );
+
+    let default_value = summary("\"use server\";\nexport default 42;\n", "src/actions.ts");
+    assert_eq!(default_value.invalid_server_exports.len(), 1);
+    assert_eq!(default_value.invalid_server_exports[0].name, "default");
+    assert_eq!(default_value.invalid_server_exports[0].span.line, 2);
+
+    // Without the leading directive the file is an ordinary module.
+    let no_directive = summary(
+        "export const count = 1;\nexport enum Kind { A }\n",
+        "src/actions.ts",
+    );
+    assert!(no_directive.invalid_server_exports.is_empty());
+
+    // A body-level `"use server"` makes only that function an action; the
+    // module-level export is still ordinary.
+    let inline = summary(
+        "export const value = 1;\nexport async function action() { \"use server\"; return 1; }\n",
+        "src/actions.ts",
+    );
+    assert!(inline.invalid_server_exports.is_empty());
+}
+
+#[test]
 fn records_directive_strings_after_the_prologue() {
     let source = r#"
 import { thing } from "./thing";

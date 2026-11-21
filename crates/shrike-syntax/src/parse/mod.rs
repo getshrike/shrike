@@ -91,6 +91,7 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
                 directives: Vec::new(),
                 server_action_module: false,
                 inline_server_action_exports: Vec::new(),
+                invalid_server_exports: Vec::new(),
                 misplaced_directives: Vec::new(),
                 imports: Vec::new(),
                 declarations: Vec::new(),
@@ -128,6 +129,7 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
             directives: Vec::new(),
             server_action_module: false,
             inline_server_action_exports: Vec::new(),
+            invalid_server_exports: Vec::new(),
             misplaced_directives: Vec::new(),
             imports: Vec::new(),
             declarations: Vec::new(),
@@ -163,6 +165,7 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
         directives,
         server_action_module: false,
         inline_server_action_exports: Vec::new(),
+        invalid_server_exports: Vec::new(),
         misplaced_directives: Vec::new(),
         imports: Vec::new(),
         declarations: Vec::new(),
@@ -185,6 +188,8 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
     }
     summary.server_action_module = server_actions::is_server_action_module(&program);
     summary.inline_server_action_exports = server_actions::inline_server_action_exports(&program);
+    summary.invalid_server_exports =
+        server_actions::invalid_server_exports(&program, source, &line_index);
     summary.client_only_dynamic_specifiers =
         next_dynamic::client_only_dynamic_specifiers(&program, &summary.imports);
     next_dynamic::assign_dynamic_spans(&program, source, &line_index, &mut summary);

@@ -208,6 +208,7 @@ pub(super) fn parse(
         directives: Vec::new(),
         server_action_module: false,
         inline_server_action_exports: Vec::new(),
+        invalid_server_exports: Vec::new(),
         misplaced_directives: Vec::new(),
         imports: Vec::new(),
         declarations: Vec::new(),
