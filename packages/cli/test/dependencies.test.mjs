@@ -53,6 +53,83 @@ test("reports a dependency with no evidence and keeps an imported one", (t) => {
   assert.equal(report.summary.unusedByKind.dependencies, 1);
 });
 
+test("reports a dependency imported only by dead modules with a reachability reason", (t) => {
+  const root = makeRepo(t);
+  manifest(root, {
+    name: "fixture",
+    dependencies: { react: "^19.0.0", "left-pad": "^1.3.0" },
+  });
+
+  const report = analyzeDependencies(root, {
+    files: [{ path: "app/page.tsx" }, { path: "components/dead.tsx" }],
+    modules: [
+      { path: "app/page.tsx", specifiers: ["react"], external: ["react"] },
+      {
+        path: "components/dead.tsx",
+        specifiers: ["left-pad"],
+        external: ["left-pad"],
+      },
+    ],
+    symbols: [
+      { key: "app/page.tsx#__module__", kind: "module" },
+      { key: "components/dead.tsx#__module__", kind: "module" },
+    ],
+    live: ["app/page.tsx#__module__"],
+  });
+
+  assert.deepEqual(unusedNames(report), ["left-pad"]);
+  assert.match(report.packages[0].unused[0].reason, /no live symbols/);
+  assert.match(report.packages[0].unused[0].reason, /components\/dead\.tsx/);
+});
+
+test("type-only references from dead modules do not keep a dependency used", (t) => {
+  const root = makeRepo(t);
+  manifest(root, {
+    name: "fixture",
+    dependencies: { "left-pad": "^1.3.0" },
+  });
+
+  const report = analyzeDependencies(root, {
+    files: [{ path: "components/dead.ts" }],
+    modules: [
+      {
+        path: "components/dead.ts",
+        specifiers: [],
+        external: [],
+        typeRefs: ["left-pad"],
+      },
+    ],
+    symbols: [{ key: "components/dead.ts#__module__", kind: "module" }],
+    live: [],
+  });
+
+  assert.deepEqual(unusedNames(report), ["left-pad"]);
+});
+
+test("module liveness is not inferred when module symbols are missing", (t) => {
+  const root = makeRepo(t);
+  manifest(root, {
+    name: "fixture",
+    dependencies: { "left-pad": "^1.3.0" },
+  });
+
+  const report = analyzeDependencies(root, {
+    files: [{ path: "components/dead.ts" }],
+    modules: [
+      {
+        path: "components/dead.ts",
+        specifiers: ["left-pad"],
+        external: ["left-pad"],
+      },
+    ],
+    live: [],
+  });
+
+  // Without a module symbol there is no proof the module is dead, so the
+  // dependency stays used.
+  assert.deepEqual(unusedNames(report), []);
+});
+
 test("package scripts and tool configs count as usage", (t) => {
   const root = makeRepo(t);
   manifest(root, {

@@ -474,6 +474,12 @@ An import that is only available through a declared dependency's peer or
 optional requirements is reported as `transitive` (informational), not
 `unlisted`. `shrike prune` never removes dependencies.
 
+Dependency usage is reachability-aware. An import or type reference from a
+module whose `__module__` symbol is not live does not keep a dependency used;
+when every importer is dead, the dependency is reported with those importers as
+evidence. If liveness data or the module symbol is unavailable (for example a
+parse failure), the module is treated as live, so this rule fails closed.
+
 **Rule E1:** an entry is never deleted, regardless of reference count.
 
 **Rule E2:** entry detection is framework-specific and fixture-tested. A generic

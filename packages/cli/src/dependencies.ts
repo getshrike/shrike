@@ -37,10 +37,19 @@ export interface SnapshotEntry {
   framework: string;
 }
 
+export interface SnapshotSymbol {
+  key: string;
+  kind?: string;
+}
+
 export interface SnapshotLike {
   files?: SnapshotFile[];
   modules?: SnapshotModule[];
   entries?: SnapshotEntry[];
+  /** Symbol keys reachable from an entry. */
+  live?: string[];
+  /** Symbol records, used to distinguish a dead module from an unparsed one. */
+  symbols?: SnapshotSymbol[];
 }
 
 export type DependencyKind =
@@ -674,6 +683,21 @@ export function analyzeDependencies(
   const modules = snapshot.modules ?? [];
   const files = (snapshot.files ?? []).map((file) => file.path);
   const entries = snapshot.entries ?? [];
+  // A module is live when its `__module__` symbol is reachable. Without
+  // liveness data, or when the module symbol is missing (a parse failure), the
+  // module stays live: dependency findings must fail closed.
+  const liveSymbols = snapshot.live ? new Set(snapshot.live) : null;
+  const moduleKeys = new Set(
+    (snapshot.symbols ?? [])
+      .filter((symbol) => symbol.kind === "module")
+      .map((symbol) => symbol.key),
+  );
+  const moduleIsLive = (path: string): boolean => {
+    if (!liveSymbols) return true;
+    const key = `${path}#__module__`;
+    if (!moduleKeys.has(key)) return true;
+    return liveSymbols.has(key);
+  };
 
   for (const directory of directories) {
     const json = readPackageJson(join(root, directory));
@@ -724,18 +748,29 @@ export function analyzeDependencies(
       usedBy[name] = list;
     };
 
+    const deadImporters = new Map<string, string[]>();
+    const noteDeadImport = (name: string, path: string): void => {
+      const list = deadImporters.get(name) ?? [];
+      if (!list.includes(path)) list.push(path);
+      deadImporters.set(name, list);
+    };
     for (const module of context.modules) {
+      const live = moduleIsLive(module.path);
       // Mark declared dependencies from every specifier, including workspace
       // siblings that resolve to source instead of being external packages.
       for (const specifier of module.specifiers) {
         const name = packageNameOf(specifier);
-        if (name) mark(name, module.path);
+        if (!name) continue;
+        if (live) mark(name, module.path);
+        else noteDeadImport(name, module.path);
       }
       // Type-only references (`import("pkg").Config`, JSDoc `@type`) are
       // dependency evidence even when no runtime module imports the package.
       for (const specifier of module.typeRefs ?? []) {
         const name = packageNameOf(specifier);
-        if (name) mark(name, module.path);
+        if (!name) continue;
+        if (live) mark(name, module.path);
+        else noteDeadImport(name, module.path);
       }
     }
 
@@ -945,11 +980,14 @@ export function analyzeDependencies(
       if (kinds.includes("peerDependencies") || kinds.includes("optionalDependencies")) continue;
       const declaration = context.json[kind]?.[name] ?? "";
       if (declaration.startsWith("workspace:") || declaration.startsWith("file:")) continue;
-      unused.push({
-        name,
-        kind,
-        reason: "no import, script, bin, or tool-config reference",
-      });
+      const dead = [...(deadImporters.get(name) ?? [])].sort();
+      const reason =
+        dead.length > 0
+          ? `only imported by modules with no live symbols: ${dead.slice(0, 3).join(", ")}${
+              dead.length > 3 ? `, +${dead.length - 3} more` : ""
+            }`
+          : "no import, script, bin, or tool-config reference";
+      unused.push({ name, kind, reason });
     }
 
     const moduleFiles = moduleFilesFor(context, directories);
