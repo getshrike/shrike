@@ -7,6 +7,7 @@ use shrike_core::{ClientBoundaryPolicy, EntryPolicy};
 use shrike_syntax::{BindingKind, FileSummary, ParseStatus};
 
 use super::Builder;
+use crate::cosmos_config;
 use crate::storybook_config;
 use crate::types::EntryRecord;
 use crate::util::route_of;
@@ -730,12 +731,16 @@ impl<'a> Builder<'a> {
             .collect();
         let mut vite_packages: BTreeSet<String> = BTreeSet::new();
         let mut storybook_packages: BTreeSet<String> = BTreeSet::new();
+        let mut cosmos_packages: BTreeSet<String> = BTreeSet::new();
         for package in self.resolver.packages() {
             if package_depends_on_any(self.resolver.root(), &package.directory, VITE_ENABLERS) {
                 vite_packages.insert(package.directory.clone());
             }
             if package_depends_on_storybook(self.resolver.root(), &package.directory) {
                 storybook_packages.insert(package.directory.clone());
+            }
+            if package_depends_on(self.resolver.root(), &package.directory, "react-cosmos") {
+                cosmos_packages.insert(package.directory.clone());
             }
         }
         let mut expo_layout_packages: BTreeSet<String> = BTreeSet::new();
@@ -979,6 +984,26 @@ impl<'a> Builder<'a> {
             for path in &analyzed {
                 if matcher.is_match(path) {
                     storybook_story_files.insert((*path).to_string());
+                }
+            }
+        }
+        // React Cosmos loads fixture and decorator modules by convention instead
+        // of importing them. The package dependency enables the conventions;
+        // `cosmos.config.json` can rename the fixture directory and suffix.
+        // Decorators are removed from the fixture set first, matching Cosmos's
+        // own user-module discovery.
+        let mut cosmos_fixture_files: BTreeSet<String> = BTreeSet::new();
+        let mut cosmos_decorator_files: BTreeSet<String> = BTreeSet::new();
+        for package_directory in &cosmos_packages {
+            let config = cosmos_config::CosmosConfig::load(self.resolver.root(), package_directory);
+            let Some(matcher) = cosmos_config::matcher(package_directory, &config) else {
+                continue;
+            };
+            for path in &analyzed {
+                if matcher.is_decorator(path) {
+                    cosmos_decorator_files.insert((*path).to_string());
+                } else if matcher.is_fixture(path) {
+                    cosmos_fixture_files.insert((*path).to_string());
                 }
             }
         }
@@ -1668,6 +1693,45 @@ impl<'a> Builder<'a> {
                     add(self, module.clone(), "react", "module", None, "both");
                 }
             }
+            let cosmos_fixture = cosmos_fixture_files.contains(path);
+            let cosmos_decorator = cosmos_decorator_files.contains(path);
+            if self.config.test_entries && self.config.entry_policy != EntryPolicy::Production {
+                if cosmos_decorator {
+                    // Cosmos invokes the decorator module's default export. A
+                    // named helper in the same file is not framework-invoked
+                    // and stays analyzable.
+                    add(
+                        self,
+                        module.clone(),
+                        "react-cosmos",
+                        "decorator",
+                        None,
+                        "both",
+                    );
+                    add(
+                        self,
+                        format!("{path}#default"),
+                        "react-cosmos",
+                        "decorator-default",
+                        None,
+                        "both",
+                    );
+                } else if cosmos_fixture {
+                    // Cosmos imports the fixture module and renders every
+                    // exported fixture.
+                    add(
+                        self,
+                        module.clone(),
+                        "react-cosmos",
+                        "fixture",
+                        None,
+                        "both",
+                    );
+                    for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                        add(self, key, "react-cosmos", "fixture-export", None, "both");
+                    }
+                }
+            }
             let test = path.contains(".test.")
                 || path.contains(".spec.")
                 || path.contains(".test-d.")
@@ -1696,6 +1760,8 @@ impl<'a> Builder<'a> {
             if self.config.test_entries
                 && self.config.entry_policy != EntryPolicy::Production
                 && (test || story)
+                && !cosmos_fixture
+                && !cosmos_decorator
             {
                 add(self, module.clone(), "tests", "test", None, "both");
                 for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
@@ -4469,5 +4535,205 @@ export default config;
             "{:?}",
             snapshot.candidates
         );
+    }
+
+    #[test]
+    fn cosmos_fixtures_and_decorators_are_entries() {
+        let snapshot = discovered_snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"cosmos-app","private":true,"dependencies":{"react":"^19.0.0","react-dom":"^19.0.0"},"devDependencies":{"react-cosmos":"^7.0.0"}}"#,
+            ),
+            (
+                "cosmos.config.json",
+                "{\"plugins\":[\"react-cosmos-plugin-vite\"]}",
+            ),
+            (
+                "components/Button.tsx",
+                "export function Button() { return <button>ok</button>; }\nexport function unusedButtonHelper() { return 1; }\n",
+            ),
+            (
+                "components/Card.tsx",
+                "export function Card() { return <div>card</div>; }\nexport function unusedCardHelper() { return 2; }\n",
+            ),
+            (
+                "components/Button.fixture.tsx",
+                "import { Button } from './Button';\nimport { Card } from './Card';\nexport default function ButtonFixture() { return <Button />; }\nexport const CardFixture = () => <Card />;\n",
+            ),
+            (
+                "components/__fixtures__/Nested.tsx",
+                "import { NestedThing } from '../NestedThing';\nimport { Card } from '../Card';\nexport default function NestedFixture() { return <NestedThing card={<Card />} />; }\n",
+            ),
+            (
+                "components/NestedThing.tsx",
+                "export function NestedThing({ card }: { card: React.ReactNode }) { return <div>{card}</div>; }\nexport function unusedNestedHelper() { return 3; }\n",
+            ),
+            (
+                "decorators/cosmos.decorator.tsx",
+                "export default function CosmosDecorator({ children }: { children: React.ReactNode }) { return <div>{children}</div>; }\nexport function unusedDecoratorHelper() { return 4; }\n",
+            ),
+            ("dead.tsx", "export function DeadThing() { return 5; }\n"),
+        ]);
+        for key in [
+            "components/Button.fixture.tsx#default",
+            "components/Button.fixture.tsx#CardFixture",
+            "components/__fixtures__/Nested.tsx#default",
+            "components/Button.tsx#Button",
+            "components/Card.tsx#Card",
+            "components/NestedThing.tsx#NestedThing",
+            "decorators/cosmos.decorator.tsx#default",
+        ] {
+            assert!(
+                snapshot.is_live(key) || snapshot.entries.iter().any(|entry| entry.symbol == key),
+                "{key} is a Cosmos user module or imported by one: {:?}",
+                snapshot.candidates
+            );
+        }
+        for key in [
+            "components/Button.tsx#unusedButtonHelper",
+            "components/Card.tsx#unusedCardHelper",
+            "components/NestedThing.tsx#unusedNestedHelper",
+            // Cosmos invokes only the decorator default export.
+            "decorators/cosmos.decorator.tsx#unusedDecoratorHelper",
+            "dead.tsx#DeadThing",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "{key} is unused and must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+        assert!(
+            snapshot.entries.iter().any(|entry| {
+                entry.symbol == "components/Button.fixture.tsx#default"
+                    && entry.framework == "react-cosmos"
+            }),
+            "fixture exports are Cosmos entries: {:?}",
+            snapshot.entries
+        );
+        assert!(
+            snapshot.entries.iter().any(|entry| {
+                entry.symbol == "decorators/cosmos.decorator.tsx#default"
+                    && entry.kind == "decorator-default"
+            }),
+            "the decorator default is a Cosmos entry: {:?}",
+            snapshot.entries
+        );
+
+        let without_dependency = discovered_snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"plain-app","private":true,"dependencies":{"react":"^19.0.0","react-dom":"^19.0.0"}}"#,
+            ),
+            (
+                "components/Button.tsx",
+                "export function Button() { return <button>ok</button>; }\n",
+            ),
+            (
+                "components/Button.fixture.tsx",
+                "import { Button } from './Button';\nexport default function ButtonFixture() { return <Button />; }\n",
+            ),
+            (
+                "decorators/cosmos.decorator.tsx",
+                "export default function CosmosDecorator({ children }: { children: React.ReactNode }) { return <div>{children}</div>; }\n",
+            ),
+        ]);
+        for key in [
+            "components/Button.fixture.tsx#default",
+            "decorators/cosmos.decorator.tsx#default",
+        ] {
+            assert!(
+                without_dependency.is_candidate(key),
+                "without react-cosmos {key} is not framework-invoked: {:?}",
+                without_dependency.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn cosmos_config_controls_directory_suffix_and_ignore() {
+        let snapshot = discovered_snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"cosmos-custom","private":true,"dependencies":{"react":"^19.0.0","react-dom":"^19.0.0"},"devDependencies":{"react-cosmos":"^7.0.0"}}"#,
+            ),
+            (
+                "cosmos.config.json",
+                r#"{"fixturesDir":"src/examples","fixtureFileSuffix":"example","ignore":["**/*.skip.*"]}"#,
+            ),
+            (
+                "src/Widget.tsx",
+                "export function Widget() { return <div>widget</div>; }\nexport function unusedWidgetHelper() { return 1; }\n",
+            ),
+            (
+                "src/Widget.example.tsx",
+                "import { Widget } from './Widget';\nexport default function WidgetFixture() { return <Widget />; }\nexport const AnotherFixture = () => <Widget />;\n",
+            ),
+            (
+                "src/Widget.fixture.tsx",
+                "import { Legacy } from './Legacy';\nexport default function LegacyFixture() { return <Legacy />; }\n",
+            ),
+            (
+                "src/Legacy.tsx",
+                "export function Legacy() { return <div>legacy</div>; }\nexport function unusedLegacyHelper() { return 2; }\n",
+            ),
+            (
+                "src/examples/Showcase.tsx",
+                "import { Widget } from '../Widget';\nexport const Showcase = () => <Widget />;\n",
+            ),
+            (
+                "src/examples/Thing.skip.tsx",
+                "import { IgnoredThing } from '../IgnoredThing';\nexport const Skipped = () => <IgnoredThing />;\n",
+            ),
+            (
+                "src/IgnoredThing.tsx",
+                "export function IgnoredThing() { return <div>ignored</div>; }\n",
+            ),
+            (
+                "src/cosmos.decorator.js",
+                "import { Frame } from './Frame';\nexport default function Decorator({ children }) { return <Frame>{children}</Frame>; }\nexport function unusedDecoratorHelper() { return 3; }\n",
+            ),
+            (
+                "src/Frame.tsx",
+                "export function Frame({ children }) { return <div>{children}</div>; }\nexport function unusedFrameHelper() { return 4; }\n",
+            ),
+            (
+                "src/dead.tsx",
+                "export function DeadThing() { return 5; }\n",
+            ),
+        ]);
+        for key in [
+            "src/Widget.example.tsx#default",
+            "src/Widget.example.tsx#AnotherFixture",
+            "src/examples/Showcase.tsx#Showcase",
+            "src/Widget.tsx#Widget",
+            "src/cosmos.decorator.js#default",
+            "src/Frame.tsx#Frame",
+        ] {
+            assert!(
+                snapshot.is_live(key) || snapshot.entries.iter().any(|entry| entry.symbol == key),
+                "{key} uses the configured Cosmos conventions: {:?}",
+                snapshot.candidates
+            );
+        }
+        for key in [
+            // The configured suffix replaces `fixture`.
+            "src/Widget.fixture.tsx#default",
+            "src/Legacy.tsx#Legacy",
+            "src/Legacy.tsx#unusedLegacyHelper",
+            "src/Widget.tsx#unusedWidgetHelper",
+            // Cosmos ignores the fixture directory entry.
+            "src/examples/Thing.skip.tsx#Skipped",
+            "src/IgnoredThing.tsx#IgnoredThing",
+            "src/cosmos.decorator.js#unusedDecoratorHelper",
+            "src/Frame.tsx#unusedFrameHelper",
+            "src/dead.tsx#DeadThing",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "{key} is unused and must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
     }
 }

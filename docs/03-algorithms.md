@@ -392,6 +392,17 @@ configuration in Node.
   anchored at the main-config directory. Computed and negated patterns are
   skipped; preview, manager, and decorator modules are entries and their
   imports stay live;
+- React Cosmos fixture and decorator files. When the owning package depends on
+  `react-cosmos`, Cosmos's own user-module patterns are entries:
+  `**/<fixturesDir>/**/*.{js,jsx,ts,tsx,md,mdx}`,
+  `**/*.<fixtureFileSuffix>.{js,jsx,ts,tsx,md,mdx}`,
+  `**/<fixtureFileSuffix>.{js,jsx,ts,tsx,md,mdx}`, and
+  `**/cosmos.decorator.{js,jsx,ts,tsx}`. `fixturesDir` (default `__fixtures__`)
+  and `fixtureFileSuffix` (default `fixture`) are read from
+  `cosmos.config.json`; `ignore` patterns are honoured. Fixture modules expose
+  every export to Cosmos, while only the decorator default export is invoked;
+  named helpers in a decorator file stay analyzable. The config is hashed into
+  the snapshot cache key even though it is not parsed as a module;
 - `next.config`, `postcss.config`, `tailwind.config`, `eslint.config`,
   `tsconfig`;
 - test runner config.
