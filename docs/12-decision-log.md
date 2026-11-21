@@ -1313,6 +1313,57 @@ runtime schema, or the reserved-page set.
 
 ---
 
+## D-035 — Root-only Next.js conventions require the app root
+
+**Decision:** Next.js loads `robots`, `manifest`, `global-error`, and
+`global-not-found` only when the file sits directly under `<package>/app/` or
+`<package>/src/app/`. A route group, parallel slot, or nested segment is not a
+framework file. `middleware`, `proxy`, `instrumentation`, and
+`instrumentation-client` are conventions only at the package root or `src/`,
+never under `app/`. `sitemap` and the image-metadata routes remain conventions
+at any depth.
+
+**Alternatives considered:**
+
+- Treat every app-shaped stem at any depth as an entry: Next.js ignores
+  `app/nested/robots.ts`, `app/(group)/robots.ts`, and
+  `app/@slot/robots.ts`, so crediting them hides genuinely dead files.
+- Follow knip 5.88.1's `app/{,[(]*[)]/}{manifest,robots}` pattern and allow a
+  root-level route group: a real Next.js 16.4.6 build with
+  `app/(group)/robots.ts` and `app/(group)/manifest.ts` produces neither
+  `/robots.txt` nor `/manifest.webmanifest`.
+- Keep `middleware`, `proxy`, and instrumentation as app entries: Next.js
+  only recognizes them at the package root or `src/`; an `app/middleware.ts`
+  is an ordinary module.
+- Remove nested `global-error` from entries only: the app loader resolves it
+  but overwrites it with the root global error, so it is not framework-invoked.
+  The same probe showed it is not even compiled unless the segment has a page.
+
+**Why:** Probed Next.js 16.4.6 with real `next build` runs at
+`/tmp/opencode/next-root-conventions-probe`. A root `app/robots.ts`,
+`app/manifest.ts`, and `app/global-error.tsx` are evaluated and routed; the
+nested, grouped, and slotted copies are not (their throwing imports never run).
+`app/nested/sitemap.ts` is routed as `/nested/sitemap.xml`. Source in
+`dist/lib/metadata/is-metadata-route.js` anchors `robots` and `manifest` at the
+app root, and `dist/build/webpack/loaders/next-app-loader/index.js` resolves
+`global-error` only at the root layer. Knip's group allowance and fallow
+3.45.0's any-depth patterns both over-credit.
+
+**Consequences:**
+
+- `NEXT_APP_ANY_DEPTH_STEMS` and `NEXT_APP_ROOT_ONLY_STEMS` drive entry
+  detection; `classify_app_route` rejects a nested root-only stem so it cannot
+  decorate a dynamic segment or collide with a route.
+- Graph tests pin the root, nested, grouped, and slotted forms and the
+  dynamic-segment control; `ANALYSIS_VERSION` is bumped to 71.
+- The five-repo scans are unchanged: none has a root-only convention outside
+  the app root.
+
+**Revisit if:** Next.js changes metadata-route discovery or starts loading
+nested `global-error` as a real boundary.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -1390,6 +1441,7 @@ external app, credential, or participant.
 | D-032 | Invalid route segment configuration is an error diagnostic | accepted |
 | D-033 | Invalid client exports are route-only build errors | accepted |
 | D-034 | Pages Router build failures are error diagnostics | accepted |
+| D-035 | Root-only Next.js conventions require the app root | accepted |
 
 ## Rejected ideas
 

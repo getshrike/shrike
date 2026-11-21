@@ -9,6 +9,7 @@ use shrike_syntax::{
 };
 
 use super::Builder;
+use super::entries::NEXT_APP_ROOT_ONLY_STEMS;
 use crate::types::{FileRecord, SymbolRecord};
 use crate::util::{declaration_kind, edge};
 
@@ -267,6 +268,12 @@ fn classify_app_route<'a>(
         } else {
             RouteSegment::Literal(segment)
         });
+    }
+    // Root-only conventions do not decorate a nested segment. Next.js ignores
+    // `app/nested/robots.ts` and `app/(group)/global-error.tsx`, so they must
+    // not create a dynamic-segment or route-collision participant.
+    if NEXT_APP_ROOT_ONLY_STEMS.contains(&stem) && !segments.is_empty() {
+        return None;
     }
     let app_root = if package_directory.is_empty() {
         app_root_suffix.to_string()
