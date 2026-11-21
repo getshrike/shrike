@@ -1378,12 +1378,19 @@ impl<'a> Builder<'a> {
                 .rsplit_once('.')
                 .map_or(file_name, |(stem, _)| stem);
             let route = route_of(path);
-            let is_app = path.starts_with("app/") || path.contains("/app/");
-            let is_pages = path.starts_with("pages/") || path.contains("/pages/");
             let package_directory = self
                 .resolver
                 .package_for(path)
                 .map_or("", |package| package.directory.as_str());
+            let package_path = if package_directory.is_empty() {
+                path
+            } else {
+                path.strip_prefix(&format!("{package_directory}/"))
+                    .unwrap_or(path)
+            };
+            let is_app = package_path.starts_with("app/") || package_path.starts_with("src/app/");
+            let is_pages =
+                package_path.starts_with("pages/") || package_path.starts_with("src/pages/");
             // Next.js middleware/proxy, instrumentation, and the MDX component
             // map live at the project root (or `src/`), not under `app/`, but
             // they are still framework entrypoints.
@@ -2321,6 +2328,65 @@ mod tests {
             assert!(
                 snapshot.is_candidate(key),
                 "{key} is unused and must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn next_app_and_pages_are_package_relative() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"probe","private":true,"workspaces":["apps/*","packages/*"]}"#,
+            ),
+            (
+                "apps/web/package.json",
+                r#"{"name":"@probe/web","private":true,"dependencies":{"next":"^16.0.0","react":"^19.1.0"}}"#,
+            ),
+            (
+                "packages/app/package.json",
+                r#"{"name":"@probe/app","private":true,"dependencies":{"react":"^19.1.0"}}"#,
+            ),
+            (
+                "packages/pages/package.json",
+                r#"{"name":"@probe/pages","private":true,"dependencies":{"react":"^19.1.0"}}"#,
+            ),
+            (
+                "apps/web/app/page.tsx",
+                "export default function WebPage() { return null; }\nexport const unusedWebHelper = 1;\n",
+            ),
+            (
+                "packages/app/src/page.tsx",
+                "export default function DeadPage() { return null; }\nexport const unusedPageHelper = 2;\n",
+            ),
+            (
+                "packages/app/src/layout.tsx",
+                "export default function DeadLayout() { return null; }\nexport const unusedLayoutHelper = 3;\n",
+            ),
+            (
+                "packages/pages/src/settings.tsx",
+                "export default function DeadSettings() { return null; }\nexport const unusedSettingsHelper = 4;\n",
+            ),
+        ]);
+        assert!(
+            snapshot.is_live("apps/web/app/page.tsx#default"),
+            "a package-relative app route is live: {:?}",
+            snapshot.live
+        );
+        assert!(
+            snapshot.is_candidate("apps/web/app/page.tsx#unusedWebHelper"),
+            "a route helper is still analyzable: {:?}",
+            snapshot.candidates
+        );
+        for key in [
+            "packages/app/src/page.tsx#default",
+            "packages/app/src/layout.tsx#default",
+            "packages/pages/src/settings.tsx#default",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "{key} is not a Next route because the package path only contains `app`/`pages`: {:?}",
                 snapshot.candidates
             );
         }

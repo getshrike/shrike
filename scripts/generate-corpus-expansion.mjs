@@ -20,8 +20,8 @@ const tsconfig = `${JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "
 
 const cases = [];
 
-function add(id, category, files, protectedSymbols) {
-  cases.push({ id, category, files, protected: protectedSymbols });
+function add(id, category, files, protectedSymbols, mustReport) {
+  cases.push({ id, category, files, protected: protectedSymbols, ...(mustReport ? { mustReport } : {}) });
 }
 
 for (let index = 1; index <= 20; index += 1) {
@@ -81,6 +81,7 @@ for (let index = 1; index <= 20; index += 1) {
       symbol: `packages/ui/src/Button.tsx#Button`,
       reason: "client-boundary component is imported across a workspace",
     }],
+    ["apps/web/app/page.tsx#default"],
   );
 }
 
