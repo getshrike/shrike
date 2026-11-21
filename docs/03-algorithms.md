@@ -453,6 +453,12 @@ by an externally called function stays internal and can be de-exported. This
 gives parity with unused-export tools without turning a conservative graph into
 a false positive.
 
+External visibility is reachability-aware. A cross-file import or re-export
+only counts when its source symbol is live. An export referenced only by a dead
+module, or by a dead alias inside a live barrel, is still internal-only: code
+that cannot run must not keep a same-file-only export out of the report.
+Unknown source keys fail closed and count as external.
+
 ### 9.10 Dependency evidence
 
 Dependency analysis is deliberately asymmetric: it prefers a false negative to a

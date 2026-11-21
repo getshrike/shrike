@@ -132,9 +132,20 @@ impl<'a> Builder<'a> {
     /// not: a helper used by an externally called function stays internal and
     /// can be de-exported.
     pub(super) fn internal_only(&self, live: &BTreeSet<String>) -> Vec<String> {
+        // A cross-file use only proves external visibility when the using
+        // symbol is live. Imports and re-exports from dead modules cannot
+        // reach the symbol today, so they must not keep a same-file-only
+        // export out of `internalOnly`. Unknown source keys fail closed and
+        // count as external.
+        let known: BTreeSet<&str> = self
+            .symbols
+            .iter()
+            .map(|symbol| symbol.key.as_str())
+            .collect();
+        let counts_as_external = |key: &str| !known.contains(key) || live.contains(key);
         let mut external: BTreeSet<String> = BTreeSet::new();
         for edge in &self.edges {
-            if file_of(&edge.source) != file_of(&edge.target) {
+            if file_of(&edge.source) != file_of(&edge.target) && counts_as_external(&edge.source) {
                 external.insert(edge.target.clone());
             }
         }
@@ -150,6 +161,7 @@ impl<'a> Builder<'a> {
             for edge in &self.edges {
                 if file_of(&edge.source) != file_of(&edge.target)
                     || !external.contains(&edge.source)
+                    || !counts_as_external(&edge.source)
                 {
                     continue;
                 }

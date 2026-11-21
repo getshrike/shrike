@@ -5059,6 +5059,29 @@
         "src/barrel.ts#used",
         "src/impl.ts#dead"
       ]
+    },
+    {
+      "id": "internal-only-dead-importer",
+      "category": "internal-only",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/page.tsx#default",
+          "reason": "Next.js page entry"
+        }
+      ],
+      "internalOnly": [
+        "src/registry.ts#helper"
+      ],
+      "mustReport": [
+        "src/dead.ts#deadConsumer",
+        "src/barrel.ts#helper"
+      ]
     }
   ]
 }
