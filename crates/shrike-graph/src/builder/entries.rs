@@ -211,6 +211,178 @@ fn is_app_root_file(package_path: &str) -> bool {
         .is_some_and(|rest| !rest.contains('/'))
 }
 
+/// App Router segment config that Next.js reads from a segment module: a
+/// page, layout, default file, route handler, or metadata route. The list
+/// keeps the `unstable_` spellings used by Next.js 16.0-16.2 and
+/// `experimental_ppr` for the documented 15.x fallback; Next.js 16.0 removed
+/// `experimental_ppr` from `AppSegmentConfigSchemaKeys`.
+const NEXT_APP_SEGMENT_CONFIG_EXPORTS: &[&str] = &[
+    "dynamic",
+    "dynamicParams",
+    "revalidate",
+    "fetchCache",
+    "runtime",
+    "preferredRegion",
+    "maxDuration",
+    "ensureStatic",
+    "instant",
+    "unstable_instant",
+    "prefetch",
+    "unstable_prefetch",
+    "experimental_ppr",
+];
+
+/// Metadata and viewport APIs are read from page, layout, and default modules,
+/// plus the HTTP access fallback boundaries Next.js renders with an error
+/// convention (`not-found`, `forbidden`, `unauthorized`).
+const NEXT_APP_METADATA_EXPORTS: &[&str] = &[
+    "metadata",
+    "generateMetadata",
+    "viewport",
+    "generateViewport",
+];
+
+/// Static params and parameter matching are read from the modules that
+/// represent a segment: page, layout, default, and route handlers.
+const NEXT_APP_PARAM_EXPORTS: &[&str] = &[
+    "generateStaticParams",
+    "unstable_paramMatching",
+    "unstable_generateParamMatching",
+];
+
+const NEXT_APP_HTTP_METHODS: &[&str] =
+    &["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
+
+/// The framework exports Next.js actually reads from a convention file.
+///
+/// Next.js reads a different surface from each file type: a page reads
+/// metadata, segment config, and static params; a route handler reads HTTP
+/// methods and segment config but no metadata; `error.tsx` reads only its
+/// default component; Pages Router files read data-fetching functions or
+/// `config` depending on whether they are a page, `_app`, or API route.
+/// Protecting the union on every entry keeps exports Next.js never reads
+/// live, so each convention gets its own surface.
+fn next_framework_exports(
+    stem: &str,
+    package_path: &str,
+    extensions: Option<&BTreeSet<String>>,
+    is_app: bool,
+    is_pages: bool,
+    root_convention: bool,
+) -> Vec<&'static str> {
+    let mut names = Vec::new();
+    if is_app {
+        match stem {
+            "page" => {
+                names.extend(["default", "unstable_dynamicStaleTime"]);
+                names.extend(NEXT_APP_METADATA_EXPORTS);
+                names.extend(NEXT_APP_PARAM_EXPORTS);
+                names.extend(NEXT_APP_SEGMENT_CONFIG_EXPORTS);
+            }
+            "layout" | "default" => {
+                names.push("default");
+                names.extend(NEXT_APP_METADATA_EXPORTS);
+                names.extend(NEXT_APP_PARAM_EXPORTS);
+                names.extend(NEXT_APP_SEGMENT_CONFIG_EXPORTS);
+            }
+            "route" => {
+                // Next.js reads static params from a route handler but throws
+                // when it exports parameter matching, so only the former is
+                // framework API here.
+                names.extend(NEXT_APP_HTTP_METHODS);
+                names.push("generateStaticParams");
+                names.extend(NEXT_APP_SEGMENT_CONFIG_EXPORTS);
+            }
+            "sitemap" => {
+                names.extend(["default", "generateSitemaps", "generateStaticParams"]);
+                names.extend(NEXT_APP_SEGMENT_CONFIG_EXPORTS);
+            }
+            "robots" | "manifest" => {
+                names.extend(["default", "generateStaticParams"]);
+                names.extend(NEXT_APP_SEGMENT_CONFIG_EXPORTS);
+            }
+            "icon" | "apple-icon" => {
+                names.extend([
+                    "default",
+                    "size",
+                    "contentType",
+                    "generateImageMetadata",
+                    "generateStaticParams",
+                ]);
+                names.extend(NEXT_APP_SEGMENT_CONFIG_EXPORTS);
+            }
+            "opengraph-image" | "twitter-image" => {
+                names.extend([
+                    "default",
+                    "size",
+                    "contentType",
+                    "alt",
+                    "generateImageMetadata",
+                    "generateStaticParams",
+                ]);
+                names.extend(NEXT_APP_SEGMENT_CONFIG_EXPORTS);
+            }
+            // `errorType` selects these boundaries when Next.js renders an
+            // access fallback, and metadata is read from the boundary module.
+            "not-found" | "forbidden" | "unauthorized" => {
+                names.push("default");
+                names.extend(NEXT_APP_METADATA_EXPORTS);
+            }
+            // `global-not-found` renders with `errorType` undefined, which
+            // reads the page metadata instead of the boundary; the client-only
+            // error boundaries and the remaining default-only files expose
+            // only their component.
+            "global-not-found" | "template" | "loading" | "error" | "global-error" => {
+                names.push("default");
+            }
+            _ => {}
+        }
+    } else if is_pages {
+        // Next.js reserves `/_app`, `/_error`, `/_document`, and `/api` only
+        // at the pages root (`RESERVED_PAGE`), and `isAPIRoute` accepts both
+        // `/api` and `/api/...`. A nested `_app` or `_error` is an ordinary
+        // page, and `pages/api.ts` is the `/api` route, not a page.
+        let pages_relative = package_path
+            .strip_prefix("src/pages/")
+            .or_else(|| package_path.strip_prefix("pages/"))
+            .unwrap_or(package_path);
+        let pages_base = next_convention_base(pages_relative, extensions).unwrap_or(pages_relative);
+        if pages_base == "api" || pages_base.starts_with("api/") {
+            names.extend(["default", "config", "runtime", "maxDuration"]);
+        } else if pages_base == "_app" {
+            names.extend([
+                "default",
+                "reportWebVitals",
+                "config",
+                "runtime",
+                "maxDuration",
+            ]);
+        } else if matches!(pages_base, "_document" | "_error") {
+            names.extend(["default", "config", "runtime", "maxDuration"]);
+        } else {
+            names.extend([
+                "default",
+                "getStaticProps",
+                "getServerSideProps",
+                "getStaticPaths",
+                "config",
+                "runtime",
+                "maxDuration",
+            ]);
+        }
+    } else if root_convention {
+        match stem {
+            "middleware" => names.extend(["default", "middleware", "config"]),
+            "proxy" => names.extend(["default", "proxy", "config"]),
+            "instrumentation" => names.extend(["register", "onRequestError"]),
+            "instrumentation-client" => names.push("onRouterTransitionStart"),
+            "mdx-components" => names.push("useMDXComponents"),
+            _ => {}
+        }
+    }
+    names
+}
+
 /// Packages that make Vite the project's bundler. `vitest` implies a Vite
 /// toolchain, and `rolldown-vite` is the drop-in Vite distribution.
 const VITE_ENABLERS: &[&str] = &["vite", "vitest", "rolldown-vite"];
@@ -1724,83 +1896,14 @@ impl<'a> Builder<'a> {
                 || root_convention;
             let pages_entry = is_pages;
             if app_entry || pages_entry {
-                let mut public_names: Vec<&str> = vec![
-                    "default",
-                    "page",
-                    "layout",
-                    "route",
-                    "metadata",
-                    "Head",
-                    "pageQuery",
-                    "generateMetadata",
-                    "viewport",
-                    "generateViewport",
-                    "generateStaticParams",
-                    "generateSitemaps",
-                    "getServerSideProps",
-                    "getStaticProps",
-                    "getStaticPaths",
-                    "getInitialProps",
-                    "register",
-                    "onRequestError",
-                    "onRequestInit",
-                    "onRouterTransitionStart",
-                    "proxy",
-                    "middleware",
-                    "config",
-                    "dynamic",
-                    "revalidate",
-                    "runtime",
-                    "fetchCache",
-                    "dynamicParams",
-                    "preferredRegion",
-                    "maxDuration",
-                    // Cache Components segment config. `instant` and `prefetch`
-                    // replaced their `unstable_` spellings in Next.js 16.3;
-                    // keep the older names for projects on 16.0-16.2.
-                    "ensureStatic",
-                    "instant",
-                    "unstable_instant",
-                    "prefetch",
-                    "unstable_prefetch",
-                    "experimental_ppr",
-                    "GET",
-                    "POST",
-                    "PUT",
-                    "PATCH",
-                    "DELETE",
-                    "HEAD",
-                    "OPTIONS",
-                ];
-                // Metadata image routes export a small, fixed API. Keep it scoped
-                // to those files so a `size` export on a page is still analyzed.
-                if matches!(
+                let public_names = next_framework_exports(
                     stem,
-                    "icon" | "apple-icon" | "opengraph-image" | "twitter-image"
-                ) {
-                    public_names.extend(["size", "contentType", "alt", "generateImageMetadata"]);
-                }
-                if stem == "mdx-components" {
-                    public_names.push("useMDXComponents");
-                }
-                // Next reads the per-page dynamic stale time from the page
-                // module. Fallow's Next plugin names it on pages, not layouts.
-                if stem == "page" {
-                    public_names.push("unstable_dynamicStaleTime");
-                }
-                // Next.js 16.4 reads dynamic param matching from both page
-                // and layout modules (`collectAppPageSegments`). The generated
-                // route type guards allow the pair on the same stems; route
-                // handlers are excluded.
-                if matches!(stem, "page" | "layout") {
-                    public_names
-                        .extend(["unstable_paramMatching", "unstable_generateParamMatching"]);
-                }
-                // Next.js calls `reportWebVitals` when it is exported from the
-                // Pages Router `_app` file, but it is not imported by code.
-                if stem == "_app" {
-                    public_names.push("reportWebVitals");
-                }
+                    package_path,
+                    configured_extensions,
+                    is_app,
+                    is_pages,
+                    root_convention,
+                );
                 for name in public_names {
                     if let Some(key) = self.resolve_export(path, name, &mut BTreeSet::new()) {
                         add(
@@ -5111,6 +5214,204 @@ mod tests {
             "app/layout.tsx#unusedLayoutHelper",
             "app/page.tsx#unusedPageHelper",
         ] {
+            assert!(
+                snapshot.candidates.iter().any(|candidate| candidate == key),
+                "{key} should remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn next_framework_exports_are_scoped_to_each_file_type() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"app","dependencies":{"next":"^16.0.0","react":"^19.0.0","@next/mdx":"^16.0.0"}}"#,
+            ),
+            (
+                "app/page.tsx",
+                "export const metadata = {};\nexport async function generateMetadata() { return {}; }\nexport const getStaticProps = async () => ({ props: {} });\nexport function Head() { return null; }\nexport const pageQuery = 'q';\nexport function getInitialProps() { return {}; }\nexport function middleware() { return null; }\nexport function register() { return null; }\nexport function GET() { return null; }\nexport const config = {};\nexport function unusedPageHelper() { return 1; }\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "app/layout.tsx",
+                "export const preferredRegion = 'syd1';\nexport const unstable_dynamicStaleTime = 5;\nexport const config = {};\nexport function unusedLayoutHelper() { return 1; }\nexport default function Layout() { return null; }\n",
+            ),
+            (
+                "app/route.ts",
+                "export async function GET() { return new Response('ok'); }\nexport const metadata = {};\nexport const config = {};\nexport default function handler() { return null; }\nexport const generateStaticParams = () => [];\nexport function unusedRouteHelper() { return 1; }\n",
+            ),
+            (
+                "app/not-found.tsx",
+                "export const metadata = { title: 'missing' };\nexport const generateStaticParams = () => [];\nexport default function NotFound() { return null; }\n",
+            ),
+            (
+                "app/global-not-found.tsx",
+                "export const metadata = { title: 'missing' };\nexport default function GlobalNotFound() { return null; }\n",
+            ),
+            (
+                "app/loading.tsx",
+                "export const metadata = {};\nexport const config = {};\nexport default function Loading() { return null; }\n",
+            ),
+            (
+                "app/sitemap.ts",
+                "export function generateSitemaps() { return []; }\nexport const metadata = {};\nexport function unusedSitemapHelper() { return 1; }\nexport default function sitemap() { return []; }\n",
+            ),
+            (
+                "app/icon.tsx",
+                "export const size = { width: 32, height: 32 };\nexport const contentType = 'image/png';\nexport const alt = 'icon';\nexport function generateImageMetadata() { return []; }\nexport default function Icon() { return null; }\n",
+            ),
+            (
+                "app/opengraph-image.tsx",
+                "export const alt = 'og';\nexport const size = { width: 1200, height: 630 };\nexport const contentType = 'image/png';\nexport function generateImageMetadata() { return []; }\nexport default function Image() { return null; }\n",
+            ),
+            (
+                "pages/index.tsx",
+                "export async function getStaticProps() { return { props: {} }; }\nexport async function getServerSideProps() { return { props: {} }; }\nexport async function getStaticPaths() { return { paths: [], fallback: false }; }\nexport const config = { runtime: 'edge' };\nexport const runtime = 'edge';\nexport const maxDuration = 10;\nexport const metadata = {};\nexport const dynamic = 'force-static';\nexport function GET() { return null; }\nexport function Head() { return null; }\nexport const pageQuery = 'q';\nexport function getInitialProps() { return {}; }\nexport function unusedPagesHelper() { return 1; }\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "pages/_app.tsx",
+                "export function reportWebVitals() {}\nexport async function getStaticProps() { return { props: {} }; }\nexport default function App() { return null; }\n",
+            ),
+            (
+                "pages/api/hello.ts",
+                "export const config = { runtime: 'edge' };\nexport async function getStaticProps() { return { props: {} }; }\nexport function GET() { return null; }\nexport default function handler() { return null; }\n",
+            ),
+            (
+                "pages/api.ts",
+                "export const config = { runtime: 'edge' };\nexport async function getStaticProps() { return { props: {} }; }\nexport default function handler() { return null; }\n",
+            ),
+            (
+                "pages/blog/_app.tsx",
+                "export function reportWebVitals() {}\nexport async function getStaticProps() { return { props: {} }; }\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "pages/_document.tsx",
+                "export const config = { runtime: 'edge' };\nexport async function getStaticProps() { return { props: {} }; }\nexport default function Document() { return null; }\n",
+            ),
+            (
+                "middleware.ts",
+                "export function middleware() {}\nexport const config = {};\nexport function register() {}\nexport const metadata = {};\n",
+            ),
+            (
+                "proxy.ts",
+                "export function proxy() {}\nexport const config = {};\nexport function middleware() {}\n",
+            ),
+            (
+                "instrumentation.ts",
+                "export function register() {}\nexport function onRequestError() {}\nexport function onRequestInit() {}\nexport default function init() {}\n",
+            ),
+            (
+                "instrumentation-client.ts",
+                "export function onRouterTransitionStart() {}\nexport function register() {}\n",
+            ),
+            (
+                "mdx-components.tsx",
+                "export function useMDXComponents() { return {}; }\nexport const metadata = {};\nexport default function Components() { return null; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for key in [
+            "app/page.tsx#default",
+            "app/page.tsx#metadata",
+            "app/page.tsx#generateMetadata",
+            "app/layout.tsx#default",
+            "app/layout.tsx#preferredRegion",
+            "app/route.ts#GET",
+            "app/route.ts#generateStaticParams",
+            "app/not-found.tsx#default",
+            "app/not-found.tsx#metadata",
+            "app/global-not-found.tsx#default",
+            "app/loading.tsx#default",
+            "app/sitemap.ts#default",
+            "app/sitemap.ts#generateSitemaps",
+            "app/icon.tsx#default",
+            "app/icon.tsx#size",
+            "app/icon.tsx#contentType",
+            "app/icon.tsx#generateImageMetadata",
+            "app/opengraph-image.tsx#default",
+            "app/opengraph-image.tsx#alt",
+            "pages/index.tsx#default",
+            "pages/index.tsx#getStaticProps",
+            "pages/index.tsx#getServerSideProps",
+            "pages/index.tsx#getStaticPaths",
+            "pages/index.tsx#config",
+            "pages/index.tsx#runtime",
+            "pages/index.tsx#maxDuration",
+            "pages/_app.tsx#default",
+            "pages/_app.tsx#reportWebVitals",
+            "pages/api/hello.ts#default",
+            "pages/api/hello.ts#config",
+            "pages/api.ts#default",
+            "pages/api.ts#config",
+            "pages/blog/_app.tsx#default",
+            "pages/blog/_app.tsx#getStaticProps",
+            "pages/_document.tsx#default",
+            "pages/_document.tsx#config",
+            "middleware.ts#middleware",
+            "middleware.ts#config",
+            "proxy.ts#proxy",
+            "proxy.ts#config",
+            "instrumentation.ts#register",
+            "instrumentation.ts#onRequestError",
+            "instrumentation-client.ts#onRouterTransitionStart",
+            "mdx-components.tsx#useMDXComponents",
+        ] {
+            assert!(
+                entries.contains(&key),
+                "{key} is framework API and must be an entry: {entries:?}"
+            );
+        }
+        for key in [
+            "app/page.tsx#getStaticProps",
+            "app/page.tsx#Head",
+            "app/page.tsx#pageQuery",
+            "app/page.tsx#getInitialProps",
+            "app/page.tsx#middleware",
+            "app/page.tsx#register",
+            "app/page.tsx#GET",
+            "app/page.tsx#config",
+            "app/page.tsx#unusedPageHelper",
+            "app/layout.tsx#unstable_dynamicStaleTime",
+            "app/layout.tsx#config",
+            "app/layout.tsx#unusedLayoutHelper",
+            "app/route.ts#metadata",
+            "app/route.ts#config",
+            "app/route.ts#default",
+            "app/route.ts#unusedRouteHelper",
+            "app/not-found.tsx#generateStaticParams",
+            "app/global-not-found.tsx#metadata",
+            "app/loading.tsx#metadata",
+            "app/loading.tsx#config",
+            "app/sitemap.ts#metadata",
+            "app/sitemap.ts#unusedSitemapHelper",
+            "app/icon.tsx#alt",
+            "pages/index.tsx#metadata",
+            "pages/index.tsx#dynamic",
+            "pages/index.tsx#GET",
+            "pages/index.tsx#Head",
+            "pages/index.tsx#pageQuery",
+            "pages/index.tsx#getInitialProps",
+            "pages/index.tsx#unusedPagesHelper",
+            "pages/_app.tsx#getStaticProps",
+            "pages/api/hello.ts#getStaticProps",
+            "pages/api/hello.ts#GET",
+            "pages/api.ts#getStaticProps",
+            "pages/blog/_app.tsx#reportWebVitals",
+            "pages/_document.tsx#getStaticProps",
+            "middleware.ts#register",
+            "middleware.ts#metadata",
+            "proxy.ts#middleware",
+            "instrumentation.ts#onRequestInit",
+            "instrumentation.ts#default",
+            "instrumentation-client.ts#register",
+            "mdx-components.tsx#metadata",
+            "mdx-components.tsx#default",
+        ] {
+            assert!(
+                !entries.contains(&key),
+                "{key} is not read by Next.js and must stay a candidate: {entries:?}"
+            );
             assert!(
                 snapshot.candidates.iter().any(|candidate| candidate == key),
                 "{key} should remain a candidate: {:?}",

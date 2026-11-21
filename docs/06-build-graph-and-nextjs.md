@@ -583,11 +583,26 @@ These are entries and are never deletion candidates:
   the same stems in a route group, parallel slot, or nested segment, so they
   stay analyzable there. The same applies under `src/app/`;
 - `app/**/not-found.tsx`, `app/**/error.tsx`, `app/**/loading.tsx`, and
-  `app/**/template.tsx`;
-- metadata exports: `metadata`, `generateMetadata`, `viewport`,
-  `generateViewport`, `generateStaticParams`, `generateSitemaps`.
+  `app/**/template.tsx`.
 
-The matcher config in `proxy.ts` / `middleware.ts` is parsed but not evaluated;
+The exports read from each convention file are scoped to its file type, not a
+union:
+
+- pages read `default`, metadata/viewport, static params, parameter matching,
+  and segment config, plus page-only `unstable_dynamicStaleTime`;
+- layouts and `default` files read the same surface without
+  `unstable_dynamicStaleTime`;
+- route handlers read HTTP methods, `generateStaticParams`, and segment config,
+  but no metadata/viewport or parameter matching;
+- `not-found`, `forbidden`, and `unauthorized` read `default` plus
+  metadata/viewport; `global-not-found`, `template`, `loading`, `error`, and
+  `global-error` read only `default`;
+- `sitemap` adds `generateSitemaps`; image routes read `size`, `contentType`,
+  `alt` (Open Graph and Twitter only), and `generateImageMetadata`. Every
+  metadata route reads `generateStaticParams` and segment config.
+
+Names outside the surface for that file stay analyzable. The matcher config in
+`proxy.ts` / `middleware.ts` is parsed but not evaluated;
 the export itself is the entry. A matcher that excludes everything is still an
 entry, because it can be changed without touching the file.
 

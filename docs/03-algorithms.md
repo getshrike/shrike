@@ -328,19 +328,53 @@ analyzable.
   `app/@slot/robots.ts`, and `app/nested/global-error.tsx`. `middleware`,
   `proxy`, and instrumentation live at the package root or `src/`, never under
   `app/`;
-- image-route metadata: `size`, `contentType`, `alt`, `generateImageMetadata`
-  (scoped to image-route stems, never global);
 - `proxy.ts` (Next.js 16) and `middleware.ts` (15) exports;
 - `instrumentation.ts` and `instrumentation-client.ts` at the package root or
-  `src/`, with `register`, `onRequestError`, `onRequestInit`, and
-  `onRouterTransitionStart` as the framework API. Other exports in those files
+  `src/`, with `register` and `onRequestError` (server) or
+  `onRouterTransitionStart` (client) as the framework API. `onRequestInit` is
+  not read by Next.js 16.4.6 and stays analyzable. Other exports in those files
   stay analyzable, and a nested module that merely shares the name
   `instrumentation` is not a convention;
 - `mdx-components.tsx` `useMDXComponents` and the MDX ESM boundary, only when
   the owning package or the workspace root declares `@next/mdx`: that package
   aliases `next-mdx-import-source-file` to the root or `src/` component map,
   while Next core does not load the file by name. An unreferenced map in a Next
-  app without `@next/mdx` stays analyzable, and a missing manifest fails open;
+  app without `@next/mdx` stays analyzable, and a missing manifest fails open.
+
+The exports Next.js reads are scoped to the file type. A name that is framework
+API on one stem is ordinary application code on another; protecting the union on
+every entry would hide dead exports. Verified against Next.js 16.4.6 source and
+real `next build` probes:
+
+- `page`: `default`, `metadata`, `generateMetadata`, `viewport`,
+  `generateViewport`, `generateStaticParams`, `unstable_paramMatching`,
+  `unstable_generateParamMatching`, `unstable_dynamicStaleTime`, and segment
+  config;
+- `layout` and `default`: `default`, metadata/viewport, static params and
+  parameter matching, and segment config. `unstable_dynamicStaleTime` is
+  page-only: Next.js rejects it in a layout and reads it only from page modules;
+- `route`: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`,
+  `generateStaticParams`, and segment config. Route handlers do not read
+  metadata/viewport, `default`, or parameter matching; Next.js throws when a
+  route exports parameter matching;
+- `not-found`, `forbidden`, and `unauthorized`: `default` plus
+  metadata/viewport. These boundaries render with an HTTP access `errorType`,
+  which reads their metadata;
+- `global-not-found`, `template`, `loading`, `error`, and `global-error`:
+  `default` only. `global-not-found` renders with `errorType` undefined, so its
+  metadata is not read;
+- `sitemap`: `default`, `generateSitemaps`, `generateStaticParams`, and segment
+  config;
+- `robots` and `manifest`: `default`, `generateStaticParams`, and segment
+  config;
+- `icon` and `apple-icon`: `default`, `size`, `contentType`,
+  `generateImageMetadata`, `generateStaticParams`, and segment config;
+- `opengraph-image` and `twitter-image`: the icon surface plus `alt`;
+- segment config: `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`,
+  `runtime`, `preferredRegion`, `maxDuration`, Cache Components `ensureStatic`
+  (16.4), `instant`/`prefetch` (16.3), their
+  `unstable_instant`/`unstable_prefetch` predecessors (16.0-16.2), and
+  `experimental_ppr` for the documented 15.x fallback;
 - `"use server"` module exports under `serverActionPolicy: "protect"`. The
   default `graph` policy treats an action like any other export, so an action no
   module references is reported; an import, `action={fn}` binding, or any other
@@ -437,16 +471,6 @@ analyzable.
   gate, emits one warning per client root, anchors on the first import of the
   shortest path, and names the sink plus the full path. It follows fallow
   3.45.0's `client_server_leak` detector;
-- metadata exports: `metadata`, `generateMetadata`, `viewport`,
-  `generateViewport`, `generateStaticParams`, `generateSitemaps`;
-- dynamic param matching (Next.js 16.4): `unstable_paramMatching` and
-  `unstable_generateParamMatching` on `page` and `layout` modules. Route
-  handlers and other App Router stems do not consume them, so the same names
-  stay analyzable there;
-- segment config: `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`,
-  `runtime`, `preferredRegion`, `maxDuration`; Cache Components config
-  `ensureStatic` (16.4), `instant`/`prefetch` (16.3) and their
-  `unstable_instant`/`unstable_prefetch` predecessors (16.0-16.2);
 - a root `server.{js,mjs,cjs,ts,mts,cts}` in a package that declares `next` is
   the custom HTTP server that replaces `next start`. Its module is an entry, so
   top-level work and imports stay live, but its named exports are not read by
@@ -474,9 +498,19 @@ analyzable.
 - `pages/**` default exports;
 - `pages/**` Markdown files when `pageExtensions` includes `md` or `mdx`; their
   ESM imports are reachability edges;
-- `pages/api/**` HTTP method exports;
-- `_app`, `_document`, `_error`;
-- `getServerSideProps`, `getStaticProps`, `getStaticPaths`, `getInitialProps`;
+- an ordinary page reads `default`, `getStaticProps`, `getServerSideProps`,
+  `getStaticPaths`, `config`, `runtime`, and `maxDuration`. A named
+  `getInitialProps` export is not read: Next.js calls the method on the default
+  component, which is already an entry;
+- an API route reads `default`, `config`, `runtime`, and `maxDuration`. HTTP
+  method exports and data-fetching functions stay analyzable. This includes
+  `pages/api.{ts,tsx,js,jsx}`, the `/api` route, not only files under
+  `pages/api/`;
+- `_app` at the pages root adds `reportWebVitals` to the ordinary surface;
+  `_document` and `_error` at the pages root read `default`, `config`, `runtime`,
+  and `maxDuration` but no data-fetching functions. A nested `_app`, `_document`,
+  or `_error` is an ordinary page: Next.js reserves only `/_app`, `/_error`,
+  `/_document`, and `/api` (`RESERVED_PAGE`);
 - a Pages Router page that combines data-fetching exports or runtime
   configuration Next.js rejects at build time produces an
   `invalid_pages_router_export` error, not a finding. The definite combinations
