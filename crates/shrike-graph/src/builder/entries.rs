@@ -10,6 +10,7 @@ use super::Builder;
 use crate::cosmos_config;
 use crate::docusaurus_config;
 use crate::gatsby_config;
+use crate::ladle_config;
 use crate::storybook_config;
 use crate::types::EntryRecord;
 use crate::util::route_of;
@@ -736,6 +737,7 @@ impl<'a> Builder<'a> {
         let mut cosmos_packages: BTreeSet<String> = BTreeSet::new();
         let mut docusaurus_packages: BTreeSet<String> = BTreeSet::new();
         let mut gatsby_packages: BTreeSet<String> = BTreeSet::new();
+        let mut ladle_packages: BTreeSet<String> = BTreeSet::new();
         for package in self.resolver.packages() {
             if package_depends_on_any(self.resolver.root(), &package.directory, VITE_ENABLERS) {
                 vite_packages.insert(package.directory.clone());
@@ -763,6 +765,9 @@ impl<'a> Builder<'a> {
                 &["gatsby", "gatsby-cli"],
             ) {
                 gatsby_packages.insert(package.directory.clone());
+            }
+            if package_depends_on(self.resolver.root(), &package.directory, "@ladle/react") {
+                ladle_packages.insert(package.directory.clone());
             }
         }
         let mut expo_layout_packages: BTreeSet<String> = BTreeSet::new();
@@ -1007,6 +1012,58 @@ impl<'a> Builder<'a> {
                 if matcher.is_match(path) {
                     storybook_story_files.insert((*path).to_string());
                 }
+            }
+        }
+        // Ladle loads `.ladle/components.*` as the provider entry and discovers
+        // stories from its default `src/**/*.stories.*` glob. A
+        // `.ladle/config.*` file can replace that glob, and can point at a Vite
+        // config that Ladle executes. Computed story values fall back to the
+        // default glob so a dynamic config cannot erase story protection.
+        let mut ladle_story_files: BTreeSet<String> = BTreeSet::new();
+        let mut ladle_entry_files: BTreeSet<String> = BTreeSet::new();
+        for package_directory in &ladle_packages {
+            let mut patterns: Vec<String> = Vec::new();
+            let mut saw_config = false;
+            for summary in &summaries {
+                if !ladle_config::is_config_path(&summary.path)
+                    || ladle_config::package_directory(&summary.path)
+                        != Some(package_directory.as_str())
+                {
+                    continue;
+                }
+                saw_config = true;
+                ladle_entry_files.insert(summary.path.clone());
+                let Ok(source) = fs::read_to_string(self.resolver.root().join(&summary.path))
+                else {
+                    continue;
+                };
+                let scan = ladle_config::scan(&summary.path, &source);
+                patterns.extend(ladle_config::story_patterns(package_directory, &scan));
+                if let Some(vite_config) = ladle_config::vite_config(package_directory, &scan) {
+                    ladle_entry_files.insert(vite_config);
+                }
+            }
+            if !saw_config {
+                patterns.extend(ladle_config::story_patterns(
+                    package_directory,
+                    &ladle_config::ConfigScan::default(),
+                ));
+            }
+            let Some(matcher) = storybook_config::matcher(&patterns) else {
+                continue;
+            };
+            for path in &analyzed {
+                if matcher.is_match(path) {
+                    ladle_story_files.insert((*path).to_string());
+                }
+            }
+        }
+        for summary in &summaries {
+            if ladle_config::is_components_path(&summary.path)
+                && ladle_config::package_directory(&summary.path)
+                    .is_some_and(|package| ladle_packages.contains(package))
+            {
+                ladle_entry_files.insert(summary.path.clone());
             }
         }
         // React Cosmos loads fixture and decorator modules by convention instead
@@ -1900,6 +1957,8 @@ impl<'a> Builder<'a> {
                 || path.starts_with(".rnstorybook/")
                 || path.contains("/.rnstorybook/")
                 || storybook_story_files.contains(path)
+                || ladle_story_files.contains(path)
+                || ladle_entry_files.contains(path)
                 // Storybook's default glob includes every MDX page. Docs pages
                 // are entries, and their ESM imports keep rendered components
                 // live. Gate on the dependency so ordinary `.mdx` content
@@ -2820,6 +2879,164 @@ export default config;
                 snapshot.candidates
             );
         }
+    }
+
+    fn ladle_app(package_json: &str) -> GraphSnapshot {
+        snapshot(&[
+            ("package.json", package_json),
+            (
+                ".ladle/config.mjs",
+                r#"export default {
+  stories: ["src/**/*.stories.tsx", "src/**/*.demo.tsx"],
+  viteConfig: "./ladle-vite.ts",
+};
+"#,
+            ),
+            (
+                ".ladle/components.tsx",
+                "import { LadleShell } from \"./shell\";\nexport const Provider = ({ children }) => <LadleShell>{children}</LadleShell>;\nexport function unusedComponentsHelper() { return 0; }\n",
+            ),
+            (
+                ".ladle/shell.tsx",
+                "export function LadleShell({ children }) { return <div>{children}</div>; }\nexport function unusedShellHelper() { return 1; }\n",
+            ),
+            (
+                "ladle-vite.ts",
+                "import { plugin } from \"./ladle-plugin\";\nexport default { plugins: [plugin()] };\nexport function unusedViteHelper() { return 2; }\n",
+            ),
+            (
+                "ladle-plugin.ts",
+                "export function plugin() { return { name: \"ladle-fixture\" }; }\n",
+            ),
+            (
+                "src/components/button.tsx",
+                "export function Button() { return <button />; }\nexport function unusedButtonHelper() { return 3; }\n",
+            ),
+            (
+                "src/button.stories.tsx",
+                "import { Button } from \"./components/button\";\nexport const Primary = () => <Button />;\nexport const unusedStoryHelper = () => 4;\n",
+            ),
+            (
+                "src/widget.demo.tsx",
+                "export function DemoWidget() { return <section />; }\nexport function unusedDemoHelper() { return 5; }\n",
+            ),
+            (
+                "src/dead.tsx",
+                "export function DeadThing() { return 6; }\n",
+            ),
+        ])
+    }
+
+    #[test]
+    fn ladle_components_config_and_custom_stories_are_entries() {
+        let snapshot =
+            ladle_app(r#"{"name":"ladle-app","devDependencies":{"@ladle/react":"^4.1.2"}}"#);
+        let entries = entry_symbols(&snapshot);
+        for key in [
+            ".ladle/config.mjs#__module__",
+            ".ladle/components.tsx#__module__",
+            ".ladle/components.tsx#Provider",
+            ".ladle/components.tsx#unusedComponentsHelper",
+            "ladle-vite.ts#__module__",
+            "ladle-vite.ts#unusedViteHelper",
+            "src/button.stories.tsx#__module__",
+            "src/button.stories.tsx#Primary",
+            "src/button.stories.tsx#unusedStoryHelper",
+            "src/widget.demo.tsx#__module__",
+            "src/widget.demo.tsx#DemoWidget",
+            "src/widget.demo.tsx#unusedDemoHelper",
+        ] {
+            assert!(
+                entries.contains(&key),
+                "{key} is part of Ladle's entry surface: {entries:?}"
+            );
+        }
+        for key in [
+            ".ladle/shell.tsx#LadleShell",
+            "ladle-plugin.ts#plugin",
+            "src/components/button.tsx#Button",
+        ] {
+            assert!(
+                snapshot.is_live(key),
+                "{key} is imported by a Ladle entry: {:?}",
+                snapshot.live
+            );
+        }
+        for key in [
+            ".ladle/shell.tsx#unusedShellHelper",
+            "src/components/button.tsx#unusedButtonHelper",
+            "src/dead.tsx#DeadThing",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "{key} is unused and must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn ladle_entries_require_the_dependency() {
+        let snapshot = ladle_app(r#"{"name":"plain-app","dependencies":{"react":"^19.0.0"}}"#);
+        for key in [
+            ".ladle/components.tsx#Provider",
+            ".ladle/components.tsx#unusedComponentsHelper",
+            ".ladle/shell.tsx#LadleShell",
+            "ladle-vite.ts#unusedViteHelper",
+            "ladle-plugin.ts#plugin",
+            "src/widget.demo.tsx#DemoWidget",
+            "src/widget.demo.tsx#unusedDemoHelper",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "without Ladle the entry surface must not protect {key}: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    fn ladle_default_app(package_json: &str) -> GraphSnapshot {
+        snapshot(&[
+            ("package.json", package_json),
+            (
+                ".ladle/components.tsx",
+                "import { LadleShell } from \"./shell\";\nexport const Provider = ({ children }) => <LadleShell>{children}</LadleShell>;\n",
+            ),
+            (
+                ".ladle/shell.tsx",
+                "export function LadleShell({ children }) { return <div>{children}</div>; }\n",
+            ),
+            (
+                "src/MdxCard.tsx",
+                "export function MdxCard() { return <div>docs</div>; }\nexport function unusedMdxHelper() { return 1; }\n",
+            ),
+            (
+                "src/Intro.stories.mdx",
+                "import { MdxCard } from \"./MdxCard\";\n\n# Introduction\n\n<MdxCard />\n",
+            ),
+        ])
+    }
+
+    #[test]
+    fn ladle_default_story_glob_includes_mdx_pages() {
+        let snapshot = ladle_default_app(
+            r#"{"name":"ladle-app","devDependencies":{"@ladle/react":"^4.1.2"}}"#,
+        );
+        let entries = entry_symbols(&snapshot);
+        assert!(
+            entries.contains(&"src/Intro.stories.mdx#__module__"),
+            "Ladle's default story glob includes MDX under src: {entries:?}"
+        );
+        assert!(
+            snapshot.is_live("src/MdxCard.tsx#MdxCard"),
+            "the component rendered by the MDX story must be live: {:?}",
+            snapshot.live
+        );
+        assert!(
+            snapshot.is_candidate("src/MdxCard.tsx#unusedMdxHelper"),
+            "unused helper exports stay candidates: {:?}",
+            snapshot.candidates
+        );
     }
 
     #[test]

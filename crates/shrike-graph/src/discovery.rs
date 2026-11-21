@@ -92,13 +92,14 @@ pub fn discover(root: &Path, config: &EngineConfig) -> Discovery {
         let Some(name) = entry.file_name().to_str() else {
             return true;
         };
-        // Storybook keeps its configuration and preview/manager modules in a
+        // Storybook and Ladle keep configuration and provider modules in a
         // hidden directory. They are executable project files, not editor or
         // tooling metadata, so the walker must descend into them.
         if name.starts_with('.')
             && name != ".well-known"
             && name != ".storybook"
             && name != ".rnstorybook"
+            && name != ".ladle"
         {
             return false;
         }
@@ -411,6 +412,42 @@ mod tests {
                 ".storybook/preview.tsx",
             ],
             "Storybook directories are executable project files; other hidden directories stay excluded"
+        );
+    }
+
+    #[test]
+    fn ladle_configuration_directories_are_walked() {
+        let directory = tempdir().expect("tempdir");
+        let root = directory.path();
+        write(
+            root,
+            ".ladle/config.mjs",
+            "export default { stories: [\"src/**/*.demo.tsx\"] };\n",
+        );
+        write(
+            root,
+            ".ladle/components.tsx",
+            "export const Provider = () => null;\n",
+        );
+        write(
+            root,
+            ".ladle/shell.tsx",
+            "export const Shell = () => null;\n",
+        );
+        write(
+            root,
+            ".github/workflows/ci.ts",
+            "export const ignored = 1;\n",
+        );
+        let files = discover_files(root, &EngineConfig::default());
+        assert_eq!(
+            files,
+            vec![
+                ".ladle/components.tsx",
+                ".ladle/config.mjs",
+                ".ladle/shell.tsx",
+            ],
+            "Ladle's provider and config files are executable project files; other hidden directories stay excluded"
         );
     }
 

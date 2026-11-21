@@ -161,8 +161,9 @@ CSR is used because it is cache-friendly, deterministic, and cheap to serialize.
 
 1. Read `shrike.config.ts` in the host; pass a normalized config to the engine.
 2. Walk the include set; skip ignores, `.git`, `node_modules`, build outputs.
-   Hidden directories are editor/tooling metadata except `.storybook` and
-   `.rnstorybook`, whose configuration and preview modules are executable.
+   Hidden directories are editor/tooling metadata except `.storybook`,
+   `.rnstorybook`, and `.ladle`, whose configuration, preview, and provider
+   modules are executable.
 3. Read `pageExtensions` from each `next.config.*` and add the Markdown files
    that become routes: every `.md`/`.mdx` under `pages/` or `src/pages/`, and
    convention-stem files under `app/` or `src/app/`. A config only applies to
@@ -392,6 +393,16 @@ configuration in Node.
   anchored at the main-config directory. Computed and negated patterns are
   skipped; preview, manager, and decorator modules are entries and their
   imports stay live;
+- Ladle stories and provider modules. When the owning package depends on
+  `@ladle/react`, `.ladle/components.{js,jsx,ts,tsx}` and `.ladle/config.*` are
+  entries, and every export of the components file is part of the provider
+  surface. Story modules come from Ladle's default
+  `src/**/*.stories.{js,jsx,ts,tsx,mdx}` glob, or from literal string/array
+  `stories` values in `.ladle/config.*` anchored at the package root. A literal
+  `viteConfig` path is also an entry, since Ladle executes it. Computed story
+  values fall back to the default glob; computed Vite paths are skipped. The
+  hidden `.ladle` directory is walked because it holds executable project
+  files;
 - React Cosmos fixture and decorator files. When the owning package depends on
   `react-cosmos`, Cosmos's own user-module patterns are entries:
   `**/<fixturesDir>/**/*.{js,jsx,ts,tsx,md,mdx}`,
