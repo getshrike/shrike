@@ -4471,6 +4471,243 @@ mod tests {
     }
 
     #[test]
+    fn pages_router_data_and_runtime_conflicts_are_build_errors() {
+        let next_snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"pages-app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "packages/plain/package.json",
+                r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            (
+                "pages/both.tsx",
+                "export default function Page() { return null; }\nexport const unusedHelper = 1;\nexport async function getStaticProps() { return { props: {} }; }\nexport async function getServerSideProps() { return { props: {} }; }\n",
+            ),
+            (
+                "pages/gip-gsp.tsx",
+                "function Page() { return null; }\nPage.getInitialProps = async () => ({});\nexport default Page;\nexport async function getStaticProps() { return { props: {} }; }\n",
+            ),
+            (
+                "pages/gip-gssp.tsx",
+                "export default class Page {\n  static async getInitialProps() { return {}; }\n  render() { return null; }\n}\nexport async function getServerSideProps() { return { props: {} }; }\n",
+            ),
+            (
+                "pages/gip-default-export.tsx",
+                "export default function Page() { return null; }\nPage.getInitialProps = async () => ({});\nexport async function getServerSideProps() { return { props: {} }; }\n",
+            ),
+            (
+                "pages/gip-export-specifier.tsx",
+                "function Page() { return null; }\nPage.getInitialProps = async () => ({});\nexport { Page as default };\nexport async function getStaticProps() { return { props: {} }; }\n",
+            ),
+            (
+                "pages/static-paths.tsx",
+                "export default function Page() { return null; }\nexport async function getStaticProps() { return { props: {} }; }\nexport async function getStaticPaths() { return { paths: [], fallback: false }; }\n",
+            ),
+            (
+                "pages/[slug].tsx",
+                "export default function Page() { return null; }\nexport async function getStaticProps() { return { props: {} }; }\n",
+            ),
+            (
+                "pages/paths-only.tsx",
+                "export default function Page() { return null; }\nexport async function getStaticPaths() { return { paths: [], fallback: false }; }\n",
+            ),
+            (
+                "pages/[id].tsx",
+                "export default function Page() { return null; }\nexport async function getStaticPaths() { return { paths: [], fallback: false }; }\n",
+            ),
+            (
+                "pages/gssp-paths.tsx",
+                "export default function Page() { return null; }\nexport async function getServerSideProps() { return { props: {} }; }\nexport async function getStaticPaths() { return { paths: [], fallback: false }; }\n",
+            ),
+            (
+                "pages/valid/[id].tsx",
+                "export default function Page() { return null; }\nexport async function getStaticProps() { return { props: {} }; }\nexport async function getStaticPaths() { return { paths: [], fallback: false }; }\n",
+            ),
+            // Next.js does not prerender a getInitialProps page, so
+            // getStaticPaths without getStaticProps only fails at request time.
+            (
+                "pages/gip-paths.tsx",
+                "function Page() { return null; }\nPage.getInitialProps = async () => ({});\nexport default Page;\nexport async function getStaticPaths() { return { paths: [], fallback: false }; }\n",
+            ),
+            // Only the default component's getInitialProps counts.
+            (
+                "pages/named-gip.tsx",
+                "export const getInitialProps = async () => ({});\nexport default function Page() { return null; }\nexport async function getStaticProps() { return { props: {} }; }\n",
+            ),
+            (
+                "pages/helper-gip.tsx",
+                "const Helper = () => null;\nHelper.getInitialProps = async () => ({});\nexport default function Page() { return null; }\nexport async function getStaticProps() { return { props: {} }; }\n",
+            ),
+            // Type-only exports are erased before Next.js loads the page.
+            (
+                "pages/type-only.tsx",
+                "type Data = { props: {} };\nexport type { Data as getStaticProps };\nexport type { Data as getServerSideProps };\nexport default function Page() { return null; }\n",
+            ),
+            // A default-exported component named getStaticProps is not the
+            // named data-function export.
+            (
+                "pages/default-named.tsx",
+                "export default function getStaticProps() { return null; }\nexport async function getServerSideProps() { return { props: {} }; }\n",
+            ),
+            (
+                "pages/renamed.tsx",
+                "const load = async () => ({ props: {} });\nexport { load as getStaticProps };\nexport async function getServerSideProps() { return { props: {} }; }\n",
+            ),
+            (
+                "pages/reexport.tsx",
+                "export { getStaticProps } from './data';\nexport async function getServerSideProps() { return { props: {} }; }\n",
+            ),
+            (
+                "pages/data.ts",
+                "export async function getStaticProps() { return { props: {} }; }\n",
+            ),
+            (
+                "pages/edge.tsx",
+                "export default function Page() { return null; }\nexport const runtime = 'edge';\n",
+            ),
+            (
+                "pages/edge-config.tsx",
+                "export default function Page() { return null; }\nexport const config = { runtime: 'edge' };\n",
+            ),
+            (
+                "pages/experimental.tsx",
+                "export default function Page() { return null; }\nexport const config = { runtime: 'experimental-edge' };\n",
+            ),
+            (
+                "pages/_app.tsx",
+                "export default function App({ Component, pageProps }) { return <Component {...pageProps} />; }\nexport const config = { runtime: 'edge' };\n",
+            ),
+            (
+                "pages/_document.tsx",
+                "export default function Document() { return null; }\nexport async function getStaticProps() { return { props: {} }; }\nexport async function getServerSideProps() { return { props: {} }; }\n",
+            ),
+            (
+                "pages/api/edge.ts",
+                "export default function handler(req, res) { res.end('ok'); }\nexport const config = { runtime: 'edge' };\n",
+            ),
+            (
+                "pages/api/bad.ts",
+                "export default function handler(req, res) { res.end('ok'); }\nexport const config = { runtime: 'bogus' };\n",
+            ),
+            (
+                "pages/api/data.ts",
+                "export default function handler(req, res) { res.end('ok'); }\nexport async function getStaticProps() { return { props: {} }; }\nexport async function getServerSideProps() { return { props: {} }; }\n",
+            ),
+            (
+                "src/pages/src-both.tsx",
+                "export default function Page() { return null; }\nexport async function getStaticProps() { return { props: {} }; }\nexport async function getServerSideProps() { return { props: {} }; }\n",
+            ),
+            (
+                "packages/plain/pages/both.tsx",
+                "export default function Page() { return null; }\nexport async function getStaticProps() { return { props: {} }; }\nexport async function getServerSideProps() { return { props: {} }; }\n",
+            ),
+        ]);
+        let invalid: Vec<(&str, u32)> = next_snapshot
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "invalid_pages_router_export")
+            .map(|diagnostic| {
+                (
+                    diagnostic.file.as_deref().unwrap_or(""),
+                    diagnostic.span.map_or(0, |span| span.line),
+                )
+            })
+            .collect();
+        assert_eq!(
+            invalid,
+            vec![
+                ("pages/[id].tsx", 2),
+                ("pages/[slug].tsx", 2),
+                ("pages/_app.tsx", 2),
+                ("pages/api/bad.ts", 2),
+                ("pages/both.tsx", 4),
+                ("pages/edge-config.tsx", 2),
+                ("pages/edge.tsx", 2),
+                ("pages/gip-default-export.tsx", 3),
+                ("pages/gip-export-specifier.tsx", 4),
+                ("pages/gip-gsp.tsx", 4),
+                ("pages/gip-gssp.tsx", 5),
+                ("pages/gssp-paths.tsx", 2),
+                ("pages/paths-only.tsx", 2),
+                ("pages/reexport.tsx", 2),
+                ("pages/renamed.tsx", 3),
+                ("pages/static-paths.tsx", 3),
+                ("src/pages/src-both.tsx", 3),
+            ],
+            "{:?}",
+            next_snapshot.diagnostics
+        );
+        assert!(
+            next_snapshot
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "invalid_pages_router_export")
+                .all(|diagnostic| {
+                    diagnostic.severity == shrike_core::Severity::Error
+                        && diagnostic.message.contains("fails the build")
+                }),
+            "Pages Router conflicts are build errors: {:?}",
+            next_snapshot.diagnostics
+        );
+        assert!(
+            next_snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "pages/both.tsx#unusedHelper"),
+            "diagnostics must not change candidates: {:?}",
+            next_snapshot.candidates
+        );
+
+        // A configured `pageExtensions` list replaces Next.js's defaults.
+        let configured = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"pages-app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "next.config.ts",
+                "const config = { pageExtensions: ['page.tsx'] };\nexport default config;\n",
+            ),
+            (
+                "pages/ignored.tsx",
+                "export default function Page() { return null; }\nexport async function getStaticProps() { return { props: {} }; }\nexport async function getServerSideProps() { return { props: {} }; }\n",
+            ),
+            (
+                "pages/real.page.tsx",
+                "export default function Page() { return null; }\nexport async function getStaticProps() { return { props: {} }; }\nexport async function getServerSideProps() { return { props: {} }; }\n",
+            ),
+        ]);
+        let configured_files: Vec<&str> = configured
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "invalid_pages_router_export")
+            .map(|diagnostic| diagnostic.file.as_deref().unwrap_or(""))
+            .collect();
+        assert_eq!(
+            configured_files,
+            vec!["pages/real.page.tsx"],
+            "{:?}",
+            configured.diagnostics
+        );
+
+        // Without a manifest that declares Next.js, the same page is inert.
+        let no_manifest = snapshot(&[(
+            "pages/both.tsx",
+            "export default function Page() { return null; }\nexport async function getStaticProps() { return { props: {} }; }\nexport async function getServerSideProps() { return { props: {} }; }\n",
+        )]);
+        assert!(
+            no_manifest
+                .diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.code != "invalid_pages_router_export"),
+            "{:?}",
+            no_manifest.diagnostics
+        );
+    }
+
+    #[test]
     fn package_script_modules_are_entries() {
         let snapshot = snapshot(&[
             (

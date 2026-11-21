@@ -15,6 +15,7 @@ mod html;
 mod mdx;
 mod next_dynamic;
 mod next_segment;
+mod pages_router;
 mod refs;
 mod server_actions;
 mod statements;
@@ -95,6 +96,9 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
                 invalid_server_exports: Vec::new(),
                 next_segment_exports: Vec::new(),
                 exported_const_values: Vec::new(),
+                default_export_local: None,
+                default_export_has_get_initial_props: false,
+                pages_config_runtime: None,
                 misplaced_directives: Vec::new(),
                 imports: Vec::new(),
                 declarations: Vec::new(),
@@ -135,6 +139,9 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
             invalid_server_exports: Vec::new(),
             next_segment_exports: Vec::new(),
             exported_const_values: Vec::new(),
+            default_export_local: None,
+            default_export_has_get_initial_props: false,
+            pages_config_runtime: None,
             misplaced_directives: Vec::new(),
             imports: Vec::new(),
             declarations: Vec::new(),
@@ -173,6 +180,9 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
         invalid_server_exports: Vec::new(),
         next_segment_exports: Vec::new(),
         exported_const_values: Vec::new(),
+        default_export_local: None,
+        default_export_has_get_initial_props: false,
+        pages_config_runtime: None,
         misplaced_directives: Vec::new(),
         imports: Vec::new(),
         declarations: Vec::new(),
@@ -201,6 +211,11 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
         next_segment::next_segment_exports(&program, source, &line_index);
     summary.exported_const_values =
         next_segment::exported_const_values(&program, source, &line_index);
+    let pages_router = pages_router::pages_router_info(&program, source, &line_index);
+    summary.default_export_local = pages_router.default_export_local;
+    summary.default_export_has_get_initial_props =
+        pages_router.default_export_has_get_initial_props;
+    summary.pages_config_runtime = pages_router.pages_config_runtime;
     summary.client_only_dynamic_specifiers =
         next_dynamic::client_only_dynamic_specifiers(&program, &summary.imports);
     next_dynamic::assign_dynamic_spans(&program, source, &line_index, &mut summary);

@@ -153,7 +153,7 @@ pub(super) fn exported_const_values(
 /// Parentheses are deliberately not unwrapped: Next.js does not handle
 /// `ParenthesisExpression`, so `export const runtime = ('edge')` is not read
 /// as segment config. TypeScript assertion wrappers are handled.
-fn const_value(expression: &Expression<'_>) -> Option<ExportedConstValue> {
+pub(super) fn const_value(expression: &Expression<'_>) -> Option<ExportedConstValue> {
     match expression {
         Expression::TSAsExpression(inner) => const_value(&inner.expression),
         Expression::TSSatisfiesExpression(inner) => const_value(&inner.expression),

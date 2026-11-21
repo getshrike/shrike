@@ -315,6 +315,137 @@ export { destructured as generateStaticParams };
 }
 
 #[test]
+fn extracts_pages_router_component_metadata() {
+    for (source, expected) in [
+        ("export default function Page() {}\n", Some("Page")),
+        ("export default class Page {}\n", Some("Page")),
+        (
+            "const Page = () => null;\nexport default Page;\n",
+            Some("Page"),
+        ),
+        (
+            "function Page() {}\nexport { Page as default };\n",
+            Some("Page"),
+        ),
+        (
+            "const Page = () => null;\nexport default (Page);\n",
+            Some("Page"),
+        ),
+        ("export default function () {}\n", None),
+        ("export default memo(Page);\n", None),
+    ] {
+        let parsed = summary(source, "pages/index.tsx");
+        assert_eq!(
+            parsed.default_export_local.as_deref(),
+            expected,
+            "default export local for {source:?}"
+        );
+    }
+
+    for (source, expected) in [
+        (
+            "function Page() {}\nPage.getInitialProps = async () => ({});\nexport default Page;\n",
+            true,
+        ),
+        (
+            "export default function Page() {}\nPage.getInitialProps = async () => ({});\n",
+            true,
+        ),
+        (
+            "export default class Page {\n  static async getInitialProps() { return {}; }\n}\n",
+            true,
+        ),
+        (
+            "export default class {\n  static getInitialProps = async () => ({});\n}\n",
+            true,
+        ),
+        (
+            "const Page = class { static getInitialProps() {} };\nexport default Page;\n",
+            true,
+        ),
+        (
+            "export default class Page {}\nPage.getInitialProps = async () => ({});\n",
+            true,
+        ),
+        (
+            "export default function Page() {}\nPage.getInitialProps = undefined;\n",
+            false,
+        ),
+        (
+            "export default function Page() {}\nPage.getInitialProps = null;\n",
+            false,
+        ),
+        (
+            "export default class Page {\n  static getInitialProps = undefined;\n}\n",
+            false,
+        ),
+        (
+            "export default class Page {\n  static getInitialProps;\n}\n",
+            false,
+        ),
+        (
+            "export default class Page {\n  static getInitialProps = () => ({});\n}\n",
+            true,
+        ),
+        (
+            "const Helper = () => null;\nHelper.getInitialProps = async () => ({});\nexport default function Page() {}\n",
+            false,
+        ),
+        (
+            "export const getInitialProps = async () => ({});\nexport default function Page() {}\n",
+            false,
+        ),
+        (
+            "export default withAuth(Page);\nPage.getInitialProps = async () => ({});\n",
+            false,
+        ),
+        ("Page.getInitialProps = async () => ({});\n", false),
+    ] {
+        let parsed = summary(source, "pages/index.tsx");
+        assert_eq!(
+            parsed.default_export_has_get_initial_props, expected,
+            "getInitialProps for {source:?}"
+        );
+    }
+
+    for (source, expected) in [
+        ("export const config = { runtime: 'edge' };\n", Some("edge")),
+        (
+            "export const config = { runtime: 'bogus' as const };\n",
+            Some("bogus"),
+        ),
+        (
+            "export const config = { 'runtime': 'experimental-edge' };\n",
+            Some("experimental-edge"),
+        ),
+        (
+            "export const config = { runtime: 'edge' } as const;\n",
+            Some("edge"),
+        ),
+        ("export const config = ({ runtime: 'edge' });\n", None),
+        ("export const config = { runtime: someVar };\n", None),
+        ("export const config = { runtime: ('edge') };\n", None),
+        ("export const config = { revalidate: 60 };\n", None),
+        ("export let config = { runtime: 'edge' };\n", None),
+        ("export const config = getConfig();\n", None),
+        ("export const config = { [runtime]: 'edge' };\n", None),
+    ] {
+        let parsed = summary(source, "pages/index.tsx");
+        assert_eq!(
+            parsed
+                .pages_config_runtime
+                .as_ref()
+                .map(|record| match &record.value {
+                    crate::summary::ExportedConstValue::String(value) => value.as_str(),
+                    _ => "non-string",
+                }),
+            expected,
+            "config runtime for {source:?}"
+        );
+    }
+}
+
+#[test]
 fn records_directive_strings_after_the_prologue() {
     let source = r#"
 import { thing } from "./thing";

@@ -170,6 +170,18 @@ pub enum ExportedConstValue {
     RegExp,
 }
 
+/// Next.js Pages Router metadata that its build reads from the loaded page
+/// module rather than from static route analysis.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PagesRouterInfo {
+    /// The local binding that backs `export default`, when it has a name.
+    pub default_export_local: Option<String>,
+    /// Whether the default-exported component carries `getInitialProps`.
+    pub default_export_has_get_initial_props: bool,
+    /// The statically extracted `runtime` property of `export const config`.
+    pub pages_config_runtime: Option<ExportedConstValueRecord>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReExportRecord {
@@ -312,6 +324,19 @@ pub struct FileSummary {
     /// segment configuration.
     #[serde(default)]
     pub exported_const_values: Vec<ExportedConstValueRecord>,
+    /// The local binding that backs the default export, when the default
+    /// export is a named declaration, an identifier, or `export { X as default }`.
+    #[serde(default)]
+    pub default_export_local: Option<String>,
+    /// Whether the default-exported component carries `getInitialProps`, as
+    /// `Page.getInitialProps = ...` or a class static member. Next.js reads the
+    /// property from the loaded page component.
+    #[serde(default)]
+    pub default_export_has_get_initial_props: bool,
+    /// The `runtime` property of a Pages Router `export const config = {...}`,
+    /// when Next.js can statically extract it.
+    #[serde(default)]
+    pub pages_config_runtime: Option<ExportedConstValueRecord>,
     /// Directive-looking strings after the prologue. Recorded for the
     /// `misplaced_directive` diagnostic; they are not honored as directives.
     #[serde(default)]

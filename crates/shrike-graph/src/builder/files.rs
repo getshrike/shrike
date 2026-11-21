@@ -311,6 +311,107 @@ fn valid_stale_time(value: &ExportedConstValue) -> bool {
         .is_ok_and(|number| number.is_finite() && number >= 0.0 && number.fract() == 0.0)
 }
 
+/// A file under `<package>/pages` or `<package>/src/pages` that Next.js
+/// treats as a Pages Router page.
+struct PagesRouterPage {
+    /// Whether a `[param]` segment makes the route dynamic.
+    dynamic: bool,
+    /// Whether the file is an API route under `pages/api`.
+    api: bool,
+    /// Whether the file is a reserved `_app`, `_document`, or `_error` page.
+    reserved: bool,
+}
+
+/// Classify a file as a Pages Router page anchored at its package root.
+///
+/// Next.js routes only files whose extension is in `pageExtensions`
+/// (`tsx`, `ts`, `jsx`, and `js` by default) and reserves `_app`,
+/// `_document`, `_error`, and the `api/` subtree. A nested `_app` is an
+/// ordinary page, matching Next.js's root-anchored `RESERVED_PAGE` regex.
+fn classify_pages_router_page(
+    path: &str,
+    package_directory: &str,
+    extensions: Option<&BTreeSet<String>>,
+) -> Option<PagesRouterPage> {
+    let package_path = if package_directory.is_empty() {
+        path
+    } else {
+        path.strip_prefix(&format!("{package_directory}/"))?
+    };
+    let rest = if let Some(rest) = package_path.strip_prefix("pages/") {
+        rest
+    } else {
+        package_path.strip_prefix("src/pages/")?
+    };
+    let file_name = rest.rsplit('/').next()?;
+    if !pages_router_page_extension(file_name, extensions) {
+        return None;
+    }
+    let mut parts: Vec<&str> = rest.split('/').collect();
+    let file = parts.pop()?;
+    let stem = super::entries::next_convention_stem(file, extensions);
+    if stem != "index" {
+        parts.push(stem);
+    }
+    let route = if parts.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{}", parts.join("/"))
+    };
+    let dynamic = parts
+        .iter()
+        .any(|segment| segment.starts_with('[') && segment.ends_with(']'));
+    let api = parts.first().is_some_and(|segment| *segment == "api");
+    let reserved = matches!(route.as_str(), "/_app" | "/_document" | "/_error");
+    Some(PagesRouterPage {
+        dynamic,
+        api,
+        reserved,
+    })
+}
+
+/// Whether a Pages Router file uses a page extension. A configured
+/// `pageExtensions` list replaces Next.js's default entirely.
+fn pages_router_page_extension(file_name: &str, extensions: Option<&BTreeSet<String>>) -> bool {
+    match extensions {
+        Some(extensions) => extensions
+            .iter()
+            .any(|extension| file_name.ends_with(&format!(".{extension}"))),
+        None => ["tsx", "ts", "jsx", "js"]
+            .iter()
+            .any(|extension| file_name.ends_with(&format!(".{extension}"))),
+    }
+}
+
+/// The span of a value export Next.js sees on the page module namespace.
+///
+/// Type-only exports are erased before Next.js imports the page, and a
+/// default-exported function or class named `getStaticProps` is a component,
+/// not a data function. `export * as getStaticProps` is deliberately not
+/// recognized: Next.js's analyzer only reads named export specifiers.
+fn pages_router_export_span(summary: &FileSummary, name: &str) -> Option<Span> {
+    for declaration in &summary.declarations {
+        if declaration.exported
+            && !declaration.default
+            && !declaration.type_only
+            && declaration.names.iter().any(|candidate| candidate == name)
+        {
+            return Some(declaration.span);
+        }
+    }
+    for local in &summary.local_exports {
+        if !local.type_only && local.exported == name {
+            return Some(local.span);
+        }
+    }
+    for re_export in &summary.re_exports {
+        if !re_export.type_only && re_export.exported == name {
+            return Some(re_export.span);
+        }
+    }
+    None
+}
+
 /// A dynamic segment occurrence: the slot it lives in, its parent URL position
 /// with route groups stripped, and its written spelling.
 struct DynamicOccurrence<'a> {
@@ -1048,6 +1149,163 @@ impl<'a> Builder<'a> {
             for (message, span) in findings {
                 self.diagnostics.push(
                     Diagnostic::error("invalid_route_segment_config", message)
+                        .in_file(path)
+                        .at(span),
+                );
+            }
+        }
+    }
+
+    /// Report Pages Router pages whose data-fetching exports or runtime
+    /// configuration Next.js rejects at build time.
+    ///
+    /// Verified against Next.js 16.4.6 with real `next build` probes. The
+    /// Pages Router imports each page and throws for:
+    /// * `getStaticProps` together with `getServerSideProps`
+    /// * `getInitialProps` on the default component together with either
+    /// * `getStaticPaths` together with `getServerSideProps`
+    /// * `getStaticPaths` without `getStaticProps` on a prerendered page
+    /// * `getStaticPaths` on a non-dynamic page with `getStaticProps`
+    /// * `getStaticProps` on a dynamic page without `getStaticPaths`
+    /// * `runtime: 'edge'` on a non-API page, where the render runtime is
+    ///   still experimental; `experimental-edge` is the accepted spelling
+    /// * a runtime value outside `nodejs`, `edge`, and `experimental-edge`
+    ///
+    /// API routes and `_app`/`_document`/`_error` skip the data-function
+    /// checks, as they do in Next.js. Runtime config is still validated there,
+    /// except that API routes accept `edge`.
+    pub(super) fn detect_next_pages_router_exports(&mut self) {
+        let summaries = self.summaries.clone();
+        let page_extensions = self.configured_page_extensions();
+        for summary in &summaries {
+            if summary.parse_status != ParseStatus::Ok {
+                continue;
+            }
+            let package_directory = self
+                .resolver
+                .package_for(&summary.path)
+                .map_or_else(String::new, |package| package.directory.clone());
+            if super::entries::package_declares_next(self.resolver.root(), &package_directory)
+                != Some(true)
+            {
+                continue;
+            }
+            let Some(page) = classify_pages_router_page(
+                &summary.path,
+                &package_directory,
+                page_extensions.get(&package_directory),
+            ) else {
+                continue;
+            };
+            let path = &summary.path;
+            // Next.js prefers the top-level `runtime` export and falls back to
+            // `config.runtime`. Validate whichever value it would resolve.
+            let runtime = summary
+                .exported_const_values
+                .iter()
+                .find(|record| record.name == "runtime")
+                .or(summary.pages_config_runtime.as_ref());
+            if let Some(record) = runtime {
+                let message = match &record.value {
+                    ExportedConstValue::String(value)
+                        if matches!(value.as_str(), "nodejs" | "experimental-edge") =>
+                    {
+                        None
+                    }
+                    ExportedConstValue::String(value) if value == "edge" && page.api => None,
+                    ExportedConstValue::String(value) if value == "edge" => Some(format!(
+                        "`{path}` sets `runtime: 'edge'` on a Pages Router page; Next.js fails the build because the edge render runtime is experimental. Use `'experimental-edge'` instead"
+                    )),
+                    ExportedConstValue::String(value) => Some(format!(
+                        "`{path}` sets `runtime: '{value}'`; Next.js fails the build because only `nodejs`, `edge`, and `experimental-edge` are accepted"
+                    )),
+                    _ => Some(format!(
+                        "`{path}` sets a non-string Pages Router `runtime`; Next.js fails the build because only `nodejs`, `edge`, and `experimental-edge` are accepted"
+                    )),
+                };
+                if let Some(message) = message {
+                    self.diagnostics.push(
+                        Diagnostic::error("invalid_pages_router_export", message)
+                            .in_file(path)
+                            .at(record.span),
+                    );
+                }
+            }
+            if page.api || page.reserved {
+                continue;
+            }
+            let get_static_props = pages_router_export_span(summary, "getStaticProps");
+            let get_server_side_props = pages_router_export_span(summary, "getServerSideProps");
+            let get_static_paths = pages_router_export_span(summary, "getStaticPaths");
+            let get_initial_props = summary.default_export_has_get_initial_props;
+            let mut findings: Vec<(String, Span)> = Vec::new();
+            if let (Some(_), Some(server_props)) = (get_static_props, get_server_side_props) {
+                findings.push((
+                    format!(
+                        "`{path}` exports both `getStaticProps` and `getServerSideProps`; Next.js fails the build because a page cannot combine SSG and SSR"
+                    ),
+                    server_props,
+                ));
+            }
+            if get_initial_props {
+                if let Some(span) = get_static_props {
+                    findings.push((
+                        format!(
+                            "`{path}` sets `getInitialProps` on the default component and exports `getStaticProps`; Next.js fails the build because the two data-fetching APIs conflict"
+                        ),
+                        span,
+                    ));
+                }
+                if let Some(span) = get_server_side_props {
+                    findings.push((
+                        format!(
+                            "`{path}` sets `getInitialProps` on the default component and exports `getServerSideProps`; Next.js fails the build because the two data-fetching APIs conflict"
+                        ),
+                        span,
+                    ));
+                }
+            }
+            if let Some(paths_span) = get_static_paths {
+                if let Some(server_props) = get_server_side_props {
+                    findings.push((
+                        format!(
+                            "`{path}` exports `getStaticPaths` with `getServerSideProps`; Next.js fails the build because `getStaticPaths` only applies to static generation"
+                        ),
+                        server_props,
+                    ));
+                }
+                if get_static_props.is_none()
+                    && !get_initial_props
+                    && get_server_side_props.is_none()
+                {
+                    findings.push((
+                        format!(
+                            "`{path}` exports `getStaticPaths` without `getStaticProps`; Next.js fails the build because the paths do nothing"
+                        ),
+                        paths_span,
+                    ));
+                } else if get_static_props.is_some() && !page.dynamic {
+                    findings.push((
+                        format!(
+                            "`{path}` exports `getStaticPaths` on a non-dynamic route; Next.js fails the build because static paths require a `[param]` segment"
+                        ),
+                        paths_span,
+                    ));
+                }
+            }
+            if let Some(span) = get_static_props {
+                if page.dynamic && get_static_paths.is_none() {
+                    findings.push((
+                        format!(
+                            "`{path}` is a dynamic route with `getStaticProps` but no `getStaticPaths`; Next.js fails the build because it cannot enumerate the paths"
+                        ),
+                        span,
+                    ));
+                }
+            }
+            for (message, span) in findings {
+                self.diagnostics.push(
+                    Diagnostic::error("invalid_pages_router_export", message)
                         .in_file(path)
                         .at(span),
                 );
