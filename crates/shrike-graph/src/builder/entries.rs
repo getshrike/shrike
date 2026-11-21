@@ -211,12 +211,11 @@ fn is_app_root_file(package_path: &str) -> bool {
         .is_some_and(|rest| !rest.contains('/'))
 }
 
-/// App Router segment config that Next.js reads from a segment module: a
-/// page, layout, default file, route handler, or metadata route. The list
-/// keeps the `unstable_` spellings used by Next.js 16.0-16.2 and
-/// `experimental_ppr` for the documented 15.x fallback; Next.js 16.0 removed
-/// `experimental_ppr` from `AppSegmentConfigSchemaKeys`.
-const NEXT_APP_SEGMENT_CONFIG_EXPORTS: &[&str] = &[
+/// Route-level segment config that Next.js reads from every app segment
+/// module, including a route handler or metadata route. `dynamicParams` is
+/// consumed by static-path generation when a route exports
+/// `generateStaticParams`; the rest are read by the app-route module.
+const NEXT_APP_ROUTE_CONFIG_EXPORTS: &[&str] = &[
     "dynamic",
     "dynamicParams",
     "revalidate",
@@ -224,6 +223,15 @@ const NEXT_APP_SEGMENT_CONFIG_EXPORTS: &[&str] = &[
     "runtime",
     "preferredRegion",
     "maxDuration",
+];
+
+/// Page and layout rendering config. Next.js parses these names on every app
+/// segment, but only the component-tree renderer consumes them: route handlers
+/// and metadata routes do not render a tree. The list keeps the `unstable_`
+/// spellings used by Next.js 16.0-16.2 and `experimental_ppr` for the
+/// documented 15.x fallback; Next.js 16.0 removed `experimental_ppr` from
+/// `AppSegmentConfigSchemaKeys`.
+const NEXT_APP_CACHE_CONFIG_EXPORTS: &[&str] = &[
     "ensureStatic",
     "instant",
     "unstable_instant",
@@ -277,13 +285,15 @@ fn next_framework_exports(
                 names.extend(["default", "unstable_dynamicStaleTime"]);
                 names.extend(NEXT_APP_METADATA_EXPORTS);
                 names.extend(NEXT_APP_PARAM_EXPORTS);
-                names.extend(NEXT_APP_SEGMENT_CONFIG_EXPORTS);
+                names.extend(NEXT_APP_ROUTE_CONFIG_EXPORTS);
+                names.extend(NEXT_APP_CACHE_CONFIG_EXPORTS);
             }
             "layout" | "default" => {
                 names.push("default");
                 names.extend(NEXT_APP_METADATA_EXPORTS);
                 names.extend(NEXT_APP_PARAM_EXPORTS);
-                names.extend(NEXT_APP_SEGMENT_CONFIG_EXPORTS);
+                names.extend(NEXT_APP_ROUTE_CONFIG_EXPORTS);
+                names.extend(NEXT_APP_CACHE_CONFIG_EXPORTS);
             }
             "route" => {
                 // Next.js reads static params from a route handler but throws
@@ -291,15 +301,15 @@ fn next_framework_exports(
                 // framework API here.
                 names.extend(NEXT_APP_HTTP_METHODS);
                 names.push("generateStaticParams");
-                names.extend(NEXT_APP_SEGMENT_CONFIG_EXPORTS);
+                names.extend(NEXT_APP_ROUTE_CONFIG_EXPORTS);
             }
             "sitemap" => {
                 names.extend(["default", "generateSitemaps", "generateStaticParams"]);
-                names.extend(NEXT_APP_SEGMENT_CONFIG_EXPORTS);
+                names.extend(NEXT_APP_ROUTE_CONFIG_EXPORTS);
             }
             "robots" | "manifest" => {
                 names.extend(["default", "generateStaticParams"]);
-                names.extend(NEXT_APP_SEGMENT_CONFIG_EXPORTS);
+                names.extend(NEXT_APP_ROUTE_CONFIG_EXPORTS);
             }
             "icon" | "apple-icon" => {
                 names.extend([
@@ -309,7 +319,7 @@ fn next_framework_exports(
                     "generateImageMetadata",
                     "generateStaticParams",
                 ]);
-                names.extend(NEXT_APP_SEGMENT_CONFIG_EXPORTS);
+                names.extend(NEXT_APP_ROUTE_CONFIG_EXPORTS);
             }
             "opengraph-image" | "twitter-image" => {
                 names.extend([
@@ -320,7 +330,7 @@ fn next_framework_exports(
                     "generateImageMetadata",
                     "generateStaticParams",
                 ]);
-                names.extend(NEXT_APP_SEGMENT_CONFIG_EXPORTS);
+                names.extend(NEXT_APP_ROUTE_CONFIG_EXPORTS);
             }
             // `errorType` selects these boundaries when Next.js renders an
             // access fallback, and metadata is read from the boundary module.
@@ -5231,15 +5241,15 @@ mod tests {
             ),
             (
                 "app/page.tsx",
-                "export const metadata = {};\nexport async function generateMetadata() { return {}; }\nexport const getStaticProps = async () => ({ props: {} });\nexport function Head() { return null; }\nexport const pageQuery = 'q';\nexport function getInitialProps() { return {}; }\nexport function middleware() { return null; }\nexport function register() { return null; }\nexport function GET() { return null; }\nexport const config = {};\nexport function unusedPageHelper() { return 1; }\nexport default function Page() { return null; }\n",
+                "export const metadata = {};\nexport async function generateMetadata() { return {}; }\nexport const getStaticProps = async () => ({ props: {} });\nexport function Head() { return null; }\nexport const pageQuery = 'q';\nexport function getInitialProps() { return {}; }\nexport function middleware() { return null; }\nexport function register() { return null; }\nexport function GET() { return null; }\nexport const config = {};\nexport const instant = 'auto';\nexport const prefetch = 'auto';\nexport const ensureStatic = 'auto';\nexport function unusedPageHelper() { return 1; }\nexport default function Page() { return null; }\n",
             ),
             (
                 "app/layout.tsx",
-                "export const preferredRegion = 'syd1';\nexport const unstable_dynamicStaleTime = 5;\nexport const config = {};\nexport function unusedLayoutHelper() { return 1; }\nexport default function Layout() { return null; }\n",
+                "export const preferredRegion = 'syd1';\nexport const unstable_dynamicStaleTime = 5;\nexport const instant = 'auto';\nexport const prefetch = 'auto';\nexport const ensureStatic = 'auto';\nexport const config = {};\nexport function unusedLayoutHelper() { return 1; }\nexport default function Layout() { return null; }\n",
             ),
             (
                 "app/route.ts",
-                "export async function GET() { return new Response('ok'); }\nexport const metadata = {};\nexport const config = {};\nexport default function handler() { return null; }\nexport const generateStaticParams = () => [];\nexport function unusedRouteHelper() { return 1; }\n",
+                "export async function GET() { return new Response('ok'); }\nexport const metadata = {};\nexport const config = {};\nexport const dynamicParams = true;\nexport const instant = 'auto';\nexport const prefetch = 'auto';\nexport const ensureStatic = 'auto';\nexport default function handler() { return null; }\nexport const generateStaticParams = () => [];\nexport function unusedRouteHelper() { return 1; }\n",
             ),
             (
                 "app/not-found.tsx",
@@ -5255,7 +5265,7 @@ mod tests {
             ),
             (
                 "app/sitemap.ts",
-                "export function generateSitemaps() { return []; }\nexport const metadata = {};\nexport function unusedSitemapHelper() { return 1; }\nexport default function sitemap() { return []; }\n",
+                "export function generateSitemaps() { return []; }\nexport const metadata = {};\nexport const instant = 'auto';\nexport const prefetch = 'auto';\nexport const ensureStatic = 'auto';\nexport function unusedSitemapHelper() { return 1; }\nexport default function sitemap() { return []; }\n",
             ),
             (
                 "app/icon.tsx",
@@ -5315,10 +5325,17 @@ mod tests {
             "app/page.tsx#default",
             "app/page.tsx#metadata",
             "app/page.tsx#generateMetadata",
+            "app/page.tsx#instant",
+            "app/page.tsx#prefetch",
+            "app/page.tsx#ensureStatic",
             "app/layout.tsx#default",
             "app/layout.tsx#preferredRegion",
+            "app/layout.tsx#instant",
+            "app/layout.tsx#prefetch",
+            "app/layout.tsx#ensureStatic",
             "app/route.ts#GET",
             "app/route.ts#generateStaticParams",
+            "app/route.ts#dynamicParams",
             "app/not-found.tsx#default",
             "app/not-found.tsx#metadata",
             "app/global-not-found.tsx#default",
@@ -5378,12 +5395,18 @@ mod tests {
             "app/route.ts#metadata",
             "app/route.ts#config",
             "app/route.ts#default",
+            "app/route.ts#instant",
+            "app/route.ts#prefetch",
+            "app/route.ts#ensureStatic",
             "app/route.ts#unusedRouteHelper",
             "app/not-found.tsx#generateStaticParams",
             "app/global-not-found.tsx#metadata",
             "app/loading.tsx#metadata",
             "app/loading.tsx#config",
             "app/sitemap.ts#metadata",
+            "app/sitemap.ts#instant",
+            "app/sitemap.ts#prefetch",
+            "app/sitemap.ts#ensureStatic",
             "app/sitemap.ts#unusedSitemapHelper",
             "app/icon.tsx#alt",
             "pages/index.tsx#metadata",
