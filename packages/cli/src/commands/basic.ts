@@ -75,6 +75,11 @@ export async function scanCommand(root: string, args: ParsedArgs): Promise<numbe
         : "no incoming references";
       writeHuman(`  ${item.symbol}  -${item.lines} lines  [${evidence}]`);
     }
+    const unusedFiles = result.snapshot.unusedFiles ?? [];
+    if (unusedFiles.length > 0) {
+      writeHuman(`Unused files: ${formatCount(unusedFiles.length, "file")} (no entry or import)`);
+      for (const file of unusedFiles) writeHuman(`  ${file}  (file)`);
+    }
     const internalOnly = result.snapshot.internalOnly ?? [];
     if (internalOnly.length > 0) {
       writeHuman(
@@ -86,7 +91,10 @@ export async function scanCommand(root: string, args: ParsedArgs): Promise<numbe
     renderDiagnostics(diagnostics);
     renderDependencies(dependencies);
   }
-  return result.candidates.length > 0 || dependencies.summary.unused > 0 || dependencies.summary.unlisted > 0
+  return result.candidates.length > 0
+    || (result.snapshot.unusedFiles?.length ?? 0) > 0
+    || dependencies.summary.unused > 0
+    || dependencies.summary.unlisted > 0
     ? ExitCode.FINDINGS
     : ExitCode.OK;
 }

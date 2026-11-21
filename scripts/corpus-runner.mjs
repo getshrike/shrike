@@ -102,6 +102,13 @@ for (const entry of manifest.entries) {
       failures.push(`${entry.id}: expected internal-only symbol is not reported: ${symbol}`);
     }
   }
+  const unusedFiles = new Set(snapshot.unusedFiles ?? []);
+  for (const file of entry.unusedFiles ?? []) {
+    if (!unusedFiles.has(file)) failures.push(`${entry.id}: expected unused file is not reported: ${file}`);
+  }
+  for (const file of entry.usedFiles ?? []) {
+    if (unusedFiles.has(file)) failures.push(`${entry.id}: expected used file is reported unused: ${file}`);
+  }
 
   if (protectedItems.length === 0) continue;
 

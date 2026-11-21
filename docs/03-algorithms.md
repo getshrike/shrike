@@ -315,7 +315,11 @@ analyzable.
 - `page`, `layout`, `template`, `loading`, `error`, `global-error`, `not-found`,
   `forbidden`, `unauthorized`, `route`, `default`; with `pageExtensions`
   containing `md` or `mdx`, the same convention stems are routes as Markdown,
-  and their ESM imports keep rendered components live;
+  and their ESM imports keep rendered components live. A dotted value is one
+  extension: with `["page.tsx"]`, `app/page.page.tsx` has the stem `page` and
+  `app/layout.page.tsx` the stem `layout`, matching knip's AST-derived patterns
+  and Next's own suffix strip. Only framework-invoked exports become live, so
+  other exports in those files stay analyzable;
 - `sitemap`, `robots`, `manifest`, `icon`, `apple-icon`, `opengraph-image`,
   `twitter-image`;
 - image-route metadata: `size`, `contentType`, `alt`, `generateImageMetadata`
@@ -326,9 +330,15 @@ analyzable.
   `onRouterTransitionStart` as the framework API. Other exports in those files
   stay analyzable, and a nested module that merely shares the name
   `instrumentation` is not a convention;
-- `mdx-components.tsx` `useMDXComponents` and the MDX ESM boundary;
-- `"use server"` module exports (async functions), independent of
-  `clientBoundaryPolicy`;
+- `mdx-components.tsx` `useMDXComponents` and the MDX ESM boundary, only when
+  the owning package or the workspace root declares `@next/mdx`: that package
+  aliases `next-mdx-import-source-file` to the root or `src/` component map,
+  while Next core does not load the file by name. An unreferenced map in a Next
+  app without `@next/mdx` stays analyzable, and a missing manifest fails open;
+- `"use server"` module exports under `serverActionPolicy: "protect"`. The
+  default `graph` policy treats an action like any other export, so an action no
+  module references is reported; an import, `action={fn}` binding, or any other
+  reference keeps it live. Build evidence can also keep a referenced action live;
 - `"use client"` module exports (client boundary);
 - metadata exports: `metadata`, `generateMetadata`, `viewport`,
   `generateViewport`, `generateStaticParams`, `generateSitemaps`;
@@ -340,6 +350,10 @@ analyzable.
   `runtime`, `preferredRegion`, `maxDuration`; Cache Components config
   `ensureStatic` (16.4), `instant`/`prefetch` (16.3) and their
   `unstable_instant`/`unstable_prefetch` predecessors (16.0-16.2);
+- a root `server.{js,mjs,cjs,ts,mts,cts}` in a package that declares `next` is
+  the custom HTTP server that replaces `next start`. Its module is an entry, so
+  top-level work and imports stay live, but its named exports are not read by
+  the framework and remain analyzable;
 - modules referenced only by a relative path in `next.config.*`
   (`images.loaderFile`, `cacheHandler`/`cacheHandlers`, Turbopack loaders and
   aliases): the module and all its exports are entries.
@@ -409,9 +423,20 @@ configuration in Node.
 
 ### 9.6 Tests and config
 
-- test files, setup files, fixtures;
+- test files, setup files, fixtures. A test module is an entry because the runner
+  discovers the file, but its exports are ordinary helpers and follow the graph;
+  only exports imported by another module stay live. `__mocks__` modules keep
+  their full export surface because Jest loads them by convention, and type-test
+  files keep theirs because they exist to assert the exports;
+- standalone scripts, examples, demos, playgrounds, and benchmarks. Modules
+  under a root `scripts/`, `examples/`, `example/`, `demo/`, `playground/`,
+  `playgrounds/`, or `benchmarks/` directory, and files named by a package
+  script, are entries because they are executed directly. Their exports are
+  helpers and follow the graph, so an unimported script export is reportable
+  while top-level work and imports stay live;
 - Storybook `.{storybook,rnstorybook}/**` config and `*.stories.*` /
-  `*.story.*` files. When the owning package depends on `storybook`,
+  `*.story.*` files. Story modules expose every export to Storybook. When the
+  owning package depends on `storybook`,
   `@storybook/*`, or `@nrwl/storybook`, every `.mdx` page is also an entry:
   Storybook's default story glob includes all MDX, and docs pages render the
   components they import. The `stories` array in `.storybook/main.*` is read
@@ -492,7 +517,11 @@ The same entry rule applies to conventions with their own compilers:
   and `middleware` / `clientMiddleware` (including their `unstable_` spellings
   in React Router 7.3-7.8) are framework-invoked like `loader` and `action`.
   Remix v1 route hooks `CatchBoundary`, `shouldReload`, and
-  `unstable_shouldReload` remain protected for projects on that API;
+  `unstable_shouldReload` remain protected for projects on that API. A root
+  `server.{js,jsx,ts,tsx,mjs,cjs}` in the detected package is also an entry:
+  Remix apps with a custom server execute it instead of `remix-serve`, so its
+  top-level work and imports stay live. Its named exports are not read by the
+  framework and remain analyzable;
 - TanStack Router: `Route`/`route` objects in modules that import a route
   factory (`createFileRoute`, `createLazyFileRoute`, `createRootRoute`, or
   `createServerFileRoute`), so a configured `routesDirectory` is covered; the
@@ -615,19 +644,35 @@ it is not an entry and it is not public API.
 **Invariant F6:** every live symbol is expanded exactly once. Symbols widened by
 an unknown scope are queued, so their outgoing references are traversed.
 
-**Rule F7:** a dead re-export alias is a candidate only when its chain of
-re-exports reaches a live symbol. Every dead link in that chain is reported,
-because removing an inner alias would leave an outer alias dangling. When the
-chain ends at a dead declaration, report the declaration instead and suppress
-the aliases, so one dead symbol yields one finding.
+**Rule F7:** every dead named re-export alias is a candidate, whether its chain
+ends at a live symbol or at a dead declaration. Reporting both the declaration
+and each alias is what makes the deletion batch complete: removing only the
+declaration would leave the barrel specifier naming a symbol that no longer
+exists. The patch removes the alias specifier, not the whole export statement,
+so live siblings in `export { live, dead }` survive.
 
 The rule also covers local `export { X }` and `export { X as Y }` lists. If `X`
 is a local declaration the alias points at it; if `X` is an imported binding
 the alias points at the resolved import target. This keeps `import { X } from
 "./impl"; export { X };` on the same chain as `export { X } from "./impl";`,
 so a dead re-export of a live import is reported instead of disappearing.
+`export * from "./impl"` has no per-name alias symbol; it stays a module edge
+and is not reported as a specifier.
 
-### 10.4 Proof trace
+### 10.4 Unused files
+
+**Rule F8:** a file is an unused-file finding when no entry names it, no other
+module has an incoming edge to any of its symbols, its module symbol is not
+live, it parsed successfully, and it is neither public API nor generated. This
+is deliberately stricter than "every declaration is a candidate": a barrel
+imported by a live module is used even when every export it forwards is dead,
+and a file imported only by dead code waits for the deletion cascade instead of
+being reported at the root. An unimported side-effect-only module has no
+non-module candidates, so this list is also the only way to surface it. Apply
+deletes the whole file when all of its declarations are removed and its module
+is not live, which is the batch a file finding describes.
+
+### 10.5 Proof trace
 
 For each candidate, record:
 

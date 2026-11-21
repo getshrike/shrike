@@ -516,6 +516,146 @@ of death.
 
 ---
 
+## D-020 — Server actions follow the graph by default
+
+**Decision:** `serverActionPolicy` defaults to `graph`. A `"use server"` export
+is an ordinary export: an import, a JSX `action={fn}` binding, a call, or any
+other project reference keeps it live, and an action with no project reference
+is a deletion candidate. `serverActionPolicy: "protect"` preserves D-019 by
+seeding every action and the module as entries.
+
+**Alternatives considered:**
+
+- Keep D-019's unconditional protection. Knip 5.88.1 and fallow 3.45.0 both
+  report the unimported actions on requo (25) and accounteer (23).
+- Report unimported actions only as warnings, as fallow does. Shrike has no
+  warning bucket in the snapshot, and a warning is not actionable in prune.
+
+**Why:** Next.js registers an action id once a `"use server"` module is reached,
+but the id is only embedded in code that references the action. An unreferenced
+action is not reachable from the project's UI; it is dead code that remains
+POST-able only if its id leaks. Both competitors treat that as a cleanup
+finding, and Shrike's verified-deletion flow can still use client-reference
+build evidence to keep a referenced action live. Teams that treat a leaked id as
+a supported entry point can opt into `protect`.
+
+**Consequences:**
+
+- Requo: 563 → 593 candidates: the 25 actions both competitors report plus five
+  unreferenced schemas/helpers exported from the same `"use server"` modules.
+- Accounteer: 130 → 153 candidates, restoring the 23 D-019 removed.
+- Next-portfolio is unchanged at 8 candidates.
+- The default corpus case now requires the unimported action to be reported;
+  `protect` has a dedicated graph test.
+
+**Revisit if:** a real Next.js application invokes an action without any static
+reference (for example through a hand-authored action id or an external client
+contract).
+
+---
+
+## D-021 — Test and script modules are entries; their exports follow the graph
+
+**Decision:** A test file or standalone script is an entry because a runner or
+the repository executes the module, not because another module imports its
+exports. Ordinary test exports and script exports are candidates unless
+something references them. Three export surfaces stay seeded because a tool
+consumes them directly: Storybook/Ladle stories, Jest `__mocks__` modules, and
+type tests (`.test-d.*` files and `__typetest__/` modules).
+
+**Alternatives considered:**
+
+- Seed every export of every test and script module, the previous behavior.
+  Knip 5.88.1 and fallow 3.45.0 both report requo's unused e2e constants and
+  accounteer's unused fixture modules; whole-module protection hid them.
+- Stop treating ordinary test modules as entries. Their imports would then be
+  dead, so every test's support code would be reported; the runner does execute
+  the file, so the module entry is correct.
+- Seed test exports but not script exports. The two are executed the same way,
+  and neither competitor protects either surface.
+
+**Why:** Vitest, Jest, and node:test discover and execute the test file; they do
+not read arbitrary named exports. A helper exported from a test file is ordinary
+code and must be imported to stay live. Storybook renders every story export,
+Jest loads `__mocks__` by convention, and type tests exist to export assertions,
+so those surfaces remain entries. Scripts are the same case in production: the
+runtime executes the module, while its exports are helpers.
+
+Measured on the current requo working tree with one snapshot and both engines
+compared from a cleared cache: 648 → 669 candidates, exactly +21 and 0 removals.
+The 21 are 5 Knip-only, 3 reported by both competitors, and 13 with no
+competitor agreement: ten declarations in an unreferenced
+`tests/support/mock-model.ts` and three unused builders/anchors in
+`tests/support/fixtures/polar.ts`. A namespace, spread, or dynamic reference
+would have kept them live; none exists. Accounteer is 153 → 161 (+8, 0
+removals), all unimported fixtures, with Knip agreeing on
+`tests/fixtures/paymongo.ts#unknownOrderEvent`. Next-portfolio is unchanged at
+8.
+
+**Consequences:**
+
+- Test and script modules remain module entries, so their imports and top-level
+  work stay live.
+- The corpus case `test-entry-unused-export` pins an unused test helper as
+  reportable while the imported helper, story exports, and mock exports stay
+  live.
+- The graph test also pins `.test-d.*` and `__typetest__/` exports as entries.
+
+**Revisit if:** a test runner or bundler starts consuming named exports from
+ordinary test files, or a real repository reaches test helpers dynamically.
+
+---
+
+## D-022 — Unused-file findings require no entry, no import, and a dead module
+
+**Decision:** A file is an unused-file finding only when it parsed successfully,
+is neither public API nor generated, no entry names it, no other file has an
+incoming edge to any of its symbols, and its module symbol is not live. This is
+an import-level rule, not "all declarations are candidates": a barrel imported
+by a live module is used even when every export it forwards is dead, and a file
+imported only by dead code waits for the deletion cascade. A side-effect-only
+module has no symbol the symbol report can name, so the file list is the only
+way to surface it.
+
+**Alternatives considered:**
+
+- Report every file whose declarations are all candidates. This would flag
+  imported barrels and files imported only by dead code before the cascade,
+  producing findings that overlap the symbol report and are not independent
+  patches.
+- Keep only symbol findings. Knip 5.88.1 and fallow 3.45.0 report unimported
+  modules as unused files, and an unimported side-effect module has no
+  candidate at all.
+
+**Why:** Both competitors' file rules are import-level. On frozen pre-change
+snapshots, the 8 files Knip and fallow both report in requo and the 8 in
+accounteer are exactly the ones this rule reports; no competitor-agreed file is
+missing or extra. The module-liveness check is what keeps the rule consistent
+with build evidence and unknown-scope widening, which can make a module live
+without adding a concrete incoming edge.
+
+**Consequences:**
+
+- `GraphSnapshot.unusedFiles` is part of the snapshot, the graph schema, and the
+  CLI scan output; an unused file makes `shrike scan` exit with findings.
+- Requo reports 9 files and 669 candidates: the 8 competitor-agreed files plus
+  `lib/config/index.ts`, which is new and unimported in the working tree and
+  postdates both competitor scans. Accounteer reports 8 files / 161 candidates,
+  next-portfolio 3 files / 8 candidates, markalvarez 3 files / 24 candidates,
+  and portfolio 0 files / 1 candidate.
+- `unusedFiles` is recomputed after build-evidence liveness so a build-reached
+  file leaves the list.
+- The `unused-files` corpus case pins an unimported module, an unimported
+  side-effect module, a dead file imported by another dead file, and an
+  imported barrel that must stay out of the list.
+
+**Revisit if:** a real project loads an unimported module through a runtime
+contract that is not modeled as an entry (for example a convention the
+framework reads only by filename), or a competitor starts treating imported
+barrels as unused files.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -577,7 +717,9 @@ external app, credential, or participant.
 | D-016 | No dashboard in v1 | accepted |
 | D-017 | SCC-first cascade, deterministic batches | accepted |
 | D-018 | Fail closed on protocol errors | accepted |
-| D-019 | Server actions are always entries | accepted |
+| D-019 | Server actions are always entries | superseded by D-020 |
+| D-020 | Server actions follow the graph by default | accepted |
+| D-021 | Test and script modules are entries; their exports follow the graph | accepted |
 
 ## Rejected ideas
 

@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use shrike_core::ids::module_symbol_key;
-use shrike_core::{ClientBoundaryPolicy, EntryPolicy};
+use shrike_core::{ClientBoundaryPolicy, EntryPolicy, ServerActionPolicy};
 use shrike_syntax::{BindingKind, FileSummary, ParseStatus};
 
 use super::Builder;
@@ -11,7 +11,9 @@ use crate::cosmos_config;
 use crate::docusaurus_config;
 use crate::gatsby_config;
 use crate::ladle_config;
+use crate::next_config;
 use crate::storybook_config;
+use crate::test_config;
 use crate::types::EntryRecord;
 use crate::util::route_of;
 use crate::webpack_config::{self, EntryBase};
@@ -112,6 +114,51 @@ fn at_own_package_root(path: &str, package_directory: &str, relative: &str) -> b
     local == relative
 }
 
+/// Configured `pageExtensions` in longest-first order. A dotted value such as
+/// `page.tsx` is a single extension, so it must win over the plain `.tsx`
+/// suffix before computing a route stem.
+fn dotted_page_extensions(extensions: Option<&BTreeSet<String>>) -> Vec<String> {
+    let Some(extensions) = extensions else {
+        return Vec::new();
+    };
+    let mut values: Vec<String> = extensions
+        .iter()
+        .filter(|extension| extension.contains('.'))
+        .cloned()
+        .collect();
+    values.sort_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
+    values
+}
+
+/// The route stem of a Next.js file. With `pageExtensions: ["page.tsx"]`,
+/// `page.page.tsx` has the stem `page`, not `page.page`.
+fn next_convention_stem<'a>(file_name: &'a str, extensions: Option<&BTreeSet<String>>) -> &'a str {
+    for extension in dotted_page_extensions(extensions) {
+        if let Some(stem) = file_name.strip_suffix(&format!(".{extension}")) {
+            return stem;
+        }
+    }
+    file_name
+        .rsplit_once('.')
+        .map_or(file_name, |(stem, _)| stem)
+}
+
+/// Strip the module extension from a path before matching a root convention
+/// such as `middleware` or `mdx-components`, honouring dotted page extensions.
+fn next_convention_base<'a>(
+    path: &'a str,
+    extensions: Option<&BTreeSet<String>>,
+) -> Option<&'a str> {
+    for extension in dotted_page_extensions(extensions) {
+        if let Some(base) = path.strip_suffix(&format!(".{extension}")) {
+            return Some(base);
+        }
+    }
+    [".tsx", ".ts", ".jsx", ".js"]
+        .iter()
+        .find_map(|suffix| path.strip_suffix(suffix))
+}
+
 /// next-intl reads `{src/,}i18n/request.*` and `{src/,}i18n/routing.*` by
 /// convention when its plugin is configured. Only the file names are fixed, so
 /// the dependency check decides whether the convention applies.
@@ -133,10 +180,10 @@ fn package_depends_on(root: &Path, directory: &str, name: &str) -> bool {
     package_depends_on_any(root, directory, &[name])
 }
 
-/// Whether the package manifest explicitly declares `next`. A missing or
-/// unreadable manifest returns `None`, so convention detection stays
-/// conservative for incomplete trees instead of hiding a possible route.
-fn package_declares_next(root: &Path, directory: &str) -> Option<bool> {
+/// Whether the package manifest explicitly declares any of `names`. A missing
+/// or unreadable manifest returns `None`, so convention detection stays
+/// conservative for incomplete trees instead of hiding a possible entry.
+fn package_declares_any(root: &Path, directory: &str, names: &[&str]) -> Option<bool> {
     let text = fs::read_to_string(root.join(directory).join("package.json")).ok()?;
     let value = serde_json::from_str::<serde_json::Value>(&text).ok()?;
     Some(
@@ -148,12 +195,17 @@ fn package_declares_next(root: &Path, directory: &str) -> Option<bool> {
         ]
         .iter()
         .any(|section| {
-            value
-                .get(section)
-                .and_then(|dependencies| dependencies.get("next"))
-                .is_some()
+            let Some(dependencies) = value.get(section) else {
+                return false;
+            };
+            names.iter().any(|name| dependencies.get(name).is_some())
         }),
     )
+}
+
+/// Whether the owning package declares Next.js itself.
+fn package_declares_next(root: &Path, directory: &str) -> Option<bool> {
+    package_declares_any(root, directory, &["next"])
 }
 
 /// Storybook's default story glob includes every `.mdx` page, not just files
@@ -768,6 +820,30 @@ impl<'a> Builder<'a> {
             .iter()
             .map(|summary| summary.path.as_str())
             .collect();
+        // Next's `pageExtensions` may contain dots (`page.tsx`). Knip reads it
+        // from the config AST; read only the literal values here and scope each
+        // config to its package so a nested app is not widened by the root.
+        let mut page_extensions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for summary in &summaries {
+            if !next_config::is_config_path(&summary.path) {
+                continue;
+            }
+            let Ok(source) = fs::read_to_string(self.resolver.root().join(&summary.path)) else {
+                continue;
+            };
+            let extensions = next_config::page_extensions(&source);
+            if extensions.is_empty() {
+                continue;
+            }
+            let package_directory = self
+                .resolver
+                .package_for(&summary.path)
+                .map_or_else(String::new, |package| package.directory.clone());
+            page_extensions
+                .entry(package_directory)
+                .or_default()
+                .extend(extensions);
+        }
         let mut vite_packages: BTreeSet<String> = BTreeSet::new();
         let mut storybook_packages: BTreeSet<String> = BTreeSet::new();
         let mut cosmos_packages: BTreeSet<String> = BTreeSet::new();
@@ -1255,6 +1331,25 @@ impl<'a> Builder<'a> {
                 }
             }
         }
+        // Test runners load setup files, global setup, and alias targets by
+        // path from their configuration. A support file that no test imports
+        // is still live when the runner names it, so resolve the config's
+        // path literals against analyzed files before classifying entries.
+        let mut test_config_modules: BTreeSet<String> = BTreeSet::new();
+        for summary in &summaries {
+            if !test_config::is_config_path(&summary.path) {
+                continue;
+            }
+            let Ok(source) = fs::read_to_string(self.resolver.root().join(&summary.path)) else {
+                continue;
+            };
+            test_config_modules.extend(test_config::referenced_files(
+                self.resolver.root(),
+                &analyzed,
+                &summary.path,
+                &source,
+            ));
+        }
         for summary in &summaries {
             let path = summary.path.as_str();
             let package_directory = self
@@ -1303,6 +1398,16 @@ impl<'a> Builder<'a> {
             }
             if summary.executable {
                 add(self, module.clone(), "executable", "tool", None, "both");
+            }
+            if test_config_modules.contains(path) {
+                add(
+                    self,
+                    module.clone(),
+                    "test-config",
+                    "test-config-reference",
+                    None,
+                    "both",
+                );
             }
             let vite_package = vite_packages.contains(&package_directory);
             let storybook_package = storybook_packages.contains(&package_directory);
@@ -1397,14 +1502,13 @@ impl<'a> Builder<'a> {
                 );
             }
             let file_name = path.rsplit('/').next().unwrap_or(path);
-            let stem = file_name
-                .rsplit_once('.')
-                .map_or(file_name, |(stem, _)| stem);
-            let route = route_of(path);
             let package_directory = self
                 .resolver
                 .package_for(path)
                 .map_or_else(String::new, |package| package.directory.clone());
+            let configured_extensions = page_extensions.get(&package_directory);
+            let stem = next_convention_stem(file_name, configured_extensions);
+            let route = route_of(path);
             let package_path = if package_directory.is_empty() {
                 path
             } else {
@@ -1425,11 +1529,7 @@ impl<'a> Builder<'a> {
                     | "mdx-components"
                     | "instrumentation"
                     | "instrumentation-client"
-            ) && path
-                .strip_suffix(".tsx")
-                .or_else(|| path.strip_suffix(".ts"))
-                .or_else(|| path.strip_suffix(".jsx"))
-                .or_else(|| path.strip_suffix(".js"))
+            ) && next_convention_base(path, configured_extensions)
                 .is_some_and(|base| {
                     [
                         "middleware",
@@ -1458,7 +1558,29 @@ impl<'a> Builder<'a> {
             };
             let is_app = package_uses_next && is_app_shape;
             let is_pages = package_uses_next && is_pages_shape;
-            let root_convention = package_uses_next && root_convention_shape;
+            // `mdx-components` is not a Next.js core convention: `@next/mdx`
+            // aliases `next-mdx-import-source-file` to the file (at the package
+            // root or in `src/`), and nothing else loads it by name. Knip's
+            // Next MDX plugin gates the entry on `@next/mdx` for the same
+            // reason. Without the package, the file is ordinary application
+            // code: an explicit import still keeps it live, but an unreferenced
+            // component map becomes a deletion candidate.
+            let uses_mdx_component_map = stem == "mdx-components";
+            let package_uses_mdx = if uses_mdx_component_map {
+                let local =
+                    package_declares_any(self.resolver.root(), &package_directory, &["@next/mdx"])
+                        .unwrap_or(true);
+                // Workspaces frequently hoist the MDX plugin to the root even
+                // when each app declares `next` itself. A hoisted dependency
+                // must not make the map look dead.
+                let hoisted = !package_directory.is_empty()
+                    && package_declares_any(self.resolver.root(), "", &["@next/mdx"])
+                        .unwrap_or(false);
+                local || hoisted
+            } else {
+                true
+            };
+            let root_convention = package_uses_next && root_convention_shape && package_uses_mdx;
             // next-intl loads its request/routing modules by convention. Gate
             // the protection on the project actually depending on next-intl so
             // an unrelated `i18n/request.ts` stays analyzable.
@@ -1691,6 +1813,56 @@ impl<'a> Builder<'a> {
             let router_route = (router_route_files.contains(path)
                 || in_directory(path, &format!("{router_app}/routes/")))
                 && (has_router_package || (router_import && stem != "page"));
+            // Knip's Remix plugin lists a root `server.{js,ts}` as a production
+            // entry: Remix apps with a custom server execute this file instead
+            // of `remix-serve`. Only the module is an entry — nothing in Remix
+            // reads its named exports — so its top-level work and imports stay
+            // live while genuinely unused exports remain reportable.
+            let custom_server_entry = has_router_package
+                && [
+                    "server.ts",
+                    "server.tsx",
+                    "server.js",
+                    "server.jsx",
+                    "server.mjs",
+                    "server.cjs",
+                ]
+                .iter()
+                .any(|relative| at_own_package_root(path, &package_directory, relative));
+            if custom_server_entry {
+                add(
+                    self,
+                    module.clone(),
+                    "remix",
+                    "custom-server",
+                    None,
+                    "server",
+                );
+            } else if package_uses_next
+                && [
+                    "server.js",
+                    "server.mjs",
+                    "server.cjs",
+                    "server.ts",
+                    "server.mts",
+                    "server.cts",
+                ]
+                .iter()
+                .any(|relative| at_own_package_root(path, &package_directory, relative))
+            {
+                // Next.js apps commonly run their own HTTP server instead of
+                // `next start`. Knip's Node plugin protects a root `server.js`
+                // for this reason. Seed only the module: the runtime executes
+                // it, but nothing reads its named exports.
+                add(
+                    self,
+                    module.clone(),
+                    "next-app",
+                    "custom-server",
+                    None,
+                    "server",
+                );
+            }
             if (router_import || has_router_package) && (router_entry || router_route) {
                 add(
                     self,
@@ -1948,13 +2120,17 @@ impl<'a> Builder<'a> {
                 }
                 add(self, module.clone(), "react", "module", None, "both");
             }
-            if summary.has_directive("use server") {
-                // Next.js registers every export of a `"use server"` module in
-                // the server-reference manifest, whether or not application
-                // code imports it. Actions are invoked through serialized
-                // references, so the import graph is not evidence that an
-                // export is unused. This is independent of the client-boundary
-                // policy, which only governs `"use client"` modules.
+            if summary.has_directive("use server")
+                && self.config.server_action_policy == ServerActionPolicy::Protect
+            {
+                // Under `protect`, Next.js registers every export of a
+                // `"use server"` module in the server-reference manifest,
+                // whether or not application code imports it. Actions are
+                // invoked through serialized references, so the import graph
+                // is not evidence that an export is unused. The default
+                // `graph` policy instead treats an unreferenced action as
+                // dead, matching knip and fallow; build evidence can still
+                // keep a referenced action live.
                 for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
                     add(
                         self,
@@ -2022,13 +2198,12 @@ impl<'a> Builder<'a> {
                 || path.contains("__tests__/")
                 || path.contains("__typetest__/")
                 || path.contains("__mocks__/")
-                || path.contains("/__fixtures__/")
-                || path.contains("/fixtures/")
-                || path.contains("/e2e/")
+                // Node's test runner executes every file under a `test/`
+                // directory. Other runners discover only matching filenames,
+                // so support modules under `tests/` follow the graph like any
+                // other module unless a test or a test config references them.
                 || path.starts_with("test/")
-                || path.starts_with("tests/")
-                || path.contains("/test/")
-                || path.contains("/tests/");
+                || path.contains("/test/");
             let story = path.contains(".stories.")
                 || path.contains(".story.")
                 || path.starts_with(".storybook/")
@@ -2050,13 +2225,27 @@ impl<'a> Builder<'a> {
                 && !cosmos_decorator
             {
                 add(self, module.clone(), "tests", "test", None, "both");
-                for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
-                    add(self, key, "tests", "test-export", None, "both");
+                // Storybook and Ladle render every export of a story module.
+                // Jest loads `__mocks__` by convention, so every mock export
+                // must stay available even when the mock is not imported by
+                // path. Type tests export aliases to assert them. Ordinary
+                // test files are executed for their top-level test calls;
+                // their exports are helpers and follow the graph like any
+                // other module, matching knip and fallow.
+                let framework_exports = story
+                    || path.contains("__mocks__/")
+                    || path.contains("__typetest__/")
+                    || path.contains(".test-d.");
+                if framework_exports {
+                    for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                        add(self, key, "tests", "test-export", None, "both");
+                    }
                 }
             }
             // Standalone examples, benchmarks, and repository scripts are run
-            // directly rather than imported. Under the local policy they are
-            // roots, not dead code.
+            // directly rather than imported. The module is the root, so its
+            // top-level work stays live; its exports are ordinary helpers and
+            // follow the graph.
             let local_root = path.starts_with("examples/")
                 || path.starts_with("example/")
                 || path.starts_with("demo/")
@@ -2066,9 +2255,6 @@ impl<'a> Builder<'a> {
                 || path.starts_with("scripts/");
             if self.config.entry_policy != EntryPolicy::Production && local_root {
                 add(self, module.clone(), "local", "standalone", None, "both");
-                for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
-                    add(self, key, "local", "standalone-export", None, "both");
-                }
             }
             // Gatsby loads lifecycle files by convention and pages under
             // `src/pages`; both are executed directly by the framework.
@@ -2161,7 +2347,7 @@ impl<'a> Builder<'a> {
 mod tests {
     use std::fs;
 
-    use shrike_core::EngineConfig;
+    use shrike_core::{EngineConfig, ServerActionPolicy};
     use tempfile::tempdir;
 
     use super::expo_config_plugin_paths;
@@ -2170,6 +2356,10 @@ mod tests {
     use crate::types::GraphSnapshot;
 
     fn snapshot(files: &[(&str, &str)]) -> GraphSnapshot {
+        snapshot_with_config(files, &EngineConfig::default())
+    }
+
+    fn snapshot_with_config(files: &[(&str, &str)], config: &EngineConfig) -> GraphSnapshot {
         let directory = tempdir().expect("tempdir");
         for (path, content) in files {
             let full = directory.path().join(path);
@@ -2179,7 +2369,7 @@ mod tests {
             fs::write(full, content).expect("write fixture");
         }
         let paths: Vec<String> = files.iter().map(|(path, _)| (*path).to_string()).collect();
-        analyze_paths(directory.path(), &EngineConfig::default(), &paths)
+        analyze_paths(directory.path(), config, &paths)
     }
 
     /// Analyze only the files the production discovery walk finds. Use this
@@ -2224,20 +2414,224 @@ mod tests {
     }
 
     #[test]
-    fn plain_test_directories_are_entries() {
+    fn node_test_directories_and_test_files_are_entries() {
         let snapshot = snapshot(&[
             ("source/index.ts", "export const api = 1;\n"),
             (
                 "test/test.ts",
                 "import { api } from '../source/index.ts';\nconsole.log(api);\n",
             ),
+            ("test/unit/helper.ts", "export const helper = 1;\n"),
             ("tests/unit/helper.ts", "export const helper = 1;\n"),
+            (
+                "tests/example.test.ts",
+                "import { helper } from './unit/helper';\ntest('helper', () => helper);\n",
+            ),
         ]);
         let entries = entry_symbols(&snapshot);
         assert!(entries.contains(&"test/test.ts#__module__"), "{entries:?}");
         assert!(
-            entries.contains(&"tests/unit/helper.ts#__module__"),
+            entries.contains(&"test/unit/helper.ts#__module__"),
+            "node --test executes every file under test/: {entries:?}"
+        );
+        assert!(
+            entries.contains(&"tests/example.test.ts#__module__"),
             "{entries:?}"
+        );
+        assert!(
+            !entries.contains(&"tests/unit/helper.ts#__module__"),
+            "a tests/ support module is not executed by a runner: {entries:?}"
+        );
+        assert!(
+            snapshot.is_live("tests/unit/helper.ts#helper"),
+            "the imported support module stays live: {:?}",
+            snapshot.live
+        );
+    }
+
+    #[test]
+    fn test_config_references_are_entries() {
+        let snapshot = snapshot(&[
+            (
+                "config/vitest.config.ts",
+                "export default { test: { setupFiles: ['./tests/setup.ts'] } };\n",
+            ),
+            (
+                "vitest.config.ts",
+                "const path = require('node:path');\nexport default { resolve: { alias: { 'server-only': path.resolve(__dirname, 'tests/stubs/server-only.ts') } } };\n",
+            ),
+            (
+                "tests/setup.ts",
+                "import { configure } from './support/live';\nconfigure();\n",
+            ),
+            (
+                "tests/support/live.ts",
+                "export const configure = () => 1;\n",
+            ),
+            (
+                "tests/stubs/server-only.ts",
+                "export const serverOnly = true;\n",
+            ),
+            ("tests/support/dead.ts", "export const dead = 1;\n"),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        assert!(
+            entries.contains(&"tests/setup.ts#__module__"),
+            "a Vitest setup file is loaded by path: {entries:?}"
+        );
+        assert!(
+            entries.contains(&"tests/stubs/server-only.ts#__module__"),
+            "an alias target is loaded by the runner: {entries:?}"
+        );
+        assert!(
+            snapshot.is_live("tests/support/live.ts#configure"),
+            "the setup file's import stays live: {:?}",
+            snapshot.live
+        );
+        assert!(
+            !entries.contains(&"tests/support/dead.ts#__module__"),
+            "an unreferenced support module is not an entry: {entries:?}"
+        );
+        assert!(
+            snapshot.is_candidate("tests/support/dead.ts#dead"),
+            "an unreferenced support module is dead: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot
+                .unused_files
+                .contains(&"tests/support/dead.ts".to_string()),
+            "the dead support module is an unused file: {:?}",
+            snapshot.unused_files
+        );
+    }
+
+    #[test]
+    fn unused_test_exports_are_candidates_but_framework_exports_are_entries() {
+        let snapshot = snapshot(&[
+            (
+                "tests/helper.ts",
+                "export const usedHelper = 1;\nexport const unusedHelper = 2;\n",
+            ),
+            (
+                "tests/use-helper.test.ts",
+                "import { usedHelper } from './helper';\ntest('helper', () => { usedHelper; });\n",
+            ),
+            (
+                "src/Button.stories.tsx",
+                "export default { title: 'Button' };\nexport const Primary = {};\n",
+            ),
+            ("__mocks__/client.ts", "export const mockValue = 1;\n"),
+            (
+                "tests/types.test-d.ts",
+                "export type Assertion = { value: number };\nexport const fixture: Assertion = { value: 1 };\n",
+            ),
+            (
+                "__typetest__/assertions.ts",
+                "export type Expect<T extends true> = T;\nexport type Equal<A, B> = A extends B ? true : false;\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        assert!(
+            snapshot.is_candidate("tests/helper.ts#unusedHelper"),
+            "an unreferenced test helper is dead: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot.is_live("tests/helper.ts#usedHelper"),
+            "an imported test helper stays live: {:?}",
+            snapshot.live
+        );
+        for key in [
+            "src/Button.stories.tsx#Primary",
+            "src/Button.stories.tsx#default",
+            "__mocks__/client.ts#mockValue",
+            "tests/types.test-d.ts#Assertion",
+            "tests/types.test-d.ts#fixture",
+            "__typetest__/assertions.ts#Expect",
+            "__typetest__/assertions.ts#Equal",
+        ] {
+            assert!(entries.contains(&key), "{key}: {entries:?}");
+        }
+    }
+
+    #[test]
+    fn unused_files_require_no_entry_and_no_incoming_import() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "import { live } from '../src/live';\nexport default function Page() { return live; }\n",
+            ),
+            ("src/live.ts", "export const live = 1;\n"),
+            ("src/dead.ts", "export const dead = 1;\n"),
+            (
+                "src/dead-importer.ts",
+                "import { dependency } from './dependency';\nexport const dead = dependency;\n",
+            ),
+            ("src/dependency.ts", "export const dependency = 1;\n"),
+            ("src/effects.ts", "console.log('side effect');\n"),
+        ]);
+        assert_eq!(
+            snapshot.unused_files,
+            vec![
+                "src/dead-importer.ts".to_string(),
+                "src/dead.ts".to_string(),
+                "src/effects.ts".to_string(),
+            ],
+            "the page is an entry; the dependency has a dead importer"
+        );
+        assert!(
+            snapshot.is_candidate("src/dead.ts#dead"),
+            "{:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot.is_candidate("src/dead-importer.ts#dead"),
+            "{:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot.is_candidate("src/dependency.ts#dependency"),
+            "the dependency's only importer is itself dead"
+        );
+        assert!(
+            !snapshot
+                .unused_files
+                .contains(&"src/dependency.ts".to_string()),
+            "a file is unused only when no module imports it"
+        );
+        assert!(
+            !snapshot.unused_files.contains(&"src/live.ts".to_string()),
+            "an imported file is not unused"
+        );
+        assert!(
+            !snapshot.unused_files.contains(&"app/page.tsx".to_string()),
+            "an entry is not unused"
+        );
+    }
+
+    #[test]
+    fn standalone_script_exports_follow_the_graph() {
+        let snapshot = snapshot(&[(
+            "scripts/build.ts",
+            "export function usedByScript() { return 1; }\n\
+             export function unusedExport() { return 2; }\n\
+             usedByScript();\n",
+        )]);
+        let entries = entry_symbols(&snapshot);
+        assert!(
+            entries.contains(&"scripts/build.ts#__module__"),
+            "{entries:?}"
+        );
+        assert!(
+            snapshot.is_live("scripts/build.ts#usedByScript"),
+            "a helper called by the script stays live: {:?}",
+            snapshot.live
+        );
+        assert!(
+            snapshot.is_candidate("scripts/build.ts#unusedExport"),
+            "an unreferenced script export is dead: {:?}",
+            snapshot.candidates
         );
     }
 
@@ -2526,7 +2920,7 @@ mod tests {
     }
 
     #[test]
-    fn every_server_action_export_is_an_entry_by_default() {
+    fn unimported_server_actions_are_candidates_by_default() {
         let snapshot = snapshot(&[
             (
                 "app/page.tsx",
@@ -2540,6 +2934,43 @@ mod tests {
                  export async function unimportedAction() { return 2; }\n",
             ),
         ]);
+        let imported = "src/actions.ts#importedAction";
+        let unimported = "src/actions.ts#unimportedAction";
+        assert!(snapshot.is_live(imported), "{:?}", snapshot.live);
+        assert!(
+            !snapshot.is_candidate(imported),
+            "{:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot.is_candidate(unimported),
+            "an unreferenced action is dead under the default policy: {:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn server_actions_are_entries_under_protect_policy() {
+        let config = EngineConfig {
+            server_action_policy: ServerActionPolicy::Protect,
+            ..EngineConfig::default()
+        };
+        let snapshot = snapshot_with_config(
+            &[
+                (
+                    "app/page.tsx",
+                    "import { importedAction } from '../src/actions';\n\
+                     export default function Page() { return importedAction(); }\n",
+                ),
+                (
+                    "src/actions.ts",
+                    "\"use server\";\n\
+                     export async function importedAction() { return 1; }\n\
+                     export async function unimportedAction() { return 2; }\n",
+                ),
+            ],
+            &config,
+        );
         let entries = entry_symbols(&snapshot);
         for name in ["importedAction", "unimportedAction"] {
             let key = format!("src/actions.ts#{name}");
@@ -3743,6 +4174,69 @@ export default config;
     }
 
     #[test]
+    fn dotted_page_extensions_keep_next_routes_live() {
+        let snapshot = discovered_snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"next-app","dependencies":{"next":"^16.4.2","react":"^19.1.0"}}"#,
+            ),
+            (
+                "next.config.ts",
+                "const config = { pageExtensions: ['page.tsx'] };\nexport default config;\n",
+            ),
+            (
+                "app/page.page.tsx",
+                "import { Widget } from '../components/widget';\n\
+                 export default function Page() { return <Widget />; }\n\
+                 export const unusedPageHelper = 1;\n",
+            ),
+            (
+                "app/layout.page.tsx",
+                "export default function Layout() { return null; }\n\
+                 export const unusedLayoutHelper = 2;\n",
+            ),
+            (
+                "app/route.page.tsx",
+                "export function GET() { return new Response('ok'); }\n\
+                 export const unusedRouteHelper = 3;\n",
+            ),
+            (
+                "components/widget.tsx",
+                "export function Widget() { return <div />; }\n\
+                 export const unusedWidgetHelper = 4;\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for key in [
+            "app/page.page.tsx#default",
+            "app/layout.page.tsx#default",
+            "app/route.page.tsx#GET",
+        ] {
+            assert!(
+                entries.contains(&key),
+                "the configured dotted extension is one extension, not a new stem: {key} missing from {entries:?}"
+            );
+        }
+        assert!(
+            !snapshot.is_candidate("components/widget.tsx#Widget"),
+            "a component imported by a dotted-extension route stays live: {:?}",
+            snapshot.candidates
+        );
+        for key in [
+            "app/page.page.tsx#unusedPageHelper",
+            "app/layout.page.tsx#unusedLayoutHelper",
+            "app/route.page.tsx#unusedRouteHelper",
+            "components/widget.tsx#unusedWidgetHelper",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "only genuinely unused exports are candidates: {key} missing from {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
     fn next_page_extensions_make_markdown_routes_live() {
         let snapshot = discovered_snapshot(&next_page_extensions_fixture(true));
         let files: Vec<&str> = snapshot
@@ -4532,6 +5026,73 @@ export default config;
     }
 
     #[test]
+    fn mdx_component_map_requires_next_mdx_dependency() {
+        let map = "export function useMDXComponents() { return {}; }\nexport const unusedMdxHelper = 1;\n";
+        let plain = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"next-app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            ("mdx-components.tsx", map),
+        ]);
+        assert!(
+            plain.is_candidate("mdx-components.tsx#useMDXComponents"),
+            "Next core never loads the component map: {:?}",
+            plain.candidates
+        );
+        assert!(
+            plain.is_candidate("mdx-components.tsx#unusedMdxHelper"),
+            "{:?}",
+            plain.candidates
+        );
+
+        let mdx = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"next-app","dependencies":{"next":"^16.0.0","@next/mdx":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            ("mdx-components.tsx", map),
+        ]);
+        assert!(
+            !mdx.is_candidate("mdx-components.tsx#useMDXComponents"),
+            "@next/mdx aliases the component map: {:?}",
+            mdx.candidates
+        );
+        assert!(
+            mdx.is_candidate("mdx-components.tsx#unusedMdxHelper"),
+            "only the framework API is protected: {:?}",
+            mdx.candidates
+        );
+
+        // An incomplete tree has no manifest to consult; keep the convention.
+        let unknown = snapshot(&[("mdx-components.tsx", map)]);
+        assert!(
+            !unknown.is_candidate("mdx-components.tsx#useMDXComponents"),
+            "a missing manifest fails open: {:?}",
+            unknown.candidates
+        );
+
+        // A workspace can hoist the MDX plugin to the root while its apps only
+        // declare `next`. Keep the map live rather than reporting a false orphan.
+        let hoisted = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"workspace","devDependencies":{"@next/mdx":"^16.0.0"}}"#,
+            ),
+            (
+                "apps/web/package.json",
+                r#"{"name":"web","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            ("apps/web/mdx-components.tsx", map),
+        ]);
+        assert!(
+            !hoisted.is_candidate("apps/web/mdx-components.tsx#useMDXComponents"),
+            "a hoisted @next/mdx keeps the component map live: {:?}",
+            hoisted.candidates
+        );
+    }
+
+    #[test]
     fn router_and_meta_framework_routes_are_entries() {
         let snapshot = snapshot(&[
             (
@@ -4736,7 +5297,7 @@ export default config;
     }
 
     #[test]
-    fn unused_barrel_aliases_are_candidates_only_when_their_target_is_live() {
+    fn unused_barrel_aliases_are_candidates_even_when_their_target_is_dead() {
         let snapshot = snapshot(&[
             (
                 "package.json",
@@ -4768,14 +5329,14 @@ export default config;
             snapshot.candidates
         );
         assert!(
-            !snapshot.is_candidate("src/barrel.ts#dead"),
-            "a dead target is reported at its declaration, not through the alias: {:?}",
+            snapshot.is_candidate("src/barrel.ts#dead"),
+            "a dead alias must be reported so its barrel line is removed: {:?}",
             snapshot.candidates
         );
     }
 
     #[test]
-    fn unused_barrel_alias_chains_report_every_link_to_a_live_target() {
+    fn unused_barrel_alias_chains_report_every_link_to_a_dead_target() {
         let snapshot = snapshot(&[
             (
                 "package.json",
@@ -4803,13 +5364,13 @@ export default config;
             snapshot.candidates
         );
         assert!(
-            !snapshot.is_candidate("src/barrel.ts#dead"),
-            "dead alias is reported at its declaration, not through the alias: {:?}",
+            snapshot.is_candidate("src/barrel.ts#dead"),
+            "dead inner alias must be reported so the barrel line is removable: {:?}",
             snapshot.candidates
         );
         assert!(
-            !snapshot.is_candidate("src/outer.ts#dead"),
-            "dead outer alias is reported at its declaration, not through the alias: {:?}",
+            snapshot.is_candidate("src/outer.ts#dead"),
+            "dead outer alias must be reported so the barrel line is removable: {:?}",
             snapshot.candidates
         );
         assert!(
@@ -4861,8 +5422,8 @@ export default config;
             snapshot.candidates
         );
         assert!(
-            !snapshot.is_candidate("src/barrel.ts#dead"),
-            "a dead target is reported at its declaration, not through the alias: {:?}",
+            snapshot.is_candidate("src/barrel.ts#dead"),
+            "a dead local alias must be reported so its export line is removable: {:?}",
             snapshot.candidates
         );
     }
@@ -5053,6 +5614,117 @@ export default config;
                 .any(|key| key == "app/components/dead.tsx#deadThing"),
             "non-route modules must still be analyzed: {:?}",
             snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn remix_custom_server_module_is_an_entry() {
+        let remix = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"remix-app","dependencies":{"@remix-run/node":"^2.15.0","@remix-run/react":"^2.15.0","react":"^18.3.1"}}"#,
+            ),
+            (
+                "app/root.tsx",
+                "import { Outlet } from '@remix-run/react';\nexport default function App() { return <Outlet />; }\n",
+            ),
+            (
+                "server.ts",
+                "import { startServer } from './server-lib';\nstartServer();\nexport function createServer() { return 1; }\nexport const unusedServerHelper = 2;\n",
+            ),
+            (
+                "server-lib.ts",
+                "export function startServer() { return 1; }\n",
+            ),
+            (
+                "packages/other/server.ts",
+                "export function otherServer() { return 1; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&remix);
+        assert!(
+            entries.contains(&"server.ts#__module__"),
+            "a Remix custom server is executed directly: {entries:?}"
+        );
+        assert!(
+            !remix.is_candidate("server-lib.ts#startServer"),
+            "the server module's top-level call keeps its import live: {:?}",
+            remix.candidates
+        );
+        assert!(
+            remix.is_candidate("server.ts#createServer")
+                && remix.is_candidate("server.ts#unusedServerHelper"),
+            "nothing reads the server module's exports: {:?}",
+            remix.candidates
+        );
+        assert!(
+            remix.is_candidate("packages/other/server.ts#otherServer"),
+            "the convention is scoped to the app package root: {:?}",
+            remix.candidates
+        );
+
+        let plain = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"plain-react","dependencies":{"react":"^18.3.1"}}"#,
+            ),
+            (
+                "server.ts",
+                "export function createServer() { return 1; }\n",
+            ),
+        ]);
+        assert!(
+            plain.is_candidate("server.ts#createServer"),
+            "a plain React app has no Remix custom server: {:?}",
+            plain.candidates
+        );
+    }
+
+    #[test]
+    fn next_custom_server_module_is_an_entry() {
+        let next = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"next-app","type":"module","dependencies":{"next":"^16.4.2","react":"^19.1.0"}}"#,
+            ),
+            (
+                "app/page.tsx",
+                "export default function Page() { return null; }\n",
+            ),
+            (
+                "server.js",
+                "import { boot } from './server-lib';\nboot();\nexport function start() { return 1; }\nexport const unusedServerHelper = 2;\n",
+            ),
+            ("server-lib.js", "export function boot() { return 1; }\n"),
+        ]);
+        let entries = entry_symbols(&next);
+        assert!(
+            entries.contains(&"server.js#__module__"),
+            "a Next custom server is executed directly: {entries:?}"
+        );
+        assert!(
+            !next.is_candidate("server-lib.js#boot"),
+            "the server module's top-level call keeps its import live: {:?}",
+            next.candidates
+        );
+        assert!(
+            next.is_candidate("server.js#start")
+                && next.is_candidate("server.js#unusedServerHelper"),
+            "nothing reads the custom server's exports: {:?}",
+            next.candidates
+        );
+
+        let plain = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"plain-react","type":"module","dependencies":{"react":"^19.1.0"}}"#,
+            ),
+            ("server.js", "export function start() { return 1; }\n"),
+        ]);
+        assert!(
+            plain.is_candidate("server.js#start"),
+            "a plain React app has no Next custom server: {:?}",
+            plain.candidates
         );
     }
 

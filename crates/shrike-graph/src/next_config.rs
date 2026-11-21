@@ -204,11 +204,17 @@ fn is_identifier_continue(byte: u8) -> bool {
     is_identifier_start(byte) || byte.is_ascii_digit()
 }
 
+/// A page extension may contain dots: `pageExtensions: ["page.tsx"]` makes
+/// `app/page.page.tsx` a route. Each dot-separated segment must still be a
+/// plain extension token, so a computed value or a path cannot be smuggled in.
 fn is_extension(value: &str) -> bool {
     !value.is_empty()
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+        && value.split('.').all(|part| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+        })
 }
 
 #[cfg(test)]
@@ -257,6 +263,16 @@ mod tests {
             };
         "#;
         assert_eq!(page_extensions(source), BTreeSet::from(["md".to_string()]));
+    }
+
+    #[test]
+    fn reads_dotted_page_extensions() {
+        let source =
+            r#"const config = { pageExtensions: ["page.tsx", "route.mjs", "../bad", "."] };"#;
+        assert_eq!(
+            page_extensions(source),
+            BTreeSet::from(["page.tsx".to_string(), "route.mjs".to_string()])
+        );
     }
 
     #[test]

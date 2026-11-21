@@ -20,6 +20,7 @@ export interface CheckConfig {
 export type VerificationTier = "fast" | "standard" | "full";
 export type VerificationMode = "worktree" | "in-place";
 export type ClientBoundaryPolicy = "graph" | "protect";
+export type ServerActionPolicy = "graph" | "protect";
 
 export interface VerificationConfig {
   mode: VerificationMode;
@@ -56,10 +57,16 @@ export interface ShrikeConfig {
    * `graph` (default) treats a `"use client"` directive as a boundary marker
    * and lets normal reachability decide liveness. `protect` also seeds every
    * export in client-boundary files as an entry (the pre-1.1 fail-closed
-   * behavior). `"use server"` exports are always entries because Next.js
-   * registers them independently of imports.
+   * behavior).
    */
   clientBoundaryPolicy: ClientBoundaryPolicy;
+  /**
+   * `graph` (default) treats a `"use server"` export as an ordinary export and
+   * reports actions with no project reference. `protect` seeds every export in
+   * a server-action module as an entry, preserving the pre-1.2 fail-closed
+   * behavior for actions that remain POST-able if their id leaks.
+   */
+  serverActionPolicy: ServerActionPolicy;
   /** Dependency names that must never be reported as unused. */
   ignoreDependencies: string[];
   publicApi: string[];
@@ -102,6 +109,7 @@ export const DEFAULT_CONFIG: ShrikeConfig = {
   testEntries: true,
   includeGenerated: false,
   clientBoundaryPolicy: "graph",
+  serverActionPolicy: "graph",
   ignoreDependencies: [],
   publicApi: [],
   generated: [],

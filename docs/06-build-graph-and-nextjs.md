@@ -264,20 +264,22 @@ If exact attribution is impossible (e.g., minified chunk composition), report
 
 ### 7.1 Server actions
 
-A `"use server"` module export is an entry. Its reachability is from the client
-reference that invokes it. Every export is seeded under both
-`clientBoundaryPolicy` values: the policy only governs `"use client"` modules,
-because Next.js registers actions in the server-reference manifest whether or
-not application code imports them.
+A `"use server"` module export is a server action. Under the default
+`serverActionPolicy: "graph"`, it is an ordinary export: an import, a
+`action={fn}` binding, a call, or any other project reference keeps it live,
+and an action with no project reference is reported. This matches knip and
+fallow. `serverActionPolicy: "protect"` instead seeds every export and the
+module as entries, because Next.js registers actions in the server-reference
+manifest once the module is reached.
 
 - If the client-reference manifest maps the action to a client module, create a
-  `certain` edge.
-- If the manifest is unavailable, keep the action live by default. A server
-  action is never a deletion candidate without positive evidence that no client
-  reference exists.
+  `certain` edge. This keeps a referenced action live under either policy.
+- If the manifest is unavailable, the default policy relies on static
+  references. An unreferenced action remains POST-able if its id leaks, which
+  is why `protect` exists for teams that treat that as a supported entry point.
 - Build evidence that an action is absent from every client reference is
-  `absent`, not proof of death; the action may be called from a form, a fetch, or
-  an external client.
+  `absent`. Under `protect` it is not proof of death; under `graph` it
+  corroborates the static finding and must not resurrect a dead action.
 
 ### 7.2 Client boundaries
 

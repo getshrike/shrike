@@ -40,9 +40,7 @@ impl Default for BatchPolicy {
     }
 }
 
-/// How a `"use client"` directive affects entry seeding. `"use server"`
-/// exports are always entries because Next.js registers them independently of
-/// imports.
+/// How a `"use client"` directive affects entry seeding.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ClientBoundaryPolicy {
@@ -53,6 +51,21 @@ pub enum ClientBoundaryPolicy {
     /// Every export in a client boundary file is an entry. Maximum caution for
     /// frameworks that discover boundaries outside the import graph; hides
     /// genuinely unused client-boundary exports.
+    Protect,
+}
+
+/// How a module-level `"use server"` directive affects entry seeding.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ServerActionPolicy {
+    /// Server actions are ordinary exports. An action that no project module
+    /// imports or references is reported, matching knip and fallow. Build
+    /// evidence can still mark a referenced action live.
+    #[default]
+    Graph,
+    /// Every export in a `"use server"` module is an entry, because Next.js
+    /// registers actions independently of imports. Hides actions that have no
+    /// project reference but remain POST-able if their id leaks.
     Protect,
 }
 
@@ -74,6 +87,8 @@ pub struct EngineConfig {
     pub include_generated: bool,
     /// Client/server boundary entry policy.
     pub client_boundary_policy: ClientBoundaryPolicy,
+    /// Server-action entry policy.
+    pub server_action_policy: ServerActionPolicy,
     /// Extra globs whose exports are public API and never deletion candidates.
     pub public_api: Vec<String>,
     /// Extra globs treated as generated.
@@ -121,6 +136,7 @@ impl Default for EngineConfig {
             test_entries: true,
             include_generated: false,
             client_boundary_policy: ClientBoundaryPolicy::Graph,
+            server_action_policy: ServerActionPolicy::Graph,
             public_api: Vec::new(),
             generated: Vec::new(),
             batch_policy: BatchPolicy::default(),
@@ -203,6 +219,7 @@ mod tests {
         assert!(config.test_entries);
         assert!(!config.include_generated);
         assert_eq!(config.client_boundary_policy, ClientBoundaryPolicy::Graph);
+        assert_eq!(config.server_action_policy, ServerActionPolicy::Graph);
         assert!(config.validate().is_ok());
     }
 

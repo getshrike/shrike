@@ -21,6 +21,96 @@ function snapshot(content, file, name) {
   };
 }
 
+function reExportSnapshot(content, file, specifiers) {
+  return {
+    symbols: specifiers.map(({ name, text }) => {
+      const start = content.indexOf(text);
+      assert.notEqual(start, -1, `missing specifier text: ${text}`);
+      return {
+        key: `${file}#${name}`,
+        file,
+        kind: "re-export",
+        span: {
+          start,
+          end: start + text.length,
+          line: content.slice(0, start).split("\n").length,
+          endLine: content.slice(0, start + text.length).split("\n").length,
+        },
+      };
+    }),
+    live: [`${file}#__module__`],
+  };
+}
+
+test("deleting one inline re-export specifier keeps its live sibling", () => {
+  const directory = scratch();
+  try {
+    const file = "src/barrel.ts";
+    const content = 'export { live, dead } from "./impl";\n';
+    writeFileSync(join(directory, file), content);
+    const snapshot = reExportSnapshot(content, file, [{ name: "dead", text: "dead" }]);
+    applySymbols(directory, snapshot, [`${file}#dead`]);
+    assert.equal(readFileSync(join(directory, file), "utf8"), 'export { live } from "./impl";\n');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("deleting the first inline re-export specifier keeps the trailing sibling", () => {
+  const directory = scratch();
+  try {
+    const file = "src/barrel.ts";
+    const content = 'export { dead, live } from "./impl";\n';
+    writeFileSync(join(directory, file), content);
+    const snapshot = reExportSnapshot(content, file, [{ name: "dead", text: "dead" }]);
+    applySymbols(directory, snapshot, [`${file}#dead`]);
+    assert.equal(readFileSync(join(directory, file), "utf8"), 'export { live } from "./impl";\n');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("deleting an aliased specifier removes the whole specifier, not its target name", () => {
+  const directory = scratch();
+  try {
+    const file = "src/barrel.ts";
+    const content = 'export { live, dead as deadAlias } from "./impl";\n';
+    writeFileSync(join(directory, file), content);
+    const snapshot = reExportSnapshot(content, file, [
+      { name: "deadAlias", text: "dead as deadAlias" },
+    ]);
+    applySymbols(directory, snapshot, [`${file}#deadAlias`]);
+    assert.equal(readFileSync(join(directory, file), "utf8"), 'export { live } from "./impl";\n');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("deleting a multi-line re-export specifier removes only its line", () => {
+  const directory = scratch();
+  try {
+    const file = "src/barrel.ts";
+    const content = [
+      'export {',
+      '  live as liveAlias,',
+      '  dead as deadAlias,',
+      '} from "./impl";',
+      "",
+    ].join("\n");
+    writeFileSync(join(directory, file), content);
+    const snapshot = reExportSnapshot(content, file, [
+      { name: "deadAlias", text: "dead as deadAlias" },
+    ]);
+    applySymbols(directory, snapshot, [`${file}#deadAlias`]);
+    assert.equal(
+      readFileSync(join(directory, file), "utf8"),
+      ['export {', '  live as liveAlias,', '} from "./impl";', ""].join("\n"),
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("deleting a declaration collapses the blank separator", () => {
   const directory = scratch();
   try {
