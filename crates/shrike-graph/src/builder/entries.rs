@@ -3287,7 +3287,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_client_exports_are_project_gated_warnings() {
+    fn invalid_client_exports_are_build_errors_in_client_routes() {
         let next_snapshot = snapshot(&[
             (
                 "package.json",
@@ -3298,41 +3298,76 @@ mod tests {
                 r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
             ),
             (
-                "app/client.tsx",
-                "\"use client\";\nexport const metadata = { title: \"widget\" };\nexport const revalidate = 60;\nexport async function GET() { return new Response(\"ok\"); }\nexport function Widget() { return null; }\n",
+                "app/page.tsx",
+                "\"use client\";\nexport const metadata = { title: \"page\" };\nexport const revalidate = 60;\nexport default function Page() { return null; }\n",
             ),
             (
-                "src/local.tsx",
-                "\"use client\";\nconst config = { title: \"x\" };\nexport { config as metadata };\n",
+                "app/layout.tsx",
+                "\"use client\";\nexport const viewport = { width: \"device-width\" };\nexport function generateMetadata() { return { title: \"layout\" }; }\nexport default function Layout({ children }: { children: React.ReactNode }) { return <>{children}</>; }\n",
             ),
             (
-                "src/local-same.ts",
-                "\"use client\";\nconst metadata = { title: \"x\" };\nexport { metadata };\n",
+                "app/api/route.ts",
+                "\"use client\";\nexport const metadata = { title: \"api\" };\nexport const viewport = { width: \"device-width\" };\nexport const revalidate = 60;\nexport function GET() { return new Response(\"ok\"); }\n",
             ),
             (
-                "src/direct-and-alias.ts",
-                "\"use client\";\nexport const metadata = { title: \"x\" };\nexport { metadata as config };\n",
+                "app/aliased/page.tsx",
+                "\"use client\";\nconst metadata = { title: \"x\" };\nexport { metadata };\nexport default function Page() { return null; }\n",
             ),
             (
-                "src/renamed-away.ts",
-                "\"use client\";\nconst metadata = { title: \"x\" };\nexport { metadata as config };\n",
+                "app/renamed/page.tsx",
+                "\"use client\";\nconst metadata = { title: \"x\" };\nexport { metadata as config };\nexport default function Page() { return null; }\n",
             ),
             (
-                "src/type-only.ts",
-                "\"use client\";\nexport type metadata = { title: string };\n",
+                "app/direct/page.tsx",
+                "\"use client\";\nexport const metadata = { title: \"x\" };\nexport { metadata as config };\nexport default function Page() { return null; }\n",
             ),
             (
-                "src/re-export.ts",
-                "\"use client\";\nexport { metadata } from \"./server\";\n",
+                "app/type-specifier/page.tsx",
+                "\"use client\";\ntype metadata = { title: string };\nexport type { metadata };\nexport default function Page() { return null; }\n",
             ),
             (
-                "src/server.ts",
+                "app/type-decl/page.tsx",
+                "\"use client\";\nexport interface metadata { title: string }\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "app/reexport/page.tsx",
+                "\"use client\";\nexport { metadata } from \"./server\";\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "app/reexport/server.ts",
                 "export const metadata = { title: \"x\" };\n",
             ),
-            ("src/no-directive.ts", "export const revalidate = 60;\n"),
             (
-                "packages/plain/src/client.tsx",
-                "\"use client\";\nexport const metadata = { title: \"x\" };\n",
+                "app/star/page.tsx",
+                "\"use client\";\nexport * as metadata from \"./server\";\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "app/star/server.ts",
+                "export const metadata = { title: \"x\" };\n",
+            ),
+            (
+                "app/non-failing/page.tsx",
+                "\"use client\";\nexport const dynamic = \"force-static\";\nexport const dynamicParams = false;\nexport const fetchCache = \"force-cache\";\nexport const runtime = \"edge\";\nexport const preferredRegion = \"home\";\nexport const maxDuration = 10;\nexport function GET() { return new Response(\"ok\"); }\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "app/template.tsx",
+                "\"use client\";\nexport const metadata = { title: \"template\" };\nexport default function Template({ children }: { children: React.ReactNode }) { return <>{children}</>; }\n",
+            ),
+            (
+                "app/not-found.tsx",
+                "\"use client\";\nexport const metadata = { title: \"missing\" };\nexport default function NotFound() { return null; }\n",
+            ),
+            (
+                "app/widget.tsx",
+                "\"use client\";\nexport const metadata = { title: \"widget\" };\nexport default function Widget() { return null; }\n",
+            ),
+            (
+                "packages/plain/app/page.tsx",
+                "\"use client\";\nexport const metadata = { title: \"plain\" };\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "app/server/page.tsx",
+                "export const metadata = { title: \"server\" };\nexport default function Page() { return null; }\n",
             ),
         ]);
         let invalid: Vec<(&str, u32)> = next_snapshot
@@ -3349,17 +3384,17 @@ mod tests {
         assert_eq!(
             invalid,
             vec![
-                ("app/client.tsx", 2),
-                ("app/client.tsx", 3),
-                ("app/client.tsx", 4),
-                // A shared package inside a Next project is compiled in the
-                // Next context, so the project-level gate applies.
-                ("packages/plain/src/client.tsx", 2),
-                // A direct export is anchored on its declaration; a local
-                // export is anchored on its specifier and reported once.
-                ("src/direct-and-alias.ts", 2),
-                ("src/local-same.ts", 3),
-                ("src/local.tsx", 3),
+                ("app/aliased/page.tsx", 3),
+                ("app/api/route.ts", 2),
+                ("app/api/route.ts", 4),
+                ("app/direct/page.tsx", 2),
+                ("app/layout.tsx", 2),
+                ("app/layout.tsx", 3),
+                ("app/page.tsx", 2),
+                ("app/page.tsx", 3),
+                ("app/reexport/page.tsx", 2),
+                ("app/star/page.tsx", 2),
+                ("app/type-specifier/page.tsx", 3),
             ],
             "{:?}",
             next_snapshot.diagnostics
@@ -3370,10 +3405,10 @@ mod tests {
                 .iter()
                 .filter(|diagnostic| diagnostic.code == "invalid_client_export")
                 .all(|diagnostic| {
-                    diagnostic.severity == shrike_core::Severity::Warning
-                        && diagnostic.message.contains("server-only")
+                    diagnostic.severity == shrike_core::Severity::Error
+                        && diagnostic.message.contains("fails the build")
                 }),
-            "invalid client exports are warnings: {:?}",
+            "invalid client exports are build errors: {:?}",
             next_snapshot.diagnostics
         );
 
@@ -3385,13 +3420,13 @@ mod tests {
                 r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
             ),
             (
-                "app/client.tsx",
-                "\"use client\";\nexport const metadata = { title: \"x\" };\n",
+                "app/page.tsx",
+                "\"use client\";\nexport const metadata = { title: \"x\" };\nexport default function Page() { return null; }\n",
             ),
         ]);
         let missing_manifest = snapshot(&[(
-            "app/client.tsx",
-            "\"use client\";\nexport const metadata = { title: \"x\" };\n",
+            "app/page.tsx",
+            "\"use client\";\nexport const metadata = { title: \"x\" };\nexport default function Page() { return null; }\n",
         )]);
         for control in [&react_only, &missing_manifest] {
             assert!(

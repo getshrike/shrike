@@ -1197,6 +1197,53 @@ non-page module, or an app-shaped directory in a package without `next`.
 
 ---
 
+## D-033 — Invalid client exports are route-only build errors
+
+**Decision:** A `"use client"` page, layout, or route handler that exports a
+Next.js server-only API produces an `invalid_client_export` error diagnostic.
+Pages and layouts reject `metadata`, `generateMetadata`, `viewport`,
+`generateViewport`, and `revalidate`; route handlers reject `metadata`,
+`generateMetadata`, and `revalidate`. The rule is gated per package on `next`
+and applies only to files classified as `page`, `layout`, or `route`.
+
+**Alternatives considered:**
+
+- Keep fallow 3.45.0's 22-name list: real Next.js 16.4.6 builds succeed for
+  `dynamic`, `dynamicParams`, `fetchCache`, `runtime`, `preferredRegion`,
+  `maxDuration`, the HTTP method handlers, and the legacy Pages Router data
+  functions, so reporting them would be a false positive.
+- Keep the project-wide gate: a `"use client"` module in a non-route file does
+  not fail a Next.js build, and a route in a package that does not declare
+  `next` is not a Next app.
+- Report warnings: Next.js fails the build, so these are errors.
+- Exclude re-exports and type-only specifiers: Next.js flags
+  `export { metadata } from "./server"`, `export type { metadata } from`, and
+  `export * as metadata`; only local `interface` and `type` declarations are
+  erased and ignored.
+
+**Why:** Probed Next.js 16.4.6 with real `next build` runs. Client page and
+layout builds fail for the five names; client route handlers fail for
+`metadata`, `generateMetadata`, and `revalidate` but succeed for `viewport` and
+`generateViewport`; `template`, `not-found`, `error`, `loading`, and non-route
+client modules succeed; `dynamic`, `dynamicParams`, `fetchCache`, `runtime`,
+`preferredRegion`, `maxDuration`, and `GET` succeed. Server controls confirm
+that `export type { metadata }` and local aliases are client-specific, while
+local `interface` and `type` declarations are ignored.
+
+**Consequences:**
+
+- `NEXT_SERVER_ONLY_EXPORTS` is narrowed to the five verified names and
+  `NEXT_ROUTE_HANDLER_SERVER_ONLY_EXPORTS` to the three route-handler names.
+- The detector uses `classify_app_route` and the per-package Next gate.
+- `ANALYSIS_VERSION` is bumped to 69.
+- The error groups under `boundary` in the CLI diagnostic summary and never
+  changes candidates or entries.
+
+**Revisit if:** Next.js changes its client-boundary export validation or starts
+failing for the names that currently build.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -1264,7 +1311,7 @@ external app, credential, or participant.
 | D-022 | Unused-file findings require no entry, no import, and a dead module | accepted |
 | D-023 | Cypress specs and support files are module entries | accepted |
 | D-024 | `scripts/` files are entries only when referenced | accepted |
-| D-025 | `"use client"` server-only exports are advisory warnings | accepted |
+| D-025 | `"use client"` server-only exports are advisory warnings | superseded by D-033 |
 | D-026 | App Router route conflicts are error diagnostics | accepted |
 | D-027 | Misplaced RSC directives are advisory warnings | accepted |
 | D-028 | Mixed client/server barrels are advisory warnings | accepted |
@@ -1272,6 +1319,7 @@ external app, credential, or participant.
 | D-030 | Async arrow actions and inline directives are Server Actions | accepted |
 | D-031 | Definitely non-function `"use server"` exports are warnings | accepted |
 | D-032 | Invalid route segment configuration is an error diagnostic | accepted |
+| D-033 | Invalid client exports are route-only build errors | accepted |
 
 ## Rejected ideas
 
