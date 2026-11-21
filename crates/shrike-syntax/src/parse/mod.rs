@@ -34,22 +34,13 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
     let line_index = LineIndex::new(source);
     let line_count = line_index.line_count();
     let generated = looks_generated(source);
-    let executable = looks_executable(path, source);
 
     if path.to_ascii_lowercase().ends_with(".html") {
         return html::parse(path, source, hash, &line_index, line_count, generated);
     }
 
     if path.to_ascii_lowercase().ends_with(".mdx") || path.to_ascii_lowercase().ends_with(".md") {
-        return mdx::parse(
-            path,
-            source,
-            hash,
-            &line_index,
-            line_count,
-            generated,
-            executable,
-        );
+        return mdx::parse(path, source, hash, &line_index, line_count, generated);
     }
 
     let source_type = match SourceType::from_path(path) {
@@ -105,7 +96,6 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
                 type_refs: Vec::new(),
                 type_imports: Vec::new(),
                 ambient_modules: Vec::new(),
-                executable,
                 dynamic: Vec::new(),
                 unknown: Vec::new(),
                 generated,
@@ -139,7 +129,6 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
             type_refs: Vec::new(),
             type_imports: Vec::new(),
             ambient_modules: Vec::new(),
-            executable,
             dynamic: Vec::new(),
             unknown: Vec::new(),
             generated,
@@ -171,7 +160,6 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
         type_refs: Vec::new(),
         type_imports: Vec::new(),
         ambient_modules: Vec::new(),
-        executable,
         dynamic: Vec::new(),
         unknown: Vec::new(),
         generated,
@@ -221,37 +209,6 @@ fn module_kind(path: &str) -> &'static str {
     } else {
         "js"
     }
-}
-
-/// Detect files that run without being imported.
-///
-/// A shebang is an unambiguous executable marker. A `Usage:` line in the
-/// leading documentation is the convention used by manual tooling scripts
-/// (`scripts/`, `tools/`, `bin/`) that a maintainer runs directly. Restricting
-/// the documentation check to tooling directories keeps ordinary library
-/// docs from suppressing candidates.
-fn looks_executable(path: &str, source: &str) -> bool {
-    let head: String = source.chars().take(4096).collect();
-    if head.starts_with("#!") {
-        return true;
-    }
-    let tooling = path.split('/').any(|segment| {
-        matches!(
-            segment,
-            "scripts" | "tools" | "bin" | "dev" | "hack" | "tasks"
-        )
-    });
-    if !tooling {
-        return false;
-    }
-    head.lines().take(40).any(|line| {
-        let line = line
-            .trim_start()
-            .trim_start_matches(['*', '/', '#', '!', ' '])
-            .trim_start();
-        line.get(..6)
-            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("usage:"))
-    })
 }
 
 fn looks_generated(source: &str) -> bool {

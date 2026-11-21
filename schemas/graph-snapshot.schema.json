@@ -324,7 +324,6 @@
             "test",
             "tests",
             "config",
-            "executable",
             "local",
             "scripts",
             "ambient"

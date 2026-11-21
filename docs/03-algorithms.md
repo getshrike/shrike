@@ -428,12 +428,17 @@ configuration in Node.
   only exports imported by another module stay live. `__mocks__` modules keep
   their full export surface because Jest loads them by convention, and type-test
   files keep theirs because they exist to assert the exports;
-- standalone scripts, examples, demos, playgrounds, and benchmarks. Modules
-  under a root `scripts/`, `examples/`, `example/`, `demo/`, `playground/`,
-  `playgrounds/`, or `benchmarks/` directory, and files named by a package
-  script, are entries because they are executed directly. Their exports are
-  helpers and follow the graph, so an unimported script export is reportable
-  while top-level work and imports stay live;
+- standalone examples, demos, playgrounds, and benchmarks. Modules under a root
+  `examples/`, `example/`, `demo/`, `playground/`, `playgrounds/`, or
+  `benchmarks/` directory are entries because they are executed directly. Their
+  exports are helpers and follow the graph, so an unimported export is
+  reportable while top-level work and imports stay live;
+- package scripts. A file named by `package.json` `scripts` or `bin` is an
+  entry, and its exports follow the graph. A file under `scripts/` is not an
+  entry by location, a documented `Usage:`/`Run:` header, or a shebang alone:
+  those are documentation, not references. An unreferenced one-off tool is
+  therefore an unused file with reportable declarations, matching Knip 5.88.1
+  and fallow 3.45.0;
 - Storybook `.{storybook,rnstorybook}/**` config and `*.stories.*` /
   `*.story.*` files. Story modules expose every export to Storybook. When the
   owning package depends on `storybook`,

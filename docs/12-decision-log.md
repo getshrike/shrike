@@ -717,6 +717,58 @@ literal config value describes, or a competitor starts protecting the whole
 
 ---
 
+## D-024 — `scripts/` files are entries only when referenced
+
+**Decision:** A source file under a root `scripts/` directory is not an entry
+because of its location, a documented `Usage:`/`Run:` header, or a shebang. It
+enters the graph like any other module: a `package.json` `scripts` or `bin`
+entry names it, a live module imports it, or an explicit configuration
+references it. Once entered, its exports are helpers and follow the graph
+(D-021).
+
+**Alternatives considered:**
+
+- Keep the blanket `scripts/` entry rule. Knip 5.88.1 and fallow 3.45.0 both
+  report uninvoked one-off tools; the rule hid seven requo scripts and two
+  accounteer scripts that both competitors report.
+- Keep only the documented-header heuristic. Requo's five TypeScript tools use
+  `Run:` headers and accounteer's two use `Usage:`; both competitors report all
+  seven. A header is prose, not a reference.
+- Keep the shebang heuristic. Requo's two `.mjs` walkthrough tools have
+  shebangs and are still unreferenced; both competitors report them. A shebang
+  says how to run a file, not that anything runs it.
+- Report every declaration under `scripts/` as a candidate without making the
+  file an unused file. That would flag helpers in package-script tools whose
+  top-level code calls them; the graph already keeps those live.
+
+**Why:** On requo, Shrike protected `scripts/backfill-pack-assignments.ts`,
+`scripts/backfill-pack-recipes.ts`, `scripts/bootstrap-admin.ts`,
+`scripts/generate-config-defaults.ts`, `scripts/mark-migrations-applied.ts`,
+`scripts/marketing/extract-windows-cursors.mjs`, and
+`scripts/marketing/record-landing-walkthrough.mjs`, all reported by both
+competitors. On accounteer, Shrike protected `scripts/evaluate-fit.ts` and
+`scripts/generate-taxonomy-migration.ts`, also reported by both. After the
+change Shrike reports all nine as unused files with their declarations as
+candidates, while package-script tools and the helpers they call stay live.
+
+**Consequences:**
+
+- The `executable` summary field and the `looks_executable` heuristic are
+  removed. A shebang or a leading documentation header no longer affects graph
+  liveness.
+- The two-sided `unreferenced-scripts` corpus case pins a package-named script
+  as a live entry with one reportable unused export, and pins an unreferenced
+  `Run:` tool and an unreferenced shebang tool as unused files with reportable
+  declarations.
+- `examples/`, `example/`, `demo/`, `playground/`, `playgrounds/`, and
+  `benchmarks/` keep their directory entry rule; they are demonstration roots
+  rather than ad-hoc tools.
+
+**Revisit if:** a real repository invokes scripts through a path that cannot be
+statically named (for example a command table) and both competitors protect it.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -783,6 +835,7 @@ external app, credential, or participant.
 | D-021 | Test and script modules are entries; their exports follow the graph | accepted |
 | D-022 | Unused-file findings require no entry, no import, and a dead module | accepted |
 | D-023 | Cypress specs and support files are module entries | accepted |
+| D-024 | `scripts/` files are entries only when referenced | accepted |
 
 ## Rejected ideas
 
