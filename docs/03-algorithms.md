@@ -340,6 +340,19 @@ analyzable.
   module references is reported; an import, `action={fn}` binding, or any other
   reference keeps it live. Build evidence can also keep a referenced action live;
 - `"use client"` module exports (client boundary);
+- a `"use client"` module that exports a Next.js server-only, route-config, or
+  route-handler name produces an advisory `invalid_client_export` warning, not
+  a finding. The names are `metadata`, `generateMetadata`, `viewport`,
+  `generateViewport`, `generateStaticParams`, `dynamic`, `dynamicParams`,
+  `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, `maxDuration`,
+  `getServerSideProps`, `getStaticProps`, `getStaticPaths`, `GET`, `POST`,
+  `PUT`, `PATCH`, `DELETE`, `HEAD`, and `OPTIONS`. The rule is gated on the
+  project declaring `next` in the root or a workspace manifest, because a
+  shared client module is compiled in the consuming Next app's context. A
+  direct export is anchored on its declaration; a local `export { name }` is
+  anchored on its specifier and reported once. Default, type-only, and
+  re-export forms are excluded. The list matches fallow 3.45.0's
+  `ILLEGAL_CLIENT_EXPORTS`; knip 5.88.1 does not report the condition;
 - metadata exports: `metadata`, `generateMetadata`, `viewport`,
   `generateViewport`, `generateStaticParams`, `generateSitemaps`;
 - dynamic param matching (Next.js 16.4): `unstable_paramMatching` and

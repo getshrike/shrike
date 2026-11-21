@@ -101,7 +101,15 @@ pub struct DeclarationRecord {
     pub kind: DeclarationKind,
     /// Span of the complete statement, including an `export` keyword.
     pub span: Span,
+    /// Whether the module exports this declaration, including through a
+    /// separate `export { name }` statement. `mark_local_exports` sets this
+    /// after parsing.
     pub exported: bool,
+    /// Whether the declaration itself carries the `export` keyword. A local
+    /// `export { name as other }` sets `exported` but not this flag, so callers
+    /// can tell the declaration's own name apart from its exported alias.
+    #[serde(default)]
+    pub directly_exported: bool,
     pub default: bool,
     pub type_only: bool,
     pub r#async: bool,

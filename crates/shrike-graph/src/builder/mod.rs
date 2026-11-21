@@ -111,6 +111,7 @@ impl<'a> Builder<'a> {
     pub(crate) fn build(&mut self) {
         self.build_files();
         self.build_symbols();
+        self.detect_invalid_client_exports();
         self.resolve_imports();
         self.build_edges();
         self.detect_entries();

@@ -473,6 +473,33 @@ not commitments; commitments are in the plans.
 
 ---
 
+### 2026-11-21 — invalid client exports
+
+- Read fallow 3.45.0's
+  `crates/core/src/analyze/invalid_client_exports.rs` directly. Its
+  `ILLEGAL_CLIENT_EXPORTS` set has 22 names: the metadata APIs, the route
+  segment config, the legacy Pages Router data functions, and the seven route
+  HTTP method handlers (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`,
+  `OPTIONS`). The gate is
+  `collect_declared_dependency_names`, the union of the root and every
+  workspace manifest. Re-exports, type-only exports, and default exports are
+  skipped.
+- Probes under `/tmp/opencode/client-export-*` confirm the source: the
+  methods probe reports the same 22 names in the same order in Shrike and
+  fallow; the variants probe matches file and line anchors exactly
+  (`app/alias.tsx#3`, `app/local-export.tsx#3`, `src/not-route.tsx#2`); the
+  monorepo probe flags a React-only workspace package when the root declares
+  `next`, in both tools; the no-Next control reports zero in both. Knip 5.88.1
+  has no equivalent rule.
+- Shrike reports this as an advisory warning, not a finding. It needs
+  `DeclarationRecord.directly_exported` to tell `export const metadata` from
+  `const metadata; export { metadata as config }`, because
+  `mark_local_exports` sets `exported` for both. One warning per exported name,
+  anchored on the declaration for a direct export and on the specifier for a
+  local export.
+
+---
+
 ## 9. Change log
 
 | Date | Change | Files |
@@ -532,6 +559,7 @@ not commitments; commitments are in the plans.
 | 2026-11-21 | Added file-level unused findings: a parsed, non-public, non-generated file with no entry, no incoming cross-file edge to any symbol, and a dead module symbol. Imported barrels stay out, and a file imported only by dead code waits for the cascade. The rule was reverse-engineered from Knip 5.88.1 and fallow 3.45.0 and matches their complete agreement on both frozen snapshots: 8 files in requo and 8 in accounteer, no extras or omissions. Requo also reports the new unimported `lib/config/index.ts` (9 total, 669 candidates); accounteer 8/161, next-portfolio 3/8, markalvarez 3/24, portfolio 0/1. Added the two-sided `unused-files` corpus case, the graph test, CLI output and exit handling, the schema property, and recomputation after build evidence | `crates/shrike-graph/src/types.rs`, `crates/shrike-graph/src/builder/mod.rs`, `crates/shrike-graph/src/lib.rs`, `crates/shrike-evidence/src/augment.rs`, `crates/shrike-engine/src/cache.rs`, `packages/cli/src/commands/basic.ts`, `packages/cli/src/cli-types.ts`, `schemas/graph-snapshot.schema.json`, `fixtures/must-not-report/cases/unused-files/`, `fixtures/must-not-report/manifest.json`, `scripts/corpus-runner.mjs`, `scripts/check-corpus.mjs`, `docs/03-algorithms.md`, `docs/12-decision-log.md` |
 | 2026-11-21 | Protected Cypress specs and support files as module entries. When the owning package depends on `cypress`, `cypress.config.*` is read statically: e2e specs from `specPattern` (default `cypress/e2e/**/*.cy.{js,jsx,ts,tsx}`), the support module from `supportFile` (default `cypress/support/e2e.{js,jsx,ts,tsx}`), and component patterns only when the config declares `component`. Literal strings only; computed values fall back to Cypress's defaults. On `/tmp/opencode/cypress-probe`, Shrike before reported 6 candidates and 4 unused files; knip 5.88.1 and fallow 3.45.0 both report 1 unused file and 3 unused exports. After the change Shrike reports exactly the same 4 candidates (the 3 exports plus the dead file's symbol) and 1 unused file. Added unit and graph tests plus the two-sided `cypress-tests` corpus case | `crates/shrike-graph/src/cypress_config.rs`, `crates/shrike-graph/src/lib.rs`, `crates/shrike-graph/src/builder/entries.rs`, `fixtures/must-not-report/cases/cypress-tests/`, `fixtures/must-not-report/manifest.json`, `docs/03-algorithms.md`, `docs/12-decision-log.md` |
 | 2026-11-21 | Stopped treating `scripts/` files as entries by location, documented headers, or shebangs. A script enters the graph only when `package.json` `scripts`/`bin`, an import, or explicit config names it; the `executable` summary field and `looks_executable` heuristic are removed. Knip 5.88.1 and fallow 3.45.0 both report seven requo scripts and two accounteer scripts that Shrike protected. After the change Shrike reports the same nine unused files and their declarations; requo 658 → 729 candidates (+71, 0 removals: 60 in the seven scripts and 11 in the dead `lib/config` subtree exposed by dropping the heuristic), accounteer 161 → 176 (+15, 0 removals). Added the two-sided `unreferenced-scripts` corpus case | `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-syntax/src/parse/mod.rs`, `crates/shrike-syntax/src/parse/mdx.rs`, `crates/shrike-syntax/src/parse/html.rs`, `crates/shrike-syntax/src/summary.rs`, `schemas/graph-snapshot.schema.json`, `fixtures/must-not-report/cases/unreferenced-scripts/`, `fixtures/must-not-report/manifest.json`, `docs/03-algorithms.md`, `docs/12-decision-log.md` |
+| 2026-11-21 | Added the `invalid_client_export` advisory warning for `"use client"` modules that export a Next.js server-only, route-config, or route-handler name. The 22-name set is fallow 3.45.0's `ILLEGAL_CLIENT_EXPORTS`; the gate is project-wide over root and workspace manifests. Direct exports anchor on the declaration, local `export { name }` anchors on the specifier and reports once, and default/type-only/re-exports are excluded. Added `DeclarationRecord.directly_exported` and bumped `ANALYSIS_VERSION` to 61. Probes match fallow exactly on the 22-name set, file/line anchors, the monorepo gate, and a no-Next control | `crates/shrike-graph/src/builder/files.rs`, `crates/shrike-graph/src/builder/mod.rs`, `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-syntax/src/summary.rs`, `crates/shrike-syntax/src/parse/declarations.rs`, `crates/shrike-syntax/src/parse/statements.rs`, `crates/shrike-engine/src/cache.rs`, `packages/cli/src/diagnostics.ts`, `packages/cli/test/diagnostics.test.mjs`, `docs/03-algorithms.md`, `docs/06-build-graph-and-nextjs.md`, `docs/12-decision-log.md` |
 
 ---
 

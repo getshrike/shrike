@@ -769,6 +769,51 @@ statically named (for example a command table) and both competitors protect it.
 
 ---
 
+## D-025 — `"use client"` server-only exports are advisory warnings
+
+**Decision:** A `"use client"` module that exports a Next.js server-only,
+route-config, or route-handler name gets an advisory `invalid_client_export`
+warning. The name set is fallow 3.45.0's `ILLEGAL_CLIENT_EXPORTS` (22 names,
+including the seven HTTP method handlers). The rule is gated on the project
+declaring `next` in the root or any workspace manifest. It never changes
+candidates, entries, or unused files.
+
+**Alternatives considered:**
+
+- Treat the export as dead. Next.js fails the build, so the code is not
+  cleanly deletable until the developer moves it; a dead-code claim would be
+  wrong.
+- Gate on the owning package declaring `next`. A shared `"use client"` module
+  in a React-only workspace package is still compiled in the consuming Next
+  app's context; fallow flags it and so does Shrike.
+- Include re-exports. Fallow leaves `export { metadata } from "./server"`
+  alone, and the re-exported binding belongs to another module.
+- Emit one warning per declaration and per local export. Fallow reports one
+  finding per exported name; Shrike anchors a direct export on the declaration
+  and a local export on its specifier.
+
+**Why:** Reverse-engineered from fallow's source
+(`crates/core/src/analyze/invalid_client_exports.rs`) and confirmed with probes
+under `/tmp/opencode/client-export-*`: Shrike and fallow agree on all 22 names,
+the same file/line anchors, the monorepo gate, and a no-Next control. Knip
+5.88.1 has no equivalent rule. `declaration.directly_exported` is needed
+because `mark_local_exports` sets `exported` for a local alias; without it
+`const metadata; export { metadata as config }` would be a false positive.
+
+**Consequences:**
+
+- `DeclarationRecord.directly_exported` is added with `serde(default)` and set
+  by every declaration constructor; `mark_local_exports` leaves it unchanged.
+- `ANALYSIS_VERSION` is bumped to 61 so cached summaries rebuild.
+- The warning groups under `boundary` and is actionable in the CLI diagnostic
+  summary.
+- Corpus candidates are unchanged; the rule is diagnostics-only.
+
+**Revisit if:** Next.js starts allowing a server-only name through a client
+boundary under a documented condition, or fallow's list diverges.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -836,6 +881,7 @@ external app, credential, or participant.
 | D-022 | Unused-file findings require no entry, no import, and a dead module | accepted |
 | D-023 | Cypress specs and support files are module entries | accepted |
 | D-024 | `scripts/` files are entries only when referenced | accepted |
+| D-025 | `"use client"` server-only exports are advisory warnings | accepted |
 
 ## Rejected ideas
 
