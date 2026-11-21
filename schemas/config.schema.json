@@ -14,11 +14,11 @@
     },
     "include": {
       "type": "array",
-      "description": "Glob set to inventory. Default: [\"**/*.ts\",\"**/*.tsx\",\"**/*.js\",\"**/*.jsx\",\"**/*.mjs\",\"**/*.cjs\",\"**/*.mdx\",\"**/*.svelte\",\"**/*.vue\",\"**/*.astro\"].",
+      "description": "Glob set to inventory. Default: [\"**/*.ts\",\"**/*.tsx\",\"**/*.js\",\"**/*.jsx\",\"**/*.mjs\",\"**/*.cjs\",\"**/*.mdx\",\"**/*.svelte\",\"**/*.vue\",\"**/*.astro\",\"**/index.html\"].",
       "items": { "type": "string", "minLength": 1 },
       "minItems": 1,
       "uniqueItems": true,
-      "default": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs", "**/*.mdx", "**/*.svelte", "**/*.vue", "**/*.astro"]
+      "default": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs", "**/*.mdx", "**/*.svelte", "**/*.vue", "**/*.astro", "**/index.html"]
     },
     "ignore": {
       "type": "array",
@@ -74,7 +74,7 @@
       "type": "string",
       "enum": ["graph", "protect"],
       "default": "graph",
-      "description": "How `\"use client\"` and `\"use server\"` files seed liveness. graph (default) lets normal import reachability decide; protect also seeds every export in a boundary file as an entry. Default: \"graph\"."
+      "description": "How `\"use client\"` files seed liveness. graph (default) lets normal import reachability decide; protect also seeds every export in a client-boundary file as an entry. Every `\"use server\"` export is always an entry because Next.js registers actions independently of imports. Default: \"graph\"."
     },
     "ignoreDependencies": {
       "type": "array",

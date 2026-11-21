@@ -1,0 +1,27 @@
+{
+  "symbols": {
+    "agreed": [
+      "src/used.ts#DeadExport"
+    ],
+    "shrikeOnly": [
+      "src/pages/skip.tsx#Skipped"
+    ],
+    "toolOnly": [],
+    "internalOnly": []
+  },
+  "dependencies": {
+    "agreedUnused": [],
+    "shrikeOnlyUnused": [],
+    "knipOnlyUnused": [
+      "react",
+      "vite"
+    ],
+    "depcheckOnlyUnused": [
+      "typescript",
+      "vite"
+    ],
+    "shrikeUnlisted": [],
+    "knipUnlisted": [],
+    "depcheckMissing": []
+  }
+}

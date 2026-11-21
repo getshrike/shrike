@@ -255,6 +255,53 @@ impl Resolver {
         None
     }
 
+    /// Expand a bundler glob pattern (`import.meta.glob`, `require.context`)
+    /// to a repository-relative glob. Relative patterns move with the importer;
+    /// `/x` is relative to the repository root; tsconfig aliases and the common
+    /// `@/`/`~/` source aliases map to their source directories.
+    ///
+    /// Returns `None` for a pattern that depends on an alias or resolver
+    /// feature this resolver does not know, so callers can fail closed instead
+    /// of guessing the match set.
+    #[must_use]
+    pub fn glob_pattern(&self, importer: &str, pattern: &str) -> Option<String> {
+        if pattern.starts_with("./")
+            || pattern.starts_with("../")
+            || pattern == "."
+            || pattern == ".."
+        {
+            return Some(normalize_relative(&format!(
+                "{}/{}",
+                parent_dir(importer),
+                pattern
+            )));
+        }
+        if let Some(rest) = pattern.strip_prefix('/') {
+            return Some(normalize_relative(rest));
+        }
+        // A leading `**` is relative to the glob call's common base. The graph
+        // anchors it separately, so keep it repository-relative here.
+        if pattern.starts_with("**") {
+            return Some(normalize_relative(pattern));
+        }
+        for (alias, replacements) in &self.paths {
+            if let Some(star) = match_alias(alias, pattern) {
+                if let Some(replacement) = replacements.first() {
+                    return Some(normalize_relative(&replacement.replace('*', &star)));
+                }
+            }
+        }
+        for prefix in ["@/", "~/"] {
+            if let Some(rest) = pattern.strip_prefix(prefix) {
+                return Some(normalize_relative(&format!("src/{rest}")));
+            }
+        }
+        if let Some(base_url) = &self.base_url {
+            return Some(normalize_relative(&format!("{base_url}/{pattern}")));
+        }
+        None
+    }
+
     #[must_use]
     pub fn root(&self) -> &Path {
         &self.root

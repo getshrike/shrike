@@ -4,8 +4,11 @@
 
 mod builder;
 mod discovery;
+mod next_config;
+mod storybook_config;
 mod types;
 mod util;
+mod webpack_config;
 
 pub use crate::builder::{build_snapshot, build_snapshot_with_resolver};
 pub use crate::discovery::{analyze_paths, discover_files, input_hash};

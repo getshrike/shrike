@@ -85,6 +85,138 @@ test("file extensions and config filenames do not count as dependency usage", (t
   assert.deepEqual(unusedNames(report), ["json", "tsx"]);
 });
 
+test("Next.js runtime packages, Turbopack loaders, and their types count as usage", (t) => {
+  const root = makeRepo(t);
+  manifest(root, {
+    name: "fixture",
+    dependencies: {
+      next: "^16.0.0",
+      react: "^19.0.0",
+      "react-dom": "^19.0.0",
+      "left-pad": "^1.3.0",
+    },
+    devDependencies: {
+      "@tailwindcss/turbopack": "^4.0.0",
+      "@types/react-dom": "^19.0.0",
+    },
+  });
+  write(
+    root,
+    "next.config.ts",
+    [
+      "const config = {",
+      "  turbopack: {",
+      '    rules: { "*.css": { loaders: ["@tailwindcss/turbopack"] } },',
+      "  },",
+      "};",
+      "export default config;",
+      "",
+    ].join("\n"),
+  );
+
+  const report = analyzeDependencies(root, {
+    files: [{ path: "app/page.tsx" }],
+    modules: [{ path: "app/page.tsx", specifiers: [], external: [] }],
+    entries: [{ symbol: "app/page.tsx#default", framework: "next-app" }],
+  });
+
+  // react-dom is required by Next.js, @types/react-dom follows its used
+  // runtime package, and the Turbopack loader is named only in next.config.ts.
+  // Knip 5.88.1 reports all three; each is a false positive.
+  assert.deepEqual(unusedNames(report), ["left-pad"]);
+});
+
+test("Next.js reactCompiler enables babel-plugin-react-compiler", (t) => {
+  const root = makeRepo(t);
+  manifest(root, {
+    name: "fixture",
+    dependencies: {
+      next: "^16.0.0",
+      react: "^19.0.0",
+      "react-dom": "^19.0.0",
+      "babel-plugin-react-compiler": "^1.0.0",
+      "left-pad": "^1.3.0",
+    },
+  });
+  write(
+    root,
+    "next.config.ts",
+    ["const config = {", "  reactCompiler: true,", "};", "export default config;", ""].join(
+      "\n",
+    ),
+  );
+
+  const report = analyzeDependencies(root, {
+    files: [{ path: "app/page.tsx" }],
+    modules: [{ path: "app/page.tsx", specifiers: [], external: [] }],
+    entries: [{ symbol: "app/page.tsx#default", framework: "next-app" }],
+  });
+
+  assert.deepEqual(unusedNames(report), ["left-pad"]);
+});
+
+test("Next.js reactCompiler options object and the Next.js 15 experimental form count as usage", (t) => {
+  const root = makeRepo(t);
+  manifest(root, {
+    name: "fixture",
+    dependencies: {
+      next: "^15.0.0",
+      react: "^19.0.0",
+      "react-dom": "^19.0.0",
+      "babel-plugin-react-compiler": "^1.0.0",
+    },
+  });
+  write(
+    root,
+    "next.config.mjs",
+    [
+      "const config = {",
+      "  experimental: {",
+      "    reactCompiler: { compilationMode: 'annotation' },",
+      "  },",
+      "};",
+      "export default config;",
+      "",
+    ].join("\n"),
+  );
+
+  const report = analyzeDependencies(root, {
+    files: [{ path: "app/page.tsx" }],
+    modules: [{ path: "app/page.tsx", specifiers: [], external: [] }],
+    entries: [{ symbol: "app/page.tsx#default", framework: "next-app" }],
+  });
+
+  assert.deepEqual(unusedNames(report), []);
+});
+
+test("a disabled reactCompiler does not keep babel-plugin-react-compiler", (t) => {
+  const root = makeRepo(t);
+  manifest(root, {
+    name: "fixture",
+    dependencies: {
+      next: "^16.0.0",
+      react: "^19.0.0",
+      "react-dom": "^19.0.0",
+      "babel-plugin-react-compiler": "^1.0.0",
+    },
+  });
+  write(
+    root,
+    "next.config.ts",
+    ["const config = {", "  reactCompiler: false,", "};", "export default config;", ""].join(
+      "\n",
+    ),
+  );
+
+  const report = analyzeDependencies(root, {
+    files: [{ path: "app/page.tsx" }],
+    modules: [{ path: "app/page.tsx", specifiers: [], external: [] }],
+    entries: [{ symbol: "app/page.tsx#default", framework: "next-app" }],
+  });
+
+  assert.deepEqual(unusedNames(report), ["babel-plugin-react-compiler"]);
+});
+
 test("a requirement of a used dependency is not reported unused", (t) => {
   const root = makeRepo(t);
   manifest(root, {

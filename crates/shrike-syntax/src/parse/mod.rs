@@ -11,6 +11,7 @@ use crate::summary::{FileSummary, ModuleRefs, ParseStatus};
 
 mod collector;
 mod declarations;
+mod html;
 mod mdx;
 mod refs;
 mod statements;
@@ -35,7 +36,11 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
     let generated = looks_generated(source);
     let executable = looks_executable(path, source);
 
-    if path.to_ascii_lowercase().ends_with(".mdx") {
+    if path.to_ascii_lowercase().ends_with(".html") {
+        return html::parse(path, source, hash, &line_index, line_count, generated);
+    }
+
+    if path.to_ascii_lowercase().ends_with(".mdx") || path.to_ascii_lowercase().ends_with(".md") {
         return mdx::parse(
             path,
             source,
@@ -199,7 +204,10 @@ fn module_kind(path: &str) -> &'static str {
         "mjs"
     } else if lower.ends_with(".cjs") {
         "cjs"
-    } else if lower.ends_with(".mdx") {
+    } else if lower.ends_with(".mdx") || lower.ends_with(".md") {
+        // `pageExtensions` can make plain Markdown routable. The ESM boundary
+        // is identical, so reuse the MDX module kind rather than widening the
+        // snapshot schema for a second Markdown spelling.
         "mdx"
     } else if lower.ends_with(".vue") {
         "vue"
@@ -207,6 +215,8 @@ fn module_kind(path: &str) -> &'static str {
         "svelte"
     } else if lower.ends_with(".astro") {
         "astro"
+    } else if lower.ends_with(".html") {
+        "html"
     } else {
         "js"
     }

@@ -145,6 +145,11 @@ pub struct ExportAllRecord {
 pub enum DynamicKind {
     Import,
     Require,
+    /// A module loaded by URL at runtime rather than imported:
+    /// `new Worker(new URL("./worker.ts", import.meta.url))`,
+    /// `navigator.serviceWorker.register(...)`, `importScripts(...)`, or a
+    /// worklet `addModule(...)`. The target is an entry module.
+    Worker,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -154,6 +159,14 @@ pub enum DynamicSpecifier {
     Literal(String),
     /// `` import(`./locales/${lang}.json`) ``: a static prefix to glob.
     TemplatePrefix(String),
+    /// `import.meta.glob('./pages/*.tsx')` and `require.context('./icons')`.
+    /// `patterns` and `excludes` are the literal glob patterns as written, with
+    /// the leading `!` removed from excludes. The importing file's directory is
+    /// the base for relative patterns.
+    Glob {
+        patterns: Vec<String>,
+        excludes: Vec<String>,
+    },
     /// `import(someVariable)`
     Unknown,
 }

@@ -4,11 +4,13 @@ use std::path::Path;
 
 use shrike_core::ids::module_symbol_key;
 use shrike_core::{ClientBoundaryPolicy, EntryPolicy};
-use shrike_syntax::ParseStatus;
+use shrike_syntax::{BindingKind, FileSummary, ParseStatus};
 
 use super::Builder;
+use crate::storybook_config;
 use crate::types::EntryRecord;
 use crate::util::route_of;
+use crate::webpack_config::{self, EntryBase};
 
 /// Relative module paths named in a `next.config.*` file. Next.js loads these
 /// directly (custom image loader, cache handlers, Turbopack loaders/aliases),
@@ -91,6 +93,123 @@ fn in_directory(path: &str, directory: &str) -> bool {
 /// of a nested workspace package.
 fn at_package_root(path: &str, relative: &str) -> bool {
     path == relative || path.ends_with(&format!("/{relative}"))
+}
+
+/// next-intl reads `{src/,}i18n/request.*` and `{src/,}i18n/routing.*` by
+/// convention when its plugin is configured. Only the file names are fixed, so
+/// the dependency check decides whether the convention applies.
+fn is_next_intl_convention(path: &str) -> bool {
+    let file = path.rsplit('/').next().unwrap_or(path);
+    let Some((stem, extension)) = file.rsplit_once('.') else {
+        return false;
+    };
+    matches!(stem, "request" | "routing")
+        && matches!(extension, "ts" | "tsx" | "js" | "jsx")
+        && at_package_root(path, &format!("i18n/{file}"))
+}
+
+/// Packages that make Vite the project's bundler. `vitest` implies a Vite
+/// toolchain, and `rolldown-vite` is the drop-in Vite distribution.
+const VITE_ENABLERS: &[&str] = &["vite", "vitest", "rolldown-vite"];
+
+fn package_depends_on(root: &Path, directory: &str, name: &str) -> bool {
+    package_depends_on_any(root, directory, &[name])
+}
+
+/// Storybook's default story glob includes every `.mdx` page, not just files
+/// named `*.stories.mdx`, and the plugin only applies when the package depends
+/// on Storybook. `@nrwl/storybook` is the Nx wrapper.
+fn package_depends_on_storybook(root: &Path, directory: &str) -> bool {
+    let Ok(text) = fs::read_to_string(root.join(directory).join("package.json")) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return false;
+    };
+    [
+        "dependencies",
+        "devDependencies",
+        "peerDependencies",
+        "optionalDependencies",
+    ]
+    .iter()
+    .filter_map(|section| value.get(section).and_then(|deps| deps.as_object()))
+    .any(|dependencies| {
+        dependencies.keys().any(|name| {
+            name == "storybook" || name.starts_with("@storybook/") || name == "@nrwl/storybook"
+        })
+    })
+}
+
+fn package_depends_on_any(root: &Path, directory: &str, names: &[&str]) -> bool {
+    let Ok(text) = fs::read_to_string(root.join(directory).join("package.json")) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return false;
+    };
+    [
+        "dependencies",
+        "devDependencies",
+        "peerDependencies",
+        "optionalDependencies",
+    ]
+    .iter()
+    .any(|section| {
+        let Some(dependencies) = value.get(section) else {
+            return false;
+        };
+        names.iter().any(|name| dependencies.get(name).is_some())
+    })
+}
+
+/// React roots that existed before `createRoot`: `ReactDOM.render` and
+/// `ReactDOM.hydrate`. Only bindings imported from `react-dom` itself count, so
+/// a testing-library `render(<App />)` call cannot make the application tree
+/// live. Default and namespace imports both expose the legacy methods; named
+/// `render`/`hydrate` imports are recognized too because React 17 supported
+/// them directly.
+fn react_dom_legacy_root(summary: &FileSummary) -> bool {
+    let mut namespaces: BTreeSet<&str> = BTreeSet::new();
+    let mut named_roots: BTreeSet<&str> = BTreeSet::new();
+    for import in &summary.imports {
+        if import.source != "react-dom" {
+            continue;
+        }
+        for binding in &import.bindings {
+            match binding.kind {
+                BindingKind::Default | BindingKind::Namespace => {
+                    namespaces.insert(binding.local.as_str());
+                }
+                BindingKind::Named if matches!(binding.imported.as_str(), "render" | "hydrate") => {
+                    named_roots.insert(binding.local.as_str());
+                }
+                BindingKind::Named => {}
+            }
+        }
+    }
+    let named_call = !named_roots.is_empty()
+        && summary
+            .module_refs
+            .identifiers
+            .iter()
+            .any(|identifier| named_roots.contains(identifier.as_str()));
+    named_call
+        || summary.module_refs.members.iter().any(|member| {
+            namespaces.contains(member.object.as_str())
+                && matches!(member.property.as_deref(), Some("render" | "hydrate"))
+        })
+}
+
+/// Vite's conventional application roots. `index.html` names the real script,
+/// but a project without the document (or with a template that the resolver
+/// cannot place) still starts here.
+fn vite_root_entry(relative: &str) -> bool {
+    ["src/main", "src/index"].iter().any(|base| {
+        ["ts", "tsx", "js", "jsx"]
+            .iter()
+            .any(|extension| relative == format!("{base}.{extension}"))
+    })
 }
 
 /// Framework files that are executed by convention even when the TypeScript
@@ -609,6 +728,16 @@ impl<'a> Builder<'a> {
             .iter()
             .map(|summary| summary.path.as_str())
             .collect();
+        let mut vite_packages: BTreeSet<String> = BTreeSet::new();
+        let mut storybook_packages: BTreeSet<String> = BTreeSet::new();
+        for package in self.resolver.packages() {
+            if package_depends_on_any(self.resolver.root(), &package.directory, VITE_ENABLERS) {
+                vite_packages.insert(package.directory.clone());
+            }
+            if package_depends_on_storybook(self.resolver.root(), &package.directory) {
+                storybook_packages.insert(package.directory.clone());
+            }
+        }
         let mut expo_layout_packages: BTreeSet<String> = BTreeSet::new();
         let mut expo_roots: BTreeMap<String, String> = BTreeMap::new();
         let mut expo_config_modules: BTreeSet<String> = BTreeSet::new();
@@ -783,6 +912,76 @@ impl<'a> Builder<'a> {
                 }
             }
         }
+        // Webpack loads its configured entries and never imports them from
+        // application code. A static read of `entry`/`context` keeps React and
+        // vanilla bootstraps live without executing the config.
+        let mut webpack_entry_modules: BTreeSet<String> = BTreeSet::new();
+        for summary in &summaries {
+            if !webpack_config::is_config_path(&summary.path) {
+                continue;
+            }
+            let Ok(source) = fs::read_to_string(self.resolver.root().join(&summary.path)) else {
+                continue;
+            };
+            let package_directory = self
+                .resolver
+                .package_for(&summary.path)
+                .map_or("", |package| package.directory.as_str());
+            for entry in webpack_config::entries(&summary.path, &source) {
+                let (importer, specifier) = match entry.base {
+                    EntryBase::ConfigDir => (summary.path.clone(), entry.specifier),
+                    EntryBase::PackageDir => {
+                        let importer = if package_directory.is_empty() {
+                            "__webpack_entry__".to_string()
+                        } else {
+                            format!("{package_directory}/__webpack_entry__")
+                        };
+                        (importer, entry.specifier)
+                    }
+                };
+                let specifier = if specifier.starts_with('.') {
+                    specifier
+                } else {
+                    format!("./{specifier}")
+                };
+                let resolved = self.resolver.resolve(&importer, &specifier);
+                if let Some(target) = resolved.target {
+                    if analyzed.contains(target.as_str()) {
+                        webpack_entry_modules.insert(target);
+                    }
+                }
+            }
+        }
+        // Storybook's `stories` option can rename the story suffix or narrow
+        // discovery to another directory. Read literal patterns from each main
+        // config and make every matched module a story entry. Functions and
+        // computed values are skipped; the conventional suffix rules below
+        // still apply.
+        let mut storybook_story_files: BTreeSet<String> = BTreeSet::new();
+        for summary in &summaries {
+            if !storybook_config::is_config_path(&summary.path) {
+                continue;
+            }
+            let package_directory = self
+                .resolver
+                .package_for(&summary.path)
+                .map_or("", |package| package.directory.as_str());
+            if !storybook_packages.contains(package_directory) {
+                continue;
+            }
+            let Ok(source) = fs::read_to_string(self.resolver.root().join(&summary.path)) else {
+                continue;
+            };
+            let patterns = storybook_config::story_patterns(&summary.path, &source);
+            let Some(matcher) = storybook_config::matcher(&patterns) else {
+                continue;
+            };
+            for path in &analyzed {
+                if matcher.is_match(path) {
+                    storybook_story_files.insert((*path).to_string());
+                }
+            }
+        }
         // React Router route configs name route modules as strings. The router
         // imports them at runtime, so files named outside `<appDirectory>/routes/`
         // are still route modules and must keep their framework exports.
@@ -825,14 +1024,18 @@ impl<'a> Builder<'a> {
             let package_directory = self
                 .resolver
                 .package_for(path)
-                .map_or("", |package| package.directory.as_str());
-            let has_expo_layout = expo_layout_packages.contains(package_directory);
-            let has_nuxt_config = nuxt_config_packages.contains(package_directory);
-            let has_router_package = router_packages.contains_key(package_directory);
+                .map_or_else(String::new, |package| package.directory.clone());
+            let relative = path
+                .strip_prefix(package_directory.as_str())
+                .unwrap_or(path)
+                .trim_start_matches('/');
+            let has_expo_layout = expo_layout_packages.contains(&package_directory);
+            let has_nuxt_config = nuxt_config_packages.contains(&package_directory);
+            let has_router_package = router_packages.contains_key(&package_directory);
             let router_app = router_packages
-                .get(package_directory)
+                .get(&package_directory)
                 .map_or("app", String::as_str);
-            let expo_root = expo_roots.get(package_directory).cloned();
+            let expo_root = expo_roots.get(&package_directory).cloned();
             let module = module_symbol_key(path);
             let add = |builder: &mut Self,
                        symbol: String,
@@ -865,6 +1068,42 @@ impl<'a> Builder<'a> {
             if summary.executable {
                 add(self, module.clone(), "executable", "tool", None, "both");
             }
+            let vite_package = vite_packages.contains(&package_directory);
+            let storybook_package = storybook_packages.contains(&package_directory);
+            // Vite turns the module scripts of `index.html` into production
+            // entries. The document itself is loaded by the server, and every
+            // export of the script it names is part of the page's surface.
+            if vite_package && relative == "index.html" {
+                add(self, module.clone(), "vite", "html-entry", None, "client");
+                for import in &summary.imports {
+                    let Some(target) = self.resolver.resolve(path, &import.source).target else {
+                        continue;
+                    };
+                    if !analyzed.contains(target.as_str()) {
+                        continue;
+                    }
+                    for (_, key) in self.exports.get(&target).cloned().unwrap_or_default() {
+                        add(self, key, "vite", "html-entry-export", None, "client");
+                    }
+                    add(
+                        self,
+                        module_symbol_key(&target),
+                        "vite",
+                        "html-entry-script",
+                        None,
+                        "client",
+                    );
+                }
+            }
+            // Fallow keeps the standard Vite application roots. Protecting them
+            // covers vanilla and Vue-style bootstraps that never call React's
+            // `createRoot`.
+            if vite_package && vite_root_entry(relative) {
+                for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                    add(self, key, "vite", "root-export", None, "both");
+                }
+                add(self, module.clone(), "vite", "root-entry", None, "both");
+            }
             if next_config_modules.contains(path) {
                 // Everything exported by a config-referenced module is
                 // reachable through the configuration (loaders may expose
@@ -888,6 +1127,15 @@ impl<'a> Builder<'a> {
                     None,
                     "both",
                 );
+            }
+            if webpack_entry_modules.contains(path) {
+                // A webpack entry is loaded by the bundler rather than imported.
+                // Its exports are part of the entry surface, matching how the
+                // other framework roots are treated.
+                for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                    add(self, key, "webpack", "entry-export", None, "both");
+                }
+                add(self, module.clone(), "webpack", "entry", None, "both");
             }
             if expo_config_modules.contains(path) {
                 // Expo resolves local config plugins without an import. Their
@@ -944,6 +1192,28 @@ impl<'a> Builder<'a> {
                     .iter()
                     .any(|relative| at_package_root(base, relative))
                 });
+            // next-intl loads its request/routing modules by convention. Gate
+            // the protection on the project actually depending on next-intl so
+            // an unrelated `i18n/request.ts` stays analyzable.
+            let package_directory = self
+                .resolver
+                .package_for(path)
+                .map_or("", |package| package.directory.as_str());
+            if is_next_intl_convention(path)
+                && package_depends_on(self.resolver.root(), package_directory, "next-intl")
+            {
+                for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                    add(self, key, "next-intl", "convention-export", None, "both");
+                }
+                add(
+                    self,
+                    module.clone(),
+                    "next-intl",
+                    "convention",
+                    None,
+                    "both",
+                );
+            }
             let app_entry = (is_app
                 && matches!(
                     stem,
@@ -1032,6 +1302,11 @@ impl<'a> Builder<'a> {
                 }
                 if stem == "mdx-components" {
                     public_names.push("useMDXComponents");
+                }
+                // Next reads the per-page dynamic stale time from the page
+                // module. Fallow's Next plugin names it on pages, not layouts.
+                if stem == "page" {
+                    public_names.push("unstable_dynamicStaleTime");
                 }
                 // Next.js calls `reportWebVitals` when it is exported from the
                 // Pages Router `_app` file, but it is not imported by code.
@@ -1357,12 +1632,21 @@ impl<'a> Builder<'a> {
                 add(self, module.clone(), "react", "module", None, "both");
             }
             if summary.has_directive("use server") {
-                if self.config.client_boundary_policy == ClientBoundaryPolicy::Protect {
-                    for (name, key) in self.exports.get(path).cloned().unwrap_or_default() {
-                        let _ = name;
-                        add(self, key, "react", "client-boundary", None, "both");
-                    }
-                    add(self, module.clone(), "react", "module", None, "both");
+                // Next.js registers every export of a `"use server"` module in
+                // the server-reference manifest, whether or not application
+                // code imports it. Actions are invoked through serialized
+                // references, so the import graph is not evidence that an
+                // export is unused. This is independent of the client-boundary
+                // policy, which only governs `"use client"` modules.
+                for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                    add(
+                        self,
+                        key,
+                        "next-app",
+                        "server-action-export",
+                        None,
+                        "server",
+                    );
                 }
                 add(
                     self,
@@ -1372,6 +1656,9 @@ impl<'a> Builder<'a> {
                     None,
                     "server",
                 );
+                if self.config.client_boundary_policy == ClientBoundaryPolicy::Protect {
+                    add(self, module.clone(), "react", "module", None, "both");
+                }
             }
             let test = path.contains(".test.")
                 || path.contains(".spec.")
@@ -1389,7 +1676,15 @@ impl<'a> Builder<'a> {
             let story = path.contains(".stories.")
                 || path.contains(".story.")
                 || path.starts_with(".storybook/")
-                || path.contains("/.storybook/");
+                || path.contains("/.storybook/")
+                || path.starts_with(".rnstorybook/")
+                || path.contains("/.rnstorybook/")
+                || storybook_story_files.contains(path)
+                // Storybook's default glob includes every MDX page. Docs pages
+                // are entries, and their ESM imports keep rendered components
+                // live. Gate on the dependency so ordinary `.mdx` content
+                // stays analyzable in projects without Storybook.
+                || (storybook_package && path.ends_with(".mdx"));
             if self.config.test_entries
                 && self.config.entry_policy != EntryPolicy::Production
                 && (test || story)
@@ -1456,12 +1751,13 @@ impl<'a> Builder<'a> {
                 }
                 add(self, module.clone(), "config", "config", None, "both");
             }
-            if summary
+            let react_root = summary
                 .module_refs
                 .identifiers
                 .iter()
                 .any(|id| id == "createRoot" || id == "hydrateRoot")
-            {
+                || react_dom_legacy_root(summary);
+            if react_root {
                 add(self, module.clone(), "react", "root", None, "client");
                 for identifier in &summary.module_refs.identifiers {
                     if let Some(target) = self.local_or_imported(path, identifier) {
@@ -1511,7 +1807,7 @@ mod tests {
 
     use super::expo_config_plugin_paths;
     use super::expo_router_root;
-    use crate::discovery::analyze_paths;
+    use crate::discovery::{analyze_paths, discover_files};
     use crate::types::GraphSnapshot;
 
     fn snapshot(files: &[(&str, &str)]) -> GraphSnapshot {
@@ -1524,6 +1820,21 @@ mod tests {
             fs::write(full, content).expect("write fixture");
         }
         let paths: Vec<String> = files.iter().map(|(path, _)| (*path).to_string()).collect();
+        analyze_paths(directory.path(), &EngineConfig::default(), &paths)
+    }
+
+    /// Analyze only the files the production discovery walk finds. Use this
+    /// when the feature under test is inventory, not entry classification.
+    fn discovered_snapshot(files: &[(&str, &str)]) -> GraphSnapshot {
+        let directory = tempdir().expect("tempdir");
+        for (path, content) in files {
+            let full = directory.path().join(path);
+            if let Some(parent) = full.parent() {
+                fs::create_dir_all(parent).expect("create parents");
+            }
+            fs::write(full, content).expect("write fixture");
+        }
+        let paths = discover_files(directory.path(), &EngineConfig::default());
         analyze_paths(directory.path(), &EngineConfig::default(), &paths)
     }
 
@@ -1644,6 +1955,57 @@ mod tests {
         let entries = entry_symbols(&snapshot);
         assert!(entries.contains(&"proxy.ts#proxy"), "{entries:?}");
         assert!(entries.contains(&"proxy.ts#config"), "{entries:?}");
+    }
+
+    #[test]
+    fn every_server_action_export_is_an_entry_by_default() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "import { importedAction } from '../src/actions';\n\
+                 export default function Page() { return importedAction(); }\n",
+            ),
+            (
+                "src/actions.ts",
+                "\"use server\";\n\
+                 export async function importedAction() { return 1; }\n\
+                 export async function unimportedAction() { return 2; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for name in ["importedAction", "unimportedAction"] {
+            let key = format!("src/actions.ts#{name}");
+            assert!(entries.contains(&key.as_str()), "{name}: {entries:?}");
+            assert!(
+                snapshot.is_live(&key),
+                "{name} must stay live: {:?}",
+                snapshot.live
+            );
+            assert!(
+                !snapshot.is_candidate(&key),
+                "{name} must not be a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn unimported_client_boundary_exports_remain_candidates_by_default() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "export default function Page() { return null; }\n",
+            ),
+            (
+                "src/client.ts",
+                "\"use client\";\nexport function unusedClientExport() { return 1; }\n",
+            ),
+        ]);
+        assert!(
+            snapshot.is_candidate("src/client.ts#unusedClientExport"),
+            "the client-boundary policy must still govern use client: {:?}",
+            snapshot.candidates
+        );
     }
 
     #[test]
@@ -1801,7 +2163,7 @@ mod tests {
             ),
             (
                 "app/page.tsx",
-                "export const instant = { level: 'warning' };\nexport function unusedPageHelper() { return 1; }\nexport default function Page() { return null; }\n",
+                "export const instant = { level: 'warning' };\nexport const unstable_dynamicStaleTime = 60;\nexport function unusedPageHelper() { return 1; }\nexport default function Page() { return null; }\n",
             ),
         ]);
         let entries = entry_symbols(&snapshot);
@@ -1823,6 +2185,10 @@ mod tests {
             "page segment config must be public: {entries:?}"
         );
         assert!(
+            entries.contains(&"app/page.tsx#unstable_dynamicStaleTime"),
+            "page dynamic stale time must be public: {entries:?}"
+        );
+        assert!(
             !entries.contains(&"app/layout.tsx#unusedLayoutHelper"),
             "an arbitrary layout export must not become public: {entries:?}"
         );
@@ -1840,6 +2206,493 @@ mod tests {
                 snapshot.candidates
             );
         }
+    }
+
+    #[test]
+    fn next_intl_conventions_require_the_dependency() {
+        let with_dependency = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"app","dependencies":{"next":"^16.0.0","next-intl":"^4.0.0"}}"#,
+            ),
+            (
+                "src/i18n/request.ts",
+                "export function getRequestConfig() { return 1; }\nexport function unusedRequestHelper() { return 2; }\n",
+            ),
+            (
+                "i18n/routing.ts",
+                "export const routing = { locales: ['en'] };\nexport const unusedRoutingHelper = 1;\n",
+            ),
+            ("components/dead.ts", "export const deadThing = 1;\n"),
+        ]);
+        let entries = entry_symbols(&with_dependency);
+        for key in [
+            "src/i18n/request.ts#getRequestConfig",
+            "src/i18n/request.ts#unusedRequestHelper",
+            "i18n/routing.ts#routing",
+            "i18n/routing.ts#unusedRoutingHelper",
+        ] {
+            assert!(
+                entries.contains(&key),
+                "{key} must be an entry: {entries:?}"
+            );
+        }
+        assert!(
+            with_dependency
+                .candidates
+                .iter()
+                .any(|key| key == "components/dead.ts#deadThing"),
+            "unrelated dead code must remain a candidate: {:?}",
+            with_dependency.candidates
+        );
+
+        let without_dependency = snapshot(&[
+            ("package.json", r#"{"name":"app"}"#),
+            (
+                "i18n/request.ts",
+                "export function unusedRequestHelper() { return 2; }\n",
+            ),
+        ]);
+        assert!(
+            without_dependency
+                .candidates
+                .iter()
+                .any(|key| key == "i18n/request.ts#unusedRequestHelper"),
+            "the convention must not apply without next-intl: {:?}",
+            without_dependency.candidates
+        );
+    }
+
+    #[test]
+    fn vite_index_html_module_scripts_are_entries() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"vite-app","devDependencies":{"vite":"^6.0.0"}}"#,
+            ),
+            (
+                "index.html",
+                "<div id=\"app\"></div>\n<script type=\"module\" src=\"/src/main.ts\"></script>\n",
+            ),
+            (
+                "src/main.ts",
+                "import { mount } from \"./app\";\nexport const bootFlag = 1;\nmount();\n",
+            ),
+            (
+                "src/app.ts",
+                "export function mount() { return 1; }\nexport function unusedMount() { return 2; }\n",
+            ),
+            ("src/dead.ts", "export function DeadThing() { return 3; }\n"),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for key in [
+            "index.html#__module__",
+            "src/main.ts#__module__",
+            "src/main.ts#bootFlag",
+            "src/app.ts#mount",
+        ] {
+            assert!(
+                entries.contains(&key) || snapshot.is_live(key),
+                "{key} must be live: {entries:?}"
+            );
+        }
+        for key in ["src/app.ts#unusedMount", "src/dead.ts#DeadThing"] {
+            assert!(
+                snapshot.candidates.iter().any(|candidate| candidate == key),
+                "{key} must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn vite_root_fallbacks_require_the_dependency() {
+        let files: &[(&str, &str)] = &[
+            (
+                "src/main.ts",
+                "import { helper } from \"./helpers\";\nexport const rootBoot = 1;\nhelper();\n",
+            ),
+            ("src/index.ts", "export const indexBoot = 1;\n"),
+            ("src/helpers.ts", "export function helper() { return 1; }\n"),
+            ("src/dead.ts", "export function DeadThing() { return 2; }\n"),
+        ];
+        let mut with_vite: Vec<(&str, &str)> = vec![(
+            "package.json",
+            r#"{"name":"vite-app","devDependencies":{"vite":"^6.0.0"}}"#,
+        )];
+        with_vite.extend_from_slice(files);
+        let with_vite_snapshot = snapshot(&with_vite);
+        let entries = entry_symbols(&with_vite_snapshot);
+        for key in [
+            "src/main.ts#__module__",
+            "src/main.ts#rootBoot",
+            "src/index.ts#__module__",
+            "src/index.ts#indexBoot",
+            "src/helpers.ts#helper",
+        ] {
+            assert!(
+                entries.contains(&key) || with_vite_snapshot.is_live(key),
+                "{key} must be live: {entries:?}"
+            );
+        }
+        assert!(
+            with_vite_snapshot
+                .candidates
+                .iter()
+                .any(|candidate| candidate == "src/dead.ts#DeadThing"),
+            "unrelated dead code must remain a candidate: {:?}",
+            with_vite_snapshot.candidates
+        );
+
+        let mut without_vite: Vec<(&str, &str)> = vec![("package.json", r#"{"name":"plain-app"}"#)];
+        without_vite.extend_from_slice(files);
+        let without_vite_snapshot = snapshot(&without_vite);
+        assert!(
+            without_vite_snapshot
+                .candidates
+                .iter()
+                .any(|candidate| candidate == "src/main.ts#rootBoot"),
+            "the root fallback must not apply without Vite: {:?}",
+            without_vite_snapshot.candidates
+        );
+    }
+
+    fn legacy_react_app(bootstrap: &str) -> GraphSnapshot {
+        snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"legacy-react-app","dependencies":{"react":"^17.0.2","react-dom":"^17.0.2"}}"#,
+            ),
+            ("src/client.js", bootstrap),
+            (
+                "src/App.js",
+                "export default function App({ label }) { return <div>{label}</div>; }\nexport function unusedAppHelper() { return 1; }\n",
+            ),
+            (
+                "src/format.js",
+                "export function formatting() { return \"ready\"; }\nexport function unusedFormatter() { return 2; }\n",
+            ),
+            ("src/dead.js", "export function DeadThing() { return 3; }\n"),
+        ])
+    }
+
+    fn assert_legacy_react_app_is_live(snapshot: &GraphSnapshot) {
+        let entries = entry_symbols(snapshot);
+        assert!(
+            entries.contains(&"src/client.js#__module__"),
+            "the render call must make the bootstrap a root: {entries:?}"
+        );
+        for key in ["src/App.js#default", "src/format.js#formatting"] {
+            assert!(
+                entries.contains(&key) || snapshot.is_live(key),
+                "{key} is rendered by the root and must be live: {entries:?}"
+            );
+        }
+        for key in [
+            "src/App.js#unusedAppHelper",
+            "src/format.js#unusedFormatter",
+            "src/dead.js#DeadThing",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "{key} is unused and must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    fn storybook_mdx_app(package_json: &str) -> GraphSnapshot {
+        snapshot(&[
+            ("package.json", package_json),
+            (
+                ".storybook/main.ts",
+                "export default { stories: [\"../src/**/*.mdx\"] };\n",
+            ),
+            (
+                "src/DocsCard.tsx",
+                "export function DocsCard() { return <div>docs</div>; }\nexport function unusedDocsHelper() { return 1; }\n",
+            ),
+            (
+                "src/Docs.mdx",
+                "import { DocsCard } from \"./DocsCard\";\n\n# Documentation\n\n<DocsCard />\n",
+            ),
+            (
+                "src/dead.tsx",
+                "export function DeadThing() { return 2; }\n",
+            ),
+        ])
+    }
+
+    #[test]
+    fn storybook_mdx_documents_are_entries() {
+        let snapshot =
+            storybook_mdx_app(r#"{"name":"docs-app","devDependencies":{"storybook":"^8.0.0"}}"#);
+        let entries = entry_symbols(&snapshot);
+        assert!(
+            entries.contains(&"src/Docs.mdx#__module__"),
+            "Storybook's default glob makes every MDX page an entry: {entries:?}"
+        );
+        assert!(
+            snapshot.is_live("src/DocsCard.tsx#DocsCard"),
+            "the component rendered by the docs page must be live: {:?}",
+            snapshot.live
+        );
+        for key in [
+            "src/DocsCard.tsx#unusedDocsHelper",
+            "src/dead.tsx#DeadThing",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "{key} is unused and must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn storybook_mdx_entries_require_the_dependency() {
+        let snapshot =
+            storybook_mdx_app(r#"{"name":"plain-app","dependencies":{"react":"^19.0.0"}}"#);
+        for key in [
+            "src/DocsCard.tsx#DocsCard",
+            "src/DocsCard.tsx#unusedDocsHelper",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "without Storybook the MDX page must not protect its imports: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    fn custom_story_app(package_json: &str) -> GraphSnapshot {
+        snapshot(&[
+            ("package.json", package_json),
+            (
+                ".storybook/main.ts",
+                r#"const config = {
+  stories: [
+    "../src/**/*.demo.tsx",
+    { directory: "../src", files: "**/*.preview.tsx" },
+  ],
+  framework: "@storybook/react-vite",
+};
+
+export default config;
+"#,
+            ),
+            (
+                "src/Button.demo.tsx",
+                "import { Button } from \"./button\";\n\nexport default function ButtonDemo() {\n  return <Button />;\n}\n\nexport function unusedDemoExport() {\n  return 1;\n}\n",
+            ),
+            (
+                "src/button.tsx",
+                "export function Button() {\n  return <button />;\n}\n\nexport function unusedButtonHelper() {\n  return 2;\n}\n",
+            ),
+            (
+                "src/Card.preview.tsx",
+                "import { Card } from \"./card\";\n\nexport default function CardPreview() {\n  return <Card />;\n}\n",
+            ),
+            (
+                "src/card.tsx",
+                "export function Card() {\n  return <div />;\n}\n",
+            ),
+            (
+                "src/dead.tsx",
+                "export function Dead() {\n  return null;\n}\n",
+            ),
+        ])
+    }
+
+    #[test]
+    fn storybook_custom_story_globs_are_entries() {
+        let snapshot = custom_story_app(
+            r#"{"name":"custom-stories","devDependencies":{"storybook":"^8.0.0"}}"#,
+        );
+        let entries = entry_symbols(&snapshot);
+        for key in [
+            ".storybook/main.ts#__module__",
+            "src/Button.demo.tsx#__module__",
+            "src/Card.preview.tsx#__module__",
+        ] {
+            assert!(
+                entries.contains(&key),
+                "{key} is named by the Storybook config: {entries:?}"
+            );
+        }
+        for key in [
+            "src/Button.demo.tsx#default",
+            "src/Button.demo.tsx#unusedDemoExport",
+            "src/button.tsx#Button",
+            "src/card.tsx#Card",
+        ] {
+            assert!(
+                snapshot.is_live(key),
+                "{key} is part of a story entry surface: {:?}",
+                snapshot.live
+            );
+        }
+        for key in ["src/button.tsx#unusedButtonHelper", "src/dead.tsx#Dead"] {
+            assert!(
+                snapshot.is_candidate(key),
+                "{key} is unused and must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn storybook_custom_story_globs_require_the_dependency() {
+        let snapshot =
+            custom_story_app(r#"{"name":"plain-app","dependencies":{"react":"^19.0.0"}}"#);
+        for key in [
+            "src/Button.demo.tsx#default",
+            "src/button.tsx#Button",
+            "src/Card.preview.tsx#default",
+            "src/card.tsx#Card",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "without Storybook the custom glob must not protect {key}: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn react_dom_render_is_a_legacy_root() {
+        assert_legacy_react_app_is_live(&legacy_react_app(
+            "import React from \"react\";\nimport ReactDOM from \"react-dom\";\nimport App from \"./App\";\nimport { formatting } from \"./format\";\n\nReactDOM.render(<App label={formatting()} />, document.getElementById(\"root\"));\n",
+        ));
+    }
+
+    #[test]
+    fn react_dom_namespace_and_named_roots_are_recognized() {
+        assert_legacy_react_app_is_live(&legacy_react_app(
+            "import * as ReactDOM from \"react-dom\";\nimport App from \"./App\";\nimport { formatting } from \"./format\";\n\nReactDOM.hydrate(<App label={formatting()} />, document.getElementById(\"root\"));\n",
+        ));
+        assert_legacy_react_app_is_live(&legacy_react_app(
+            "import { render } from \"react-dom\";\nimport App from \"./App\";\nimport { formatting } from \"./format\";\n\nrender(<App label={formatting()} />, document.getElementById(\"root\"));\n",
+        ));
+    }
+
+    #[test]
+    fn testing_library_render_is_not_a_react_root() {
+        let snapshot = legacy_react_app(
+            "import { render } from \"@testing-library/react\";\nimport App from \"./App\";\n\nrender(<App label=\"test\" />);\n",
+        );
+        assert!(
+            snapshot.is_candidate("src/App.js#default"),
+            "testing-library render must not make the application tree live: {:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn worker_modules_are_reachable_without_an_import() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"worker-app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/page.tsx",
+                "import { WorkerHost } from \"../components/worker-host\";\n\nexport default function Page() {\n  return <WorkerHost />;\n}\n",
+            ),
+            (
+                "components/worker-host.tsx",
+                "export function WorkerHost() {\n  const worker = new Worker(new URL(\"./heavy-worker.ts\", import.meta.url), { type: \"module\" });\n  return <div>{worker ? \"ready\" : \"idle\"}</div>;\n}\n",
+            ),
+            (
+                "components/heavy-worker.ts",
+                "import { render } from \"./renderer\";\n\nconst state = { count: 0 };\n\nfunction handle(message: string) {\n  state.count += 1;\n  return render(message);\n}\n\nself.onmessage = (event) => handle(event.data);\n\nfunction deadWorkerHelper() {\n  return 1;\n}\n",
+            ),
+            (
+                "components/renderer.ts",
+                "export function render(value: string) {\n  return value;\n}\n\nexport function deadRenderer() {\n  return 2;\n}\n",
+            ),
+            (
+                "components/dead.ts",
+                "export function Dead() {\n  return null;\n}\n",
+            ),
+        ]);
+        for key in [
+            "components/worker-host.tsx#WorkerHost",
+            "components/heavy-worker.ts#handle",
+            "components/heavy-worker.ts#state",
+            "components/renderer.ts#render",
+        ] {
+            assert!(
+                snapshot.is_live(key),
+                "worker-reachable symbol must be live: {key}: {:?}",
+                snapshot.candidates
+            );
+        }
+        for key in [
+            "components/heavy-worker.ts#deadWorkerHelper",
+            "components/renderer.ts#deadRenderer",
+            "components/dead.ts#Dead",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "unreferenced symbol must remain a candidate: {key}: {:?}",
+                snapshot.candidates
+            );
+        }
+        assert!(
+            snapshot.edges.iter().any(|edge| edge.kind == "worker"
+                && edge.target == "components/heavy-worker.ts#__module__"),
+            "worker edge must be recorded: {:?}",
+            snapshot.edges
+        );
+    }
+
+    #[test]
+    fn public_worker_urls_do_not_widen_the_repository() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"worker-app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/page.tsx",
+                "import { WorkerHost } from \"../components/worker-host\";\n\nexport default function Page() {\n  return <WorkerHost />;\n}\n",
+            ),
+            (
+                "components/worker-host.tsx",
+                "export function WorkerHost() {\n  void navigator.serviceWorker.register(\"/sw.js\", { scope: \"/\" });\n  return null;\n}\n",
+            ),
+            (
+                "components/dead.ts",
+                "export function Dead() {\n  return null;\n}\n",
+            ),
+        ]);
+        assert!(
+            snapshot.is_live("components/worker-host.tsx#WorkerHost"),
+            "route-reachable component must stay live: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot.is_candidate("components/dead.ts#Dead"),
+            "a public worker URL must not make unrelated symbols live: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            !snapshot
+                .unknowns
+                .iter()
+                .any(|unknown| unknown.scope == "repo"),
+            "public worker URL must not create a repository-wide unknown: {:?}",
+            snapshot.unknowns
+        );
+        assert!(
+            snapshot.modules.iter().all(|module| !module
+                .external
+                .iter()
+                .any(|specifier| specifier == "/sw.js")),
+            "a runtime worker URL is not an external package: {:?}",
+            snapshot.modules
+        );
     }
 
     #[test]
@@ -2063,6 +2916,220 @@ mod tests {
                 snapshot.candidates
             );
         }
+    }
+
+    fn next_page_extensions_fixture(page_extensions: bool) -> Vec<(&'static str, &'static str)> {
+        let config = if page_extensions {
+            "const nextConfig = { pageExtensions: ['js', 'jsx', 'ts', 'tsx', 'md', 'mdx'] };\nexport default nextConfig;\n"
+        } else {
+            "const nextConfig = { reactStrictMode: true };\nexport default nextConfig;\n"
+        };
+        vec![
+            (
+                "package.json",
+                r#"{"name":"docs-app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            ("next.config.ts", config),
+            (
+                "app/page.md",
+                "import { Header } from \"../components/header\";\n\n# Home\n\n<Header />\n",
+            ),
+            (
+                "components/header.tsx",
+                "export function Header() { return <h1>hi</h1>; }\nexport function unusedHeaderHelper() { return 1; }\n",
+            ),
+            (
+                "pages/about.md",
+                "import { Footer } from \"../components/footer\";\n\n# About\n\n<Footer />\n",
+            ),
+            (
+                "components/footer.tsx",
+                "export function Footer() { return <footer />; }\n",
+            ),
+            (
+                "app/blog/post.md",
+                "import { DeadCard } from \"../../components/dead-card\";\n\n# Post\n\n<DeadCard />\n",
+            ),
+            (
+                "components/dead-card.tsx",
+                "export function DeadCard() { return <div />; }\n",
+            ),
+        ]
+    }
+
+    #[test]
+    fn next_page_extensions_make_markdown_routes_live() {
+        let snapshot = discovered_snapshot(&next_page_extensions_fixture(true));
+        let files: Vec<&str> = snapshot
+            .files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect();
+        for path in ["app/page.md", "pages/about.md"] {
+            assert!(
+                files.contains(&path),
+                "{path} must be inventoried: {files:?}"
+            );
+        }
+        assert!(
+            !files.contains(&"app/blog/post.md"),
+            "only App Router convention stems become routes: {files:?}"
+        );
+        let entries = entry_symbols(&snapshot);
+        for key in ["app/page.md#__module__", "pages/about.md#__module__"] {
+            assert!(
+                entries.contains(&key),
+                "{key} must be a route entry: {entries:?}"
+            );
+        }
+        for key in [
+            "components/header.tsx#Header",
+            "components/footer.tsx#Footer",
+        ] {
+            assert!(
+                snapshot.is_live(key),
+                "{key} is rendered by a Markdown route and must be live: {:?}",
+                snapshot.live
+            );
+        }
+        for key in [
+            "components/header.tsx#unusedHeaderHelper",
+            "components/dead-card.tsx#DeadCard",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "{key} is unused and must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn markdown_routes_require_page_extensions() {
+        let snapshot = discovered_snapshot(&next_page_extensions_fixture(false));
+        let files: Vec<&str> = snapshot
+            .files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect();
+        assert!(
+            !files.iter().any(|path| path.ends_with(".md")),
+            "no Markdown may be inventoried without pageExtensions: {files:?}"
+        );
+        for key in [
+            "components/header.tsx#Header",
+            "components/footer.tsx#Footer",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "{key} must not be protected without a Markdown route: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn webpack_entries_are_roots() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"webpack-app","devDependencies":{"webpack":"^5.90.0","webpack-cli":"^5.1.0"}}"#,
+            ),
+            (
+                "webpack.config.js",
+                "const path = require(\"path\");\n\nmodule.exports = {\n  context: path.resolve(__dirname, \"src\"),\n  entry: { app: [\"./boot.js\"], admin: { import: \"./admin.js\" } },\n};\n",
+            ),
+            (
+                "src/boot.js",
+                "import { start } from \"./runtime\";\nimport { mountHeader } from \"./header\";\n\nstart();\nmountHeader();\n",
+            ),
+            (
+                "src/admin.js",
+                "import { renderAdmin } from \"./admin-panel\";\n\nrenderAdmin();\n",
+            ),
+            (
+                "src/runtime.js",
+                "export function start() { return \"started\"; }\nexport function unusedRuntime() { return \"dead\"; }\n",
+            ),
+            (
+                "src/header.js",
+                "export function mountHeader() { return \"header\"; }\n",
+            ),
+            (
+                "src/admin-panel.js",
+                "export function renderAdmin() { return \"admin\"; }\nexport function unusedAdminPanel() { return \"dead\"; }\n",
+            ),
+            (
+                "src/dead.js",
+                "export function DeadThing() { return \"dead\"; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for key in ["src/boot.js#__module__", "src/admin.js#__module__"] {
+            assert!(
+                entries.contains(&key),
+                "{key} is named by the webpack entry object: {entries:?}"
+            );
+        }
+        for key in [
+            "src/runtime.js#start",
+            "src/header.js#mountHeader",
+            "src/admin-panel.js#renderAdmin",
+        ] {
+            assert!(
+                snapshot.is_live(key),
+                "{key} is imported by a webpack entry and must be live: {:?}",
+                snapshot.live
+            );
+        }
+        for key in [
+            "src/runtime.js#unusedRuntime",
+            "src/admin-panel.js#unusedAdminPanel",
+            "src/dead.js#DeadThing",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "{key} is unused and must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn webpack_literal_context_is_package_relative() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"webpack-config-dir","devDependencies":{"webpack":"^5.90.0"}}"#,
+            ),
+            (
+                "config/webpack.client.js",
+                "module.exports = {\n  context: \"src\",\n  entry: \"./boot.js\",\n};\n",
+            ),
+            (
+                "src/boot.js",
+                "import { start } from \"./runtime\";\n\nstart();\n",
+            ),
+            (
+                "src/runtime.js",
+                "export function start() { return \"started\"; }\nexport function unusedRuntime() { return \"dead\"; }\n",
+            ),
+        ]);
+        assert!(
+            snapshot.is_live("src/boot.js#__module__"),
+            "a literal context is resolved from the package root: {:?}",
+            snapshot.live
+        );
+        assert!(
+            snapshot.is_live("src/runtime.js#start"),
+            "the config-directory entry must keep its imports live: {:?}",
+            snapshot.live
+        );
+        assert!(
+            snapshot.is_candidate("src/runtime.js#unusedRuntime"),
+            "unused exports must still be reported: {:?}",
+            snapshot.candidates
+        );
     }
 
     #[test]
@@ -2397,6 +3464,51 @@ mod tests {
     }
 
     #[test]
+    fn promise_all_destructuring_keeps_only_named_exports_live() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "import { load } from '../src/loader';\nexport default function Page() { return <div>{load()}</div>; }\n",
+            ),
+            (
+                "src/loader.ts",
+                "export async function load() {\n  const [{ used }, other] = await Promise.all([import('./mod'), import('./other')]);\n  return used + (other ? 1 : 0);\n}\n",
+            ),
+            (
+                "src/mod.ts",
+                "export const used = 1;\nexport const dead = 2;\n",
+            ),
+            (
+                "src/other.ts",
+                "export const any = 1;\nexport const alsoAny = 2;\n",
+            ),
+        ]);
+        assert!(
+            !snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "src/mod.ts#used"),
+            "the destructured export must stay live: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "src/mod.ts#dead"),
+            "an export the destructuring does not read must be a candidate: {:?}",
+            snapshot.candidates
+        );
+        for key in ["src/other.ts#any", "src/other.ts#alsoAny"] {
+            assert!(
+                !snapshot.candidates.iter().any(|candidate| candidate == key),
+                "a namespace binding can be used in unknown ways: {key} {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
     fn member_dynamic_imports_keep_only_the_accessed_export_live() {
         let snapshot = snapshot(&[
             (
@@ -2428,6 +3540,51 @@ mod tests {
             "{:?}",
             snapshot.candidates
         );
+    }
+
+    #[test]
+    fn then_callback_keeps_only_accessed_exports_live() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "import { load } from '../src/loader';\nexport default function Page() { return <div>{load()}</div>; }\n",
+            ),
+            (
+                "src/loader.ts",
+                "export async function load() {\n  const used = await import('./mod').then((module) => module.used);\n  const escaped = await import('./escaped').then((module) => use(module));\n  return used + (escaped ? 1 : 0);\n}\nfunction use(value: unknown) { return value ? 1 : 0; }\n",
+            ),
+            (
+                "src/mod.ts",
+                "export const used = 1;\nexport const dead = 2;\n",
+            ),
+            (
+                "src/escaped.ts",
+                "export const any = 1;\nexport const alsoAny = 2;\n",
+            ),
+        ]);
+        assert!(
+            !snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "src/mod.ts#used"),
+            "the member read by the .then callback must stay live: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "src/mod.ts#dead"),
+            "an export the callback does not read must be a candidate: {:?}",
+            snapshot.candidates
+        );
+        for key in ["src/escaped.ts#any", "src/escaped.ts#alsoAny"] {
+            assert!(
+                !snapshot.candidates.iter().any(|candidate| candidate == key),
+                "a namespace passed as a value can be used in unknown ways: {key} {:?}",
+                snapshot.candidates
+            );
+        }
     }
 
     #[test]
@@ -2667,6 +3824,90 @@ mod tests {
                 .iter()
                 .any(|key| key == "src/registry.ts#publicApi"),
             "{:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn unused_barrel_aliases_are_candidates_only_when_their_target_is_live() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"barrel-app","private":true,"dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/page.tsx",
+                "import { used } from \"../src/impl\";\n\nexport default function Page() {\n  return used;\n}\n",
+            ),
+            ("src/barrel.ts", "export { used, dead } from \"./impl\";\n"),
+            (
+                "src/impl.ts",
+                "export const used = 1;\nexport const dead = 2;\n",
+            ),
+        ]);
+        assert!(
+            snapshot.is_live("src/impl.ts#used"),
+            "directly imported declaration must be live: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot.is_candidate("src/barrel.ts#used"),
+            "unused barrel alias with a live target is actionable: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot.is_candidate("src/impl.ts#dead"),
+            "dead declaration must be reported: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            !snapshot.is_candidate("src/barrel.ts#dead"),
+            "a dead target is reported at its declaration, not through the alias: {:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn unused_barrel_alias_chains_report_every_link_to_a_live_target() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"barrel-chain","private":true,"dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/page.tsx",
+                "import { used } from \"../src/impl\";\n\nexport default function Page() {\n  return used;\n}\n",
+            ),
+            ("src/barrel.ts", "export { used, dead } from \"./impl\";\n"),
+            ("src/outer.ts", "export { used, dead } from \"./barrel\";\n"),
+            (
+                "src/impl.ts",
+                "export const used = 1;\nexport const dead = 2;\n",
+            ),
+        ]);
+        assert!(
+            snapshot.is_candidate("src/barrel.ts#used"),
+            "inner alias with a live target is actionable: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot.is_candidate("src/outer.ts#used"),
+            "outer alias whose chain reaches a live target is actionable: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            !snapshot.is_candidate("src/barrel.ts#dead"),
+            "dead alias is reported at its declaration, not through the alias: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            !snapshot.is_candidate("src/outer.ts#dead"),
+            "dead outer alias is reported at its declaration, not through the alias: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot.is_candidate("src/impl.ts#dead"),
+            "dead declaration must be reported: {:?}",
             snapshot.candidates
         );
     }
@@ -2912,6 +4153,40 @@ mod tests {
                 .candidates
                 .iter()
                 .any(|key| key == "src/registry.ts#unused"),
+            "{:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn types_reachable_through_an_externally_used_type_stay_live() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"type-graph","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/page.tsx",
+                "import type { Host } from '../src/host';\n\nexport default function Page(props: { host: Host }) {\n  return <div>{props.host.label}</div>;\n}\n",
+            ),
+            (
+                "src/host.ts",
+                "export interface Host {\n  label: string;\n  image: Image | null;\n}\n\nexport interface Image {\n  width: number;\n  height: number;\n}\n\nexport function unusedHostHelper() {\n  return 1;\n}\n",
+            ),
+        ]);
+        for key in ["src/host.ts#Host", "src/host.ts#Image"] {
+            assert!(snapshot.is_live(key), "{key}: {:?}", snapshot.candidates);
+            assert!(
+                !snapshot
+                    .internal_only
+                    .iter()
+                    .any(|candidate| candidate == key),
+                "{key} is used through an externally imported type: {:?}",
+                snapshot.internal_only
+            );
+        }
+        assert!(
+            snapshot.is_candidate("src/host.ts#unusedHostHelper"),
             "{:?}",
             snapshot.candidates
         );

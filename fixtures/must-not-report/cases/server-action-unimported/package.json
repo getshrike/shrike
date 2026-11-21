@@ -1,0 +1,5 @@
+{
+  "name": "corpus-server-action-unimported",
+  "private": true,
+  "type": "module"
+}

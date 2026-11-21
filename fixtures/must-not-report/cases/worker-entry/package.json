@@ -1,0 +1,9 @@
+{
+  "name": "corpus-worker-entry",
+  "private": true,
+  "dependencies": {
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}

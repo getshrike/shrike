@@ -40,17 +40,19 @@ impl Default for BatchPolicy {
     }
 }
 
-/// How a `"use client"`/`"use server"` directive affects entry seeding.
+/// How a `"use client"` directive affects entry seeding. `"use server"`
+/// exports are always entries because Next.js registers them independently of
+/// imports.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ClientBoundaryPolicy {
     /// The directive marks a boundary, but liveness comes from the module
-    /// graph like any other file. Unused boundaries are reported.
+    /// graph like any other file. Unused client boundaries are reported.
     #[default]
     Graph,
-    /// Every export in a client/server boundary file is an entry. Maximum
-    /// caution for frameworks that discover boundaries outside the import
-    /// graph; hides genuinely unused boundary exports.
+    /// Every export in a client boundary file is an entry. Maximum caution for
+    /// frameworks that discover boundaries outside the import graph; hides
+    /// genuinely unused client-boundary exports.
     Protect,
 }
 
@@ -96,6 +98,9 @@ impl Default for EngineConfig {
                 "**/*.svelte".into(),
                 "**/*.vue".into(),
                 "**/*.astro".into(),
+                // Vite and static hosts load module scripts from the document.
+                // The parser records those script sources as imports.
+                "**/index.html".into(),
             ],
             ignore: vec![
                 "node_modules/**".into(),

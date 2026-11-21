@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 271,
+  "count": 288,
   "entries": [
     {
       "id": "page-entry-1",
@@ -376,6 +376,60 @@
           "symbol": "src/feature.ts#feature8",
           "reason": "literal dynamic import is reachable from an entry"
         }
+      ]
+    },
+    {
+      "id": "promise-all-dynamic",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/loader.ts#load",
+          "reason": "the page imports the loader"
+        },
+        {
+          "symbol": "src/mod.ts#used",
+          "reason": "Promise.all destructuring reads only the used export"
+        }
+      ],
+      "mustReport": [
+        "src/mod.ts#dead"
+      ]
+    },
+    {
+      "id": "then-dynamic-import",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/loader.ts#load",
+          "reason": "the page imports the loader"
+        },
+        {
+          "symbol": "src/mod.ts#used",
+          "reason": "the .then callback reads only the used export"
+        },
+        {
+          "symbol": "src/escaped.ts#any",
+          "reason": "the namespace parameter escapes to a call, so every export stays live"
+        },
+        {
+          "symbol": "src/escaped.ts#alsoAny",
+          "reason": "the namespace parameter escapes to a call, so every export stays live"
+        }
+      ],
+      "mustReport": [
+        "src/mod.ts#dead"
       ]
     },
     {
@@ -1768,6 +1822,29 @@
           "symbol": "src/actions.ts#action8",
           "reason": "server action export is an entry"
         }
+      ]
+    },
+    {
+      "id": "server-action-unimported",
+      "category": "server-action",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/actions.ts#importedAction",
+          "reason": "an imported server action is an entry"
+        },
+        {
+          "symbol": "src/actions.ts#unimportedAction",
+          "reason": "every export of a use server module is a callable action"
+        }
+      ],
+      "mustReport": [
+        "src/helper.ts#unusedHelper"
       ]
     },
     {
@@ -4026,6 +4103,55 @@
       ]
     },
     {
+      "id": "internal-only-types",
+      "category": "internal-only",
+      "files": [
+        "app",
+        "package.json",
+        "src"
+      ],
+      "protected": [
+        {
+          "symbol": "app/page.tsx#default",
+          "reason": "Next.js page entry"
+        }
+      ],
+      "internalOnly": [
+        "src/card.ts#CardItem",
+        "src/card.ts#CardTone",
+        "src/card.ts#CardProps"
+      ],
+      "mustReport": [
+        "src/card.ts#unusedCardHelper"
+      ]
+    },
+    {
+      "id": "type-only-transitive",
+      "category": "internal-only",
+      "files": [
+        "app",
+        "package.json",
+        "src"
+      ],
+      "protected": [
+        {
+          "symbol": "app/page.tsx#default",
+          "reason": "Next.js page entry"
+        },
+        {
+          "symbol": "src/host.ts#Host",
+          "reason": "page.tsx imports the Host type"
+        },
+        {
+          "symbol": "src/host.ts#Image",
+          "reason": "Image is part of the externally imported Host type's shape"
+        }
+      ],
+      "mustReport": [
+        "src/host.ts#unusedHostHelper"
+      ]
+    },
+    {
       "id": "remix-two-sided",
       "category": "remix",
       "files": [
@@ -4347,6 +4473,10 @@
         {
           "symbol": "app/page.tsx#instant",
           "reason": "page-level instant navigation config is read by the framework"
+        },
+        {
+          "symbol": "app/page.tsx#unstable_dynamicStaleTime",
+          "reason": "page-level dynamic stale time is read by the framework"
         }
       ],
       "mustReport": [
@@ -4520,6 +4650,390 @@
         "src/frontend/route-modules/unreferenced.tsx#default",
         "src/frontend/route-modules/unreferenced.tsx#unusedUnreferencedHelper",
         "src/components/dead.tsx#deadThing"
+      ]
+    },
+    {
+      "id": "import-meta-glob-1",
+      "category": "dynamic-import",
+      "files": [
+        "package.json",
+        "src"
+      ],
+      "protected": [
+        {
+          "symbol": "src/pages/dashboard.tsx#Dashboard",
+          "reason": "import.meta.glob loads every file matching the positive pattern"
+        },
+        {
+          "symbol": "src/pages/dashboard.tsx#dashboardHelper",
+          "reason": "a glob import may read any export of a matched module"
+        },
+        {
+          "symbol": "src/pages/settings.tsx#Settings",
+          "reason": "import.meta.glob loads every file matching the positive pattern"
+        }
+      ],
+      "mustReport": [
+        "src/pages/skip.tsx#Skipped",
+        "src/components/dead.tsx#DeadComponent"
+      ]
+    },
+    {
+      "id": "require-context-1",
+      "category": "dynamic-import",
+      "files": [
+        "package.json",
+        "src"
+      ],
+      "protected": [
+        {
+          "symbol": "src/icons/star.tsx#StarIcon",
+          "reason": "require.context with recursive=true loads nested modules"
+        },
+        {
+          "symbol": "src/icons/nested/arrow.tsx#ArrowIcon",
+          "reason": "require.context with recursive=true loads nested modules"
+        }
+      ],
+      "mustReport": [
+        "src/dead.tsx#DeadComponent"
+      ]
+    },
+    {
+      "id": "next-intl-conventions",
+      "category": "next-config",
+      "files": [
+        "package.json",
+        "src",
+        "i18n",
+        "components"
+      ],
+      "protected": [
+        {
+          "symbol": "src/i18n/request.ts#getRequestConfig",
+          "reason": "next-intl reads i18n/request by convention"
+        },
+        {
+          "symbol": "src/i18n/request.ts#unusedRequestHelper",
+          "reason": "the whole next-intl convention module surface is loaded"
+        },
+        {
+          "symbol": "i18n/routing.ts#routing",
+          "reason": "next-intl reads i18n/routing by convention"
+        },
+        {
+          "symbol": "i18n/routing.ts#unusedRoutingHelper",
+          "reason": "the whole next-intl convention module surface is loaded"
+        }
+      ],
+      "mustReport": [
+        "components/dead.ts#deadThing"
+      ]
+    },
+    {
+      "id": "vite-html-entry-1",
+      "category": "vite",
+      "files": [
+        "index.html",
+        "package.json",
+        "src"
+      ],
+      "protected": [
+        {
+          "symbol": "index.html#__module__",
+          "reason": "Vite loads the document and its module scripts"
+        },
+        {
+          "symbol": "src/main.ts#__module__",
+          "reason": "the module script of index.html is a production entry"
+        },
+        {
+          "symbol": "src/main.ts#bootFlag",
+          "reason": "every export of an index.html script module is loaded by the page"
+        },
+        {
+          "symbol": "src/app.ts#mount",
+          "reason": "the HTML entry imports mount"
+        }
+      ],
+      "mustReport": [
+        "src/app.ts#unusedMountHelper",
+        "src/dead.ts#DeadThing"
+      ]
+    },
+    {
+      "id": "vite-root-entry-1",
+      "category": "vite",
+      "files": [
+        "package.json",
+        "src"
+      ],
+      "protected": [
+        {
+          "symbol": "src/main.ts#__module__",
+          "reason": "src/main is Vite's conventional application root"
+        },
+        {
+          "symbol": "src/main.ts#rootBoot",
+          "reason": "every export of a Vite root module is part of the application surface"
+        },
+        {
+          "symbol": "src/index.ts#__module__",
+          "reason": "src/index is Vite's conventional application root"
+        },
+        {
+          "symbol": "src/index.ts#indexBoot",
+          "reason": "every export of a Vite root module is part of the application surface"
+        },
+        {
+          "symbol": "src/helpers.ts#helper",
+          "reason": "the Vite root imports helper"
+        }
+      ],
+      "mustReport": [
+        "src/dead.ts#DeadThing"
+      ]
+    },
+    {
+      "id": "react17-legacy-root",
+      "category": "react",
+      "files": [
+        "package.json",
+        "src"
+      ],
+      "protected": [
+        {
+          "symbol": "src/client.js#__module__",
+          "reason": "a module that calls ReactDOM.render is a browser root"
+        },
+        {
+          "symbol": "src/App.js#default",
+          "reason": "the legacy React root renders App"
+        },
+        {
+          "symbol": "src/format.js#formatting",
+          "reason": "the App element is constructed from formatting"
+        }
+      ],
+      "mustReport": [
+        "src/App.js#unusedAppHelper",
+        "src/format.js#unusedFormatter",
+        "src/dead.js#DeadThing"
+      ]
+    },
+    {
+      "id": "worker-entry",
+      "category": "worker",
+      "files": [
+        "app",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/components/heavy-worker.ts#__module__",
+          "reason": "new Worker(new URL(...)) loads the module without an import"
+        },
+        {
+          "symbol": "app/components/heavy-worker.ts#handle",
+          "reason": "the worker module's top-level message handler uses handle"
+        },
+        {
+          "symbol": "app/components/heavy-worker.ts#state",
+          "reason": "the worker module's top-level state is used by handle"
+        },
+        {
+          "symbol": "app/components/service-worker.ts#__module__",
+          "reason": "navigator.serviceWorker.register loads the module"
+        },
+        {
+          "symbol": "app/components/service-worker.ts#cacheName",
+          "reason": "the service worker install handler uses cacheName"
+        },
+        {
+          "symbol": "app/components/processor.ts#__module__",
+          "reason": "audioWorklet.addModule loads the worklet module"
+        },
+        {
+          "symbol": "app/components/processor.ts#Processor",
+          "reason": "registerProcessor receives the worklet class"
+        }
+      ],
+      "mustReport": [
+        "app/components/heavy-worker.ts#unusedWorkerHelper",
+        "app/components/service-worker.ts#unusedServiceWorkerHelper",
+        "app/components/processor.ts#unusedWorkletHelper",
+        "app/components/dead.ts#DeadThing"
+      ]
+    },
+    {
+      "id": "storybook-mdx-docs",
+      "category": "storybook",
+      "files": [
+        ".storybook",
+        "package.json",
+        "src"
+      ],
+      "protected": [
+        {
+          "symbol": "src/Docs.mdx#__module__",
+          "reason": "Storybook's default story glob includes every MDX page"
+        },
+        {
+          "symbol": "src/DocsCard.tsx#DocsCard",
+          "reason": "the Storybook docs page imports and renders DocsCard"
+        }
+      ],
+      "mustReport": [
+        "src/DocsCard.tsx#unusedDocsHelper",
+        "src/dead.tsx#DeadThing"
+      ]
+    },
+    {
+      "id": "next-page-extensions-md",
+      "category": "next-pages",
+      "files": [
+        "app",
+        "components",
+        "next.config.ts",
+        "package.json",
+        "src/pages"
+      ],
+      "protected": [
+        {
+          "symbol": "app/page.md#__module__",
+          "reason": "pageExtensions makes app/page.md an App Router page"
+        },
+        {
+          "symbol": "src/pages/contact.md#__module__",
+          "reason": "pageExtensions makes every src/pages Markdown file a Pages Router route"
+        },
+        {
+          "symbol": "components/hero.tsx#Hero",
+          "reason": "the Markdown home page imports and renders Hero"
+        },
+        {
+          "symbol": "components/contact-form.tsx#ContactForm",
+          "reason": "the Markdown contact route imports and renders ContactForm"
+        }
+      ],
+      "mustReport": [
+        "components/hero.tsx#unusedHeroHelper",
+        "components/contact-form.tsx#unusedContactHelper",
+        "components/dead-card.tsx#DeadCard"
+      ]
+    },
+    {
+      "id": "webpack-entries",
+      "category": "webpack",
+      "files": [
+        "package.json",
+        "src",
+        "webpack.config.js"
+      ],
+      "protected": [
+        {
+          "symbol": "src/boot.js#__module__",
+          "reason": "webpack's entry object names boot.js"
+        },
+        {
+          "symbol": "src/admin.js#__module__",
+          "reason": "webpack's entry object names admin.js through an import descriptor"
+        },
+        {
+          "symbol": "src/runtime.js#start",
+          "reason": "the webpack boot entry imports and calls start"
+        },
+        {
+          "symbol": "src/header.js#mountHeader",
+          "reason": "the webpack boot entry imports and calls mountHeader"
+        },
+        {
+          "symbol": "src/admin-panel.js#renderAdmin",
+          "reason": "the webpack admin entry imports and calls renderAdmin"
+        }
+      ],
+      "mustReport": [
+        "src/runtime.js#unusedRuntime",
+        "src/admin-panel.js#unusedAdminPanel",
+        "src/dead.js#DeadThing"
+      ]
+    },
+    {
+      "id": "storybook-custom-stories",
+      "category": "storybook",
+      "files": [
+        ".storybook",
+        "package.json",
+        "src"
+      ],
+      "protected": [
+        {
+          "symbol": ".storybook/main.ts#__module__",
+          "reason": "the Storybook main configuration is executable project code"
+        },
+        {
+          "symbol": ".storybook/preview.tsx#__module__",
+          "reason": "preview.tsx is a Storybook entry"
+        },
+        {
+          "symbol": "src/Button.demo.tsx#__module__",
+          "reason": "the custom stories glob names every *.demo.tsx file"
+        },
+        {
+          "symbol": "src/Button.demo.tsx#default",
+          "reason": "a story module's exports are its entry surface"
+        },
+        {
+          "symbol": "src/Card.preview.tsx#__module__",
+          "reason": "the object specifier names every *.preview.tsx file under src"
+        },
+        {
+          "symbol": "src/button.tsx#Button",
+          "reason": "Button.demo.tsx imports and renders Button"
+        },
+        {
+          "symbol": "src/card.tsx#Card",
+          "reason": "Card.preview.tsx imports and renders Card"
+        },
+        {
+          "symbol": "src/theme-decorator.tsx#ThemeDecorator",
+          "reason": "preview.tsx imports ThemeDecorator as a decorator"
+        }
+      ],
+      "mustReport": [
+        "src/button.tsx#unusedButtonHelper",
+        "src/theme-decorator.tsx#unusedDecoratorHelper",
+        "src/dead.tsx#Dead"
+      ]
+    },
+    {
+      "id": "barrel-alias-chain",
+      "category": "barrel",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#used",
+          "reason": "the page imports the declaration directly"
+        },
+        {
+          "symbol": "src/barrel.ts#dead",
+          "reason": "a dead alias whose target is dead is reported at the declaration, not duplicated"
+        },
+        {
+          "symbol": "src/outer.ts#dead",
+          "reason": "a dead alias whose target is dead is reported at the declaration, not duplicated"
+        }
+      ],
+      "mustReport": [
+        "src/barrel.ts#used",
+        "src/outer.ts#used",
+        "src/impl.ts#dead"
       ]
     }
   ]

@@ -490,6 +490,26 @@ function mentionsAny(root: string, file: string, aliases: string[]): boolean {
   return aliases.some((alias) => configMentions(root, file, alias));
 }
 
+/**
+ * Next.js loads `babel-plugin-react-compiler` when `reactCompiler` is enabled,
+ * but the package name never appears in the config. Next.js 16 uses the
+ * top-level option; Next.js 15 used `experimental.reactCompiler`. A truthy
+ * boolean or an options object counts; `false`, dynamic values, and comments
+ * that do not match the option shape do not.
+ */
+function nextReactCompilerEnabled(root: string, files: string[]): boolean {
+  for (const file of files) {
+    if (!/(^|\/)next\.config\.[cm]?[jt]s$/.test(file)) continue;
+    try {
+      const text = readFileSync(join(root, file), "utf8");
+      if (/\breactCompiler\s*:\s*(?:true|\{)/.test(text)) return true;
+    } catch {
+      // An unreadable config cannot prove the option is enabled.
+    }
+  }
+  return false;
+}
+
 function fileNameMentions(file: string, aliases: string[]): boolean {
   const base = file.split("/").pop()?.toLowerCase() ?? "";
   return aliases.some((alias) => {
@@ -786,6 +806,15 @@ export function analyzeDependencies(
           mark(name, file);
         }
       }
+    }
+    // Next.js names the React Compiler package by convention, not by string:
+    // `reactCompiler: true` (16) or `experimental.reactCompiler` (15) loads
+    // `babel-plugin-react-compiler`.
+    if (
+      declarations.has("babel-plugin-react-compiler") &&
+      nextReactCompilerEnabled(root, [...configFiles])
+    ) {
+      mark("babel-plugin-react-compiler", "next.config reactCompiler");
     }
     for (const key of Object.keys(context.json)) {
       if (declarations.has(key)) mark(key, `package.json ${key}`);

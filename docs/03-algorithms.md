@@ -161,13 +161,19 @@ CSR is used because it is cache-friendly, deterministic, and cheap to serialize.
 
 1. Read `shrike.config.ts` in the host; pass a normalized config to the engine.
 2. Walk the include set; skip ignores, `.git`, `node_modules`, build outputs.
-3. Normalize paths relative to the repository root.
-4. Hash file contents with BLAKE3.
-5. Detect workspace packages from `package.json` workspaces, `pnpm-workspace.yaml`,
+   Hidden directories are editor/tooling metadata except `.storybook` and
+   `.rnstorybook`, whose configuration and preview modules are executable.
+3. Read `pageExtensions` from each `next.config.*` and add the Markdown files
+   that become routes: every `.md`/`.mdx` under `pages/` or `src/pages/`, and
+   convention-stem files under `app/` or `src/app/`. A config only applies to
+   its own directory, so a root config cannot absorb a nested app.
+4. Normalize paths relative to the repository root.
+5. Hash file contents with BLAKE3.
+6. Detect workspace packages from `package.json` workspaces, `pnpm-workspace.yaml`,
    and `tsconfig` references.
-6. Detect generated files from common markers and config; generated files are
+7. Detect generated files from common markers and config; generated files are
    excluded from deletion candidates by default but still parsed for edges.
-7. Sort files by normalized path. This order is the canonical merge order.
+8. Sort files by normalized path. This order is the canonical merge order.
 
 **Invariant A1:** the file list is sorted and unique.
 
@@ -260,6 +266,8 @@ Edge construction rules:
 | `import('./m')` | dynamic → module m | `certain` if literal |
 | `require('./m')` | dynamic → module m | `certain` if literal |
 | `import(`./locales/${x}.json`)` | dynamic → glob | `probable` |
+| `import.meta.glob('./pages/*.tsx')` | dynamic → every matched module | `probable` |
+| `require.context('./icons', true)` | dynamic → every module in the directory tree | `probable` |
 | `obj[key]` | reference → unknown | `unknown` |
 | `import(someVar)` | dynamic → unknown scope | `unknown` |
 | `"use server"` export | entry | `certain` |
@@ -283,7 +291,9 @@ a symbol is live.
 ### 9.1 Next.js App Router
 
 - `page`, `layout`, `template`, `loading`, `error`, `global-error`, `not-found`,
-  `forbidden`, `unauthorized`, `route`, `default`;
+  `forbidden`, `unauthorized`, `route`, `default`; with `pageExtensions`
+  containing `md` or `mdx`, the same convention stems are routes as Markdown,
+  and their ESM imports keep rendered components live;
 - `sitemap`, `robots`, `manifest`, `icon`, `apple-icon`, `opengraph-image`,
   `twitter-image`;
 - image-route metadata: `size`, `contentType`, `alt`, `generateImageMetadata`
@@ -291,7 +301,8 @@ a symbol is live.
 - `proxy.ts` (Next.js 16) and `middleware.ts` (15) exports;
 - `instrumentation.ts` and `instrumentation-client.ts` `register`;
 - `mdx-components.tsx` `useMDXComponents` and the MDX ESM boundary;
-- `"use server"` module exports (async functions);
+- `"use server"` module exports (async functions), independent of
+  `clientBoundaryPolicy`;
 - `"use client"` module exports (client boundary);
 - metadata exports: `metadata`, `generateMetadata`, `viewport`,
   `generateViewport`, `generateStaticParams`, `generateSitemaps`;
@@ -306,6 +317,8 @@ a symbol is live.
 ### 9.2 Next.js Pages Router
 
 - `pages/**` default exports;
+- `pages/**` Markdown files when `pageExtensions` includes `md` or `mdx`; their
+  ESM imports are reachability edges;
 - `pages/api/**` HTTP method exports;
 - `_app`, `_document`, `_error`;
 - `getServerSideProps`, `getStaticProps`, `getStaticPaths`, `getInitialProps`.
@@ -313,24 +326,73 @@ a symbol is live.
 ### 9.3 React
 
 - application roots (`createRoot`, `hydrateRoot`);
+- React 17 legacy roots: `ReactDOM.render` and `ReactDOM.hydrate`, matched only
+  when the object is a default or namespace import from `react-dom`, or when a
+  named `render`/`hydrate` import from `react-dom` is called. A
+  testing-library `render(<App />)` is not a root;
 - route configuration objects;
 - lazy imports;
 - context providers that are mounted at a root.
 
-### 9.4 Packages
+### 9.4 Vite and webpack
+
+Vite projects are detected from a `vite`, `vitest`, or `rolldown-vite`
+dependency in the owning package. The framework then adds these entries:
+
+- `index.html` itself and each `<script type="module" src="...">` it names.
+  External URLs, inline-only scripts, commented-out tags, classic scripts, and
+  source templates that still contain `%...%` placeholders are ignored. The
+  whole export surface of a script module is live because the page can read any
+  property of its namespace;
+- `src/main.{ts,tsx,js,jsx}` and `src/index.{ts,tsx,js,jsx}` at the package
+  root, with their whole export surface. This is the vanilla/Vue bootstrap that
+  never calls React's `createRoot` and need not appear in `index.html`.
+
+HTML files are part of the default include set (`**/index.html`) so their
+content participates in the snapshot cache key. Their script sources are
+ordinary side-effect imports; the entry rules above decide which modules are
+reachable.
+
+Webpack configurations are read statically from `webpack.config.*` and
+target-specific names such as `webpack.prod.config.*` or
+`config/webpack.client.*`. The extractor understands:
+
+- `entry` as a string, an array, an object of strings/arrays, or webpack 5
+  `{ import: ... }` descriptors;
+- `context` as a string or a `path.resolve`/`path.join` expression, including
+  simple `const` aliases;
+- entries written as `path.resolve(__dirname, ...)`.
+
+Each named module and its whole export surface becomes an entry. Paths are
+anchored at `context`, or at the package root when no context is declared.
+Dynamic expressions, absolute filesystem paths, and environment values are
+skipped rather than executed; Knip can evaluate those because it runs the
+configuration in Node.
+
+### 9.5 Packages
 
 - `package.json` `exports`, `main`, `module`, `types`;
 - `index.ts` public surface when the package is a library;
 - declaration files are public by default.
 
-### 9.5 Tests and config
+### 9.6 Tests and config
 
 - test files, setup files, fixtures;
+- Storybook `.{storybook,rnstorybook}/**` config and `*.stories.*` /
+  `*.story.*` files. When the owning package depends on `storybook`,
+  `@storybook/*`, or `@nrwl/storybook`, every `.mdx` page is also an entry:
+  Storybook's default story glob includes all MDX, and docs pages render the
+  components they import. The `stories` array in `.storybook/main.*` is read
+  statically, including `{ directory, files }` specifiers, custom suffixes such
+  as `*.demo.tsx`, and extglob alternation such as `*.@(js|jsx)`. Patterns are
+  anchored at the main-config directory. Computed and negated patterns are
+  skipped; preview, manager, and decorator modules are entries and their
+  imports stay live;
 - `next.config`, `postcss.config`, `tailwind.config`, `eslint.config`,
   `tsconfig`;
 - test runner config.
 
-### 9.6 MDX
+### 9.7 MDX
 
 MDX is analyzed at its ESM boundary only: top-level `import` and `export`
 statements are parsed with byte offsets preserved, while the Markdown/JSX body
@@ -339,7 +401,7 @@ component is never proposed for deletion. Imports from MDX are normal graph
 edges, which keeps the components it renders live. Fenced code blocks and YAML
 frontmatter are ignored.
 
-### 9.7 Additional framework routers
+### 9.8 Additional framework routers
 
 The same entry rule applies to conventions with their own compilers:
 
@@ -379,15 +441,19 @@ The same entry rule applies to conventions with their own compilers:
 - Nuxt: `server/api`, `server/routes`, `server/middleware`, `plugins`,
   `middleware`, `app.vue`, and `pages/**` route modules.
 
-### 9.8 Internal-only exports
+### 9.9 Internal-only exports
 
 An exported symbol that is live only because its own file references it is
 reported in `internalOnly`, separately from `candidates`. It is not a deletion
 candidate: the export may be part of a public surface the graph cannot see, and
-same-file re-export aliases propagate the proof. This gives parity with
-unused-export tools without turning a conservative graph into a false positive.
+same-file re-export aliases propagate the proof. A type imported externally
+also makes the types in its shape externally visible, so same-file type-to-type
+references propagate the proof as well. Value references do not: a helper used
+by an externally called function stays internal and can be de-exported. This
+gives parity with unused-export tools without turning a conservative graph into
+a false positive.
 
-### 9.9 Dependency evidence
+### 9.10 Dependency evidence
 
 Dependency analysis is deliberately asymmetric: it prefers a false negative to a
 false positive. A declared package is kept when any of these hold:
@@ -396,6 +462,8 @@ false positive. A declared package is kept when any of these hold:
 - a type-position reference names it (`import("pkg").Config`, JSDoc
   `@type {import("pkg").X}`); type positions never create `unlisted` findings,
   because a tool config's types are often supplied transitively;
+- it is named by a package script, a recognized tool config (ESLint, PostCSS,
+  Tailwind, Next.js `turbopack.rules` loaders, ...), or a CSS tool directive;
 - it is an `@types/*` package whose runtime target is used, an ambient global
   package, or listed in `compilerOptions.types`;
 - it is a requirement of a used package (peer/optional/known ecosystem map);
@@ -463,6 +531,12 @@ it is not an entry and it is not public API.
 **Invariant F6:** every live symbol is expanded exactly once. Symbols widened by
 an unknown scope are queued, so their outgoing references are traversed.
 
+**Rule F7:** a dead re-export alias is a candidate only when its chain of
+re-exports reaches a live symbol. Every dead link in that chain is reported,
+because removing an inner alias would leave an outer alias dangling. When the
+chain ends at a dead declaration, report the declaration instead and suppress
+the aliases, so one dead symbol yields one finding.
+
 ### 10.4 Proof trace
 
 For each candidate, record:
@@ -490,11 +564,49 @@ bounded scopes, from most to least precise:
 | `require('./m')` | literal | `certain` | edge to m |
 | ``import(`./locales/${x}.json`)`` | static prefix | `probable` | edges to all files under the prefix |
 | `import(`./${name}`)` | directory prefix | `probable` | edges to the directory subtree |
+| `import.meta.glob(pattern)` | glob | `probable` | edges to every analyzed file matching the pattern; all of a matched module's exports are live |
+| `import.meta.glob([positive, '!exclude'])` | glob with excludes | `probable` | as above, minus files matching an exclude |
+| `require.context(dir, recursive)` | directory glob | `probable` | `dir/**/*` when recursive, `dir/*` when not |
 | `import(someVar)` in package P | package scope | `unknown` | all files in P are live |
 | `import(someVar)` at repo root | repo scope | `unknown` | all files are live; deletion is refused |
 | `obj[key]` with literal keys | key set | `probable` | edges to the values |
 | `obj[expr]` | module scope | `unknown` | all exports of the module's namespace are live |
 | `globalThis[name]` | repo scope | `unknown` | all files are live; deletion is refused |
+
+Bundler globs follow the importer: `./` and `../` patterns move with the
+importing file, `/` starts at the repository root, and tsconfig aliases (plus
+the common `@/` and `~/` source aliases) resolve through the same path map as
+static imports. Negative Vite patterns (`!...`) exclude matches from every
+positive pattern in the same call; a leading `**` exclude is anchored at the
+common base of the positive patterns, matching Vite. A non-literal pattern or a
+pattern this resolver cannot place widens to repo scope instead of guessing.
+All exports of a matched module stay live because reading the glob result is an
+arbitrary namespace use; only modules that no positive pattern matches remain
+candidates.
+
+Worker and worklet constructors load a module by URL instead of importing it.
+The bundler still includes the target and its top-level code runs, so these are
+module edges too:
+
+| Form | Scope | Certainty | Effect |
+|---|---|---|---|
+| `new Worker(new URL('./w.ts', import.meta.url))` | literal URL | `certain` | edge to `w.ts` with kind `worker` |
+| `new Worker('./w.js')`, `new SharedWorker(...)` | literal | `certain` | edge to the module |
+| `navigator.serviceWorker.register('./sw.js')` | literal | `certain` | edge to the service worker module |
+| `audioWorklet.addModule(...)`, `paintWorklet`, `layoutWorklet`, `animationWorklet`, `worklet` | literal | `certain` | edge to the worklet module |
+| `importScripts('./a.js', './b.js')` | literal list | `certain` | one edge per script |
+| `navigator.serviceWorker.register('/sw.js')`, `new Worker('https://cdn/w.js')` | absolute or scheme URL | none | runtime asset; no edge and no widening |
+| a computed URL, a non-`import.meta.url` base, or an unparsed argument | package/repo scope | `unknown` | fail closed; all files in scope stay live |
+
+A worker-loaded module is an entry: its `__module__`, every export, and
+everything its top-level code references stay live. The `worker` edge kind
+keeps proof traces and delta attribution explicit; delta maps it to
+`changed-dynamic` because the triggering change is still a dynamic module
+reference. An absolute or scheme URL (`/sw.js`, `https:`, `data:`, `blob:`) is
+served at runtime and cannot expose an analyzed module, so it is ignored for
+reachability and dependency evidence; only relative worker URLs are resolved
+against the project. A URL with a base other than `import.meta.url` is a runtime location,
+not a module this analysis can place, so it widens instead of guessing.
 
 A literal dynamic import also narrows which exports stay live when the consumed
 names are statically visible:
@@ -503,12 +615,25 @@ names are statically visible:
 |---|---|
 | `const { a, b } = await import('./m')` | `a` and `b` only |
 | `const c = (await import('./m')).c` | `c` only |
-| `const ns = await import('./m')`, `.then(...)`, rest/computed destructuring, or an empty pattern | every export |
+| `import('./m').then((m) => m.a)` | `a` only |
+| `import('./m').then((m) => { m.a(); m.b(); })` | `a` and `b` only |
+| `import('./m').then(({ a, b }) => ...)` | `a` and `b` only |
+| `const [{ a }, { b }] = await Promise.all([import('./a'), import('./b')])` | `a` and `b` only; a bare identifier element binds the namespace and widens its module |
+| `const ns = await import('./m')`, a `.then` callback that uses the namespace as a value, rest/spread destructuring, or an empty pattern | every export |
 | a name that does not resolve through the target's re-exports | every export |
 
+A `.then` callback narrows only when it is the first argument and the import is
+the direct receiver. Every use of its namespace parameter must be a static
+member read; a bare reference, computed access, spread, call, or return widens
+the import. Chained callbacks such as
+`import('./m').then((m) => m.a).then((a) => a.b)` receive the first callback's
+result, not the module namespace, so only the first callback contributes names.
+
 **Rule G5:** export narrowing fails closed. Any shape that could use the
-namespace as a value, including identifier-bound namespaces and `.then`, and any
-unresolved name widens to every export instead of guessing.
+namespace as a value, including identifier-bound namespaces, a `.then` callback
+that reads the namespace through anything other than static member accesses, a
+`Promise.all` rest element, and any unresolved name widens to every export
+instead of guessing.
 
 **Rule G1:** an `unknown` edge is never silently ignored. It is reported in the
 proof trace and in `shrike proof`.

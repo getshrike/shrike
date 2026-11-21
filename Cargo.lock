@@ -859,7 +859,13 @@ name = "shrike-graph"
 version = "1.0.0"
 dependencies = [
  "blake3",
+ "globset",
  "ignore",
+ "oxc_allocator",
+ "oxc_ast",
+ "oxc_ast_visit",
+ "oxc_parser",
+ "oxc_span",
  "serde",
  "serde_json",
  "shrike-core",
