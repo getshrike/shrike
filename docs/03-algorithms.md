@@ -403,6 +403,14 @@ configuration in Node.
   every export to Cosmos, while only the decorator default export is invoked;
   named helpers in a decorator file stay analyzable. The config is hashed into
   the snapshot cache key even though it is not parsed as a module;
+- Docusaurus documentation pages. When the owning package depends on
+  `@docusaurus/core`, `@docusaurus/preset-classic`, or `docusaurus`, every
+  Markdown/MDX file under `docs/` or `blog/` and every `versioned_docs/` page
+  (Markdown, MDX, or React) is an entry. Docusaurus renders these modules by
+  directory convention, so their imports stay live while unused exports in the
+  imported components remain analyzable. `.md` files are matched only when the
+  configured analysis include covers them; the default include starts at
+  `.mdx`;
 - `next.config`, `postcss.config`, `tailwind.config`, `eslint.config`,
   `tsconfig`;
 - test runner config.

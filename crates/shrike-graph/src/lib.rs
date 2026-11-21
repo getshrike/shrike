@@ -5,6 +5,7 @@
 mod builder;
 mod cosmos_config;
 mod discovery;
+mod docusaurus_config;
 mod next_config;
 mod storybook_config;
 mod types;
