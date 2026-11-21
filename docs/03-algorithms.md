@@ -348,33 +348,40 @@ real `next build` probes:
 
 - `page`: `default`, `metadata`, `generateMetadata`, `viewport`,
   `generateViewport`, `generateStaticParams`, `unstable_paramMatching`,
-  `unstable_generateParamMatching`, `unstable_dynamicStaleTime`, and segment
-  config;
+  `unstable_generateParamMatching`, `unstable_dynamicStaleTime`, route-level
+  segment config, and page/layout cache config;
 - `layout` and `default`: `default`, metadata/viewport, static params and
-  parameter matching, and segment config. `unstable_dynamicStaleTime` is
-  page-only: Next.js rejects it in a layout and reads it only from page modules;
+  parameter matching, route-level segment config, and page/layout cache config.
+  `unstable_dynamicStaleTime` is page-only: Next.js rejects it in a layout and
+  reads it only from page modules;
 - `route`: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`,
-  `generateStaticParams`, and segment config. Route handlers do not read
-  metadata/viewport, `default`, or parameter matching; Next.js throws when a
-  route exports parameter matching;
+  `generateStaticParams`, and route-level segment config. Route handlers do not
+  read metadata/viewport, `default`, parameter matching, or page/layout cache
+  config; Next.js throws when a route exports parameter matching;
 - `not-found`, `forbidden`, and `unauthorized`: `default` plus
   metadata/viewport. These boundaries render with an HTTP access `errorType`,
   which reads their metadata;
 - `global-not-found`, `template`, `loading`, `error`, and `global-error`:
   `default` only. `global-not-found` renders with `errorType` undefined, so its
   metadata is not read;
-- `sitemap`: `default`, `generateSitemaps`, `generateStaticParams`, and segment
-  config;
-- `robots` and `manifest`: `default`, `generateStaticParams`, and segment
-  config;
+- `sitemap`: `default`, `generateSitemaps`, `generateStaticParams`, and
+  route-level segment config;
+- `robots` and `manifest`: `default`, `generateStaticParams`, and route-level
+  segment config;
 - `icon` and `apple-icon`: `default`, `size`, `contentType`,
-  `generateImageMetadata`, `generateStaticParams`, and segment config;
+  `generateImageMetadata`, `generateStaticParams`, and route-level segment
+  config;
 - `opengraph-image` and `twitter-image`: the icon surface plus `alt`;
-- segment config: `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`,
-  `runtime`, `preferredRegion`, `maxDuration`, Cache Components `ensureStatic`
-  (16.4), `instant`/`prefetch` (16.3), their
-  `unstable_instant`/`unstable_prefetch` predecessors (16.0-16.2), and
-  `experimental_ppr` for the documented 15.x fallback;
+- route-level segment config, read by every segment module: `dynamic`,
+  `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`,
+  and `maxDuration`. `dynamicParams` is consumed by static-path generation;
+  the app-route module reads the rest;
+- page/layout cache config, consumed only when Next.js renders a component
+  tree: Cache Components `ensureStatic` (16.4), `instant`/`prefetch` (16.3),
+  their `unstable_instant`/`unstable_prefetch` predecessors (16.0-16.2), and
+  `experimental_ppr` for the documented 15.x fallback. Route handlers and
+  metadata routes parse these names but never consume them, so they stay
+  analyzable there;
 - `"use server"` module exports under `serverActionPolicy: "protect"`. The
   default `graph` policy treats an action like any other export, so an action no
   module references is reported; an import, `action={fn}` binding, or any other

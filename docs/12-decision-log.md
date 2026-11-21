@@ -1432,6 +1432,58 @@ re-exports, or removes the 15.x fallback.
 
 ---
 
+## D-037 — Route handlers get route-level config, not page/layout cache config
+
+**Decision:** Split the App Router segment-config surface in two. Route-level
+config (`dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`,
+`preferredRegion`, `maxDuration`) is framework API on every segment module:
+page, layout, `default`, route handler, and metadata route. Page/layout cache
+config (`ensureStatic`, `instant`/`prefetch`, their `unstable_` predecessors,
+and legacy `experimental_ppr`) is framework API only on page, layout, and
+`default` files. A route handler or metadata route that exports one of those
+cache names keeps it analyzable.
+
+**Alternatives considered:**
+
+- Keep the union on every segment module (D-036's initial split): Next.js
+  parses the names from every app segment, so this was defensible, but parsing
+  is not consumption. A route handler never renders a component tree, so its
+  `instant` or `ensureStatic` export can never affect output.
+- Make `dynamicParams` page-only too: static-path generation reads it from the
+  route segment when a route handler exports `generateStaticParams`, so it is
+  route-level config.
+- Drop `experimental_ppr` from the page surface because Next.js 16.4.6 no
+  longer parses it: Shrike documents a 15.x fallback, and Next.js 15.5.4 still
+  lists it in `AppSegmentConfigSchemaKeys`.
+
+**Why:** Verified against Next.js 16.4.6. `dist/build/segment-config/app/app-segments.js`
+parses segment config for every module, but `dist/server/route-modules/app-route/module.js`
+reads only `dynamic`, `revalidate`, `fetchCache`, and the HTTP methods from a
+route handler. `dist/build/static-paths/app.js` reads `dynamicParams`.
+`instant`, `prefetch`, and `ensureStatic` are consumed by page and layout
+rendering; `dist/server/dev/static-paths-worker.js` gates `ensureStatic` to app
+pages. `experimental_ppr` is absent from 16.4.6 and present in 15.5.4's
+`AppSegmentConfigSchemaKeys`.
+
+**Consequences:**
+
+- `next_framework_exports` extends `NEXT_APP_ROUTE_CONFIG_EXPORTS` on every
+  segment stem and `NEXT_APP_CACHE_CONFIG_EXPORTS` only on `page`, `layout`,
+  and `default`.
+- Graph tests pin `dynamicParams` as an entry on a route handler and
+  `instant`/`prefetch`/`ensureStatic` as candidates on route handlers and
+  metadata routes.
+- `ANALYSIS_VERSION` is bumped to 73. The five-repo scans are unchanged because
+  no route or metadata route in those repos exports a cache-config name.
+- Diagnostic rules are untouched: `invalid_route_segment_config` still reads
+  cache-config values from any segment module, because Next.js still parses
+  them and still rejects the `"use client"` combinations.
+
+**Revisit if:** Next.js starts consuming cache config from route handlers or
+metadata routes, or removes the page/layout renderer split.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -1511,6 +1563,7 @@ external app, credential, or participant.
 | D-034 | Pages Router build failures are error diagnostics | accepted |
 | D-035 | Root-only Next.js conventions require the app root | accepted |
 | D-036 | Next.js exports are scoped to the file type that reads them | accepted |
+| D-037 | Route handlers get route-level config, not page/layout cache config | accepted |
 
 ## Rejected ideas
 

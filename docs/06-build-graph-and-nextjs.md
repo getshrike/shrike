@@ -589,17 +589,27 @@ The exports read from each convention file are scoped to its file type, not a
 union:
 
 - pages read `default`, metadata/viewport, static params, parameter matching,
-  and segment config, plus page-only `unstable_dynamicStaleTime`;
+  route-level segment config, and page/layout cache config, plus page-only
+  `unstable_dynamicStaleTime`;
 - layouts and `default` files read the same surface without
   `unstable_dynamicStaleTime`;
-- route handlers read HTTP methods, `generateStaticParams`, and segment config,
-  but no metadata/viewport or parameter matching;
+- route handlers read HTTP methods, `generateStaticParams`, and route-level
+  segment config, but no metadata/viewport, parameter matching, or page/layout
+  cache config;
 - `not-found`, `forbidden`, and `unauthorized` read `default` plus
   metadata/viewport; `global-not-found`, `template`, `loading`, `error`, and
   `global-error` read only `default`;
 - `sitemap` adds `generateSitemaps`; image routes read `size`, `contentType`,
   `alt` (Open Graph and Twitter only), and `generateImageMetadata`. Every
-  metadata route reads `generateStaticParams` and segment config.
+  metadata route reads `generateStaticParams` and route-level segment config.
+
+Route-level segment config is `dynamic`, `dynamicParams`, `revalidate`,
+`fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`; static-path
+generation consumes `dynamicParams` and the app-route module reads the rest.
+Page/layout cache config is `ensureStatic`, `instant`/`prefetch` and their
+`unstable_` predecessors, and legacy `experimental_ppr`. Next.js parses those
+names on every app segment, but only the component-tree renderer consumes them,
+so they stay analyzable in a route handler or metadata route.
 
 Names outside the surface for that file stay analyzable. The matcher config in
 `proxy.ts` / `middleware.ts` is parsed but not evaluated;
