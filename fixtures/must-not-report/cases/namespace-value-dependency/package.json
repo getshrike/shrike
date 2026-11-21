@@ -1,5 +1,8 @@
 {
   "name": "corpus-namespace-value-dependency",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "next": "^16.0.0"
+  }
 }

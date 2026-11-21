@@ -1,5 +1,8 @@
 {
   "name": "corpus-server-action-4",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "next": "^16.0.0"
+  }
 }

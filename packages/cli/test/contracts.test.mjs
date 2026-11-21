@@ -62,6 +62,7 @@ function makeOrphanRepo(name, config = {}) {
     private: true,
     type: "module",
     packageManager: "npm@11.0.0",
+    dependencies: { next: "^16.0.0" },
     scripts: {
       typecheck: "node -e 0",
       lint: "node -e 0",
@@ -83,7 +84,7 @@ test("corrupted cache is detected and rebuilt, never trusted", { skip: !hasEngin
   const directory = makeRepo("cache-corruption");
   try {
     write(directory, "app/page.tsx", "export default function Page() { return null; }\n");
-    write(directory, "package.json", '{"name":"cache-corruption","private":true,"type":"module"}\n');
+    write(directory, "package.json", '{"name":"cache-corruption","private":true,"type":"module","dependencies":{"next":"^16.0.0"}}\n');
     const first = run(directory, ["scan", "--json"]);
     assert.equal(first.status, 0, first.stderr);
     const snapshots = join(directory, ".shrike", "cache", "snapshots");
@@ -219,7 +220,7 @@ test("prune refuses to run when no checks are discoverable", { skip: !hasEngine 
   try {
     write(directory, "app/page.tsx", "import { orphan } from '../lib/orphan';\nexport default function Page() { return orphan(); }\n");
     write(directory, "lib/orphan.ts", "export function orphan() { return 1; }\n");
-    write(directory, "package.json", '{"name":"missing-checks","private":true,"type":"module"}\n');
+    write(directory, "package.json", '{"name":"missing-checks","private":true,"type":"module","dependencies":{"next":"^16.0.0"}}\n');
     git(directory, ["add", "-A"]);
     git(directory, ["commit", "-q", "-m", "base"]);
     git(directory, ["checkout", "-q", "-b", "feature"]);
@@ -471,7 +472,7 @@ test("hook run exits zero and writes a brief when a base is available", { skip: 
   try {
     write(directory, "app/page.tsx", "import { orphan } from '../lib/orphan';\nexport default function Page() { return orphan(); }\n");
     write(directory, "lib/orphan.ts", "export function orphan() { return 1; }\n");
-    write(directory, "package.json", '{"name":"hook-run","private":true,"type":"module"}\n');
+    write(directory, "package.json", '{"name":"hook-run","private":true,"type":"module","dependencies":{"next":"^16.0.0"}}\n');
     write(directory, "shrike.config.json", JSON.stringify({ checks: [{ name: "smoke", command: "node -e 0", required: true }] }));
     git(directory, ["add", "-A"]);
     git(directory, ["commit", "-q", "-m", "base"]);
@@ -551,6 +552,7 @@ test("hook run discovers fast checks from package scripts when no checks are con
       name: "hook-discovery",
       private: true,
       type: "module",
+      dependencies: { next: "^16.0.0" },
       scripts: { typecheck: "node -e 0", lint: "node -e 0", test: "node -e \"process.exit(1)\"" },
     }));
     git(directory, ["add", "-A"]);

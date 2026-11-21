@@ -1,5 +1,8 @@
 {
   "name": "corpus-page-entry-1",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "next": "^16.0.0"
+  }
 }

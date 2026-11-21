@@ -47,7 +47,7 @@ function makeRepo(name) {
 function baseFiles(directory, checkSource) {
   write(directory, "app/page.tsx", `import { formatInvoice } from "../lib/format";\nexport default function Page() { return formatInvoice(1); }\n`);
   write(directory, "lib/format.ts", `export const KEEP = "keep";\nexport function formatInvoice(value: number) { return String(value); }\n`);
-  write(directory, "package.json", `{"name":"prune-e2e","private":true,"type":"module"}\n`);
+  write(directory, "package.json", `{"name":"prune-e2e","private":true,"type":"module","dependencies":{"next":"^16.0.0"}}\n`);
   write(directory, "tsconfig.json", `{"compilerOptions":{"baseUrl":".","paths":{"@/*":["src/*"]}}}\n`);
   write(directory, "check.mjs", checkSource);
   write(directory, "shrike.config.json", JSON.stringify({
@@ -165,7 +165,7 @@ scenario("bisected batch", () => {
     write(directory, "app/page.tsx", `import { good } from "../lib/good";\nimport { bad } from "../lib/bad";\nexport default function Page() { return good() + bad(); }\n`);
     write(directory, "lib/good.ts", `export function good() { return "good"; }\n`);
     write(directory, "lib/bad.ts", `export function bad() { return "bad"; }\n`);
-    write(directory, "package.json", `{"name":"prune-bisect","private":true,"type":"module"}\n`);
+    write(directory, "package.json", `{"name":"prune-bisect","private":true,"type":"module","dependencies":{"next":"^16.0.0"}}\n`);
     write(directory, "tsconfig.json", `{"compilerOptions":{"baseUrl":".","paths":{"@/*":["src/*"]}}}\n`);
     write(directory, "check.mjs", `import { readFileSync } from "node:fs";\nconst source = readFileSync("lib/bad.ts", "utf8");\nif (!source.includes("bad")) throw new Error("dynamic consumer requires bad");\n`);
     write(directory, "shrike.config.json", JSON.stringify({
@@ -248,7 +248,7 @@ scenario("cascade deletion", () => {
     write(directory, "app/page.tsx", `import { outer } from "../lib/outer";\nexport default function Page() { return outer(); }\n`);
     write(directory, "lib/inner.ts", `export function inner() { return "inner"; }\n`);
     write(directory, "lib/outer.ts", `import { inner } from "./inner";\nexport function outer() { return inner(); }\n`);
-    write(directory, "package.json", `{"name":"prune-cascade","private":true,"type":"module"}\n`);
+    write(directory, "package.json", `{"name":"prune-cascade","private":true,"type":"module","dependencies":{"next":"^16.0.0"}}\n`);
     write(directory, "check.mjs", `import { existsSync, readFileSync } from "node:fs";\nfor (const [file, name] of [["lib/inner.ts", "inner"], ["lib/outer.ts", "outer"]]) {\n  if (!existsSync(file)) continue;\n  const source = readFileSync(file, "utf8");\n  if (!source.includes("function " + name)) throw new Error("deleted " + name + " left " + file);\n}\n`);
     write(directory, "shrike.config.json", JSON.stringify({
       checks: [{ name: "smoke", command: "node check.mjs", required: true, timeoutMs: 30_000 }],

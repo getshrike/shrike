@@ -15,7 +15,9 @@ const casesRoot = join(corpus, "cases");
 const manifestPath = join(corpus, "manifest.json");
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 
-const packageJson = (name) => `${JSON.stringify({ name, private: true, type: "module" }, null, 2)}\n`;
+// Generated fixtures use an `app/` page as their entry, so declare the
+// framework that gives that directory meaning.
+const packageJson = (name) => `${JSON.stringify({ name, private: true, type: "module", dependencies: { next: "^16.0.0" } }, null, 2)}\n`;
 const tsconfig = `${JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "@/*": ["src/*"] } } })}\n`;
 
 const cases = [];

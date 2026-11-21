@@ -1,5 +1,8 @@
 {
   "name": "corpus-route-groups-exp-16",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "next": "^16.0.0"
+  }
 }
