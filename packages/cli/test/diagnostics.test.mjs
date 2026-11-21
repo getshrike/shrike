@@ -64,6 +64,20 @@ test("orders actionable groups first, then by count, and caps sample files", () 
   assert.equal(summary.informational, 1);
 });
 
+test("invalid client exports are actionable boundary diagnostics", () => {
+  const summary = summarizeDiagnostics([
+    {
+      code: "invalid_client_export",
+      severity: "warning",
+      message: '`metadata` is a Next.js server-only export and cannot be exported from a "use client" module',
+      file: "app/client.tsx",
+    },
+  ]);
+  assert.equal(summary.actionable, 1);
+  assert.equal(summary.groups[0].category, "boundary");
+  assert.equal(summary.groups[0].actionable, true);
+});
+
 test("unknown codes are actionable only when they are not informational", () => {
   const summary = summarizeDiagnostics([
     { code: "mystery", severity: "warning", message: "warning" },

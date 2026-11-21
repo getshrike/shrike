@@ -205,7 +205,7 @@ fn package_declares_any(root: &Path, directory: &str, names: &[&str]) -> Option<
 }
 
 /// Whether the owning package declares Next.js itself.
-fn package_declares_next(root: &Path, directory: &str) -> Option<bool> {
+pub(super) fn package_declares_next(root: &Path, directory: &str) -> Option<bool> {
     package_declares_any(root, directory, &["next"])
 }
 
@@ -3185,6 +3185,125 @@ mod tests {
             "the client-boundary policy must still govern use client: {:?}",
             snapshot.candidates
         );
+    }
+
+    #[test]
+    fn invalid_client_exports_are_project_gated_warnings() {
+        let next_snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "packages/plain/package.json",
+                r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/client.tsx",
+                "\"use client\";\nexport const metadata = { title: \"widget\" };\nexport const revalidate = 60;\nexport async function GET() { return new Response(\"ok\"); }\nexport function Widget() { return null; }\n",
+            ),
+            (
+                "src/local.tsx",
+                "\"use client\";\nconst config = { title: \"x\" };\nexport { config as metadata };\n",
+            ),
+            (
+                "src/local-same.ts",
+                "\"use client\";\nconst metadata = { title: \"x\" };\nexport { metadata };\n",
+            ),
+            (
+                "src/direct-and-alias.ts",
+                "\"use client\";\nexport const metadata = { title: \"x\" };\nexport { metadata as config };\n",
+            ),
+            (
+                "src/renamed-away.ts",
+                "\"use client\";\nconst metadata = { title: \"x\" };\nexport { metadata as config };\n",
+            ),
+            (
+                "src/type-only.ts",
+                "\"use client\";\nexport type metadata = { title: string };\n",
+            ),
+            (
+                "src/re-export.ts",
+                "\"use client\";\nexport { metadata } from \"./server\";\n",
+            ),
+            (
+                "src/server.ts",
+                "export const metadata = { title: \"x\" };\n",
+            ),
+            ("src/no-directive.ts", "export const revalidate = 60;\n"),
+            (
+                "packages/plain/src/client.tsx",
+                "\"use client\";\nexport const metadata = { title: \"x\" };\n",
+            ),
+        ]);
+        let invalid: Vec<(&str, u32)> = next_snapshot
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "invalid_client_export")
+            .map(|diagnostic| {
+                (
+                    diagnostic.file.as_deref().unwrap_or(""),
+                    diagnostic.span.map_or(0, |span| span.line),
+                )
+            })
+            .collect();
+        assert_eq!(
+            invalid,
+            vec![
+                ("app/client.tsx", 2),
+                ("app/client.tsx", 3),
+                ("app/client.tsx", 4),
+                // A shared package inside a Next project is compiled in the
+                // Next context, so the project-level gate applies.
+                ("packages/plain/src/client.tsx", 2),
+                // A direct export is anchored on its declaration; a local
+                // export is anchored on its specifier and reported once.
+                ("src/direct-and-alias.ts", 2),
+                ("src/local-same.ts", 3),
+                ("src/local.tsx", 3),
+            ],
+            "{:?}",
+            next_snapshot.diagnostics
+        );
+        assert!(
+            next_snapshot
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "invalid_client_export")
+                .all(|diagnostic| {
+                    diagnostic.severity == shrike_core::Severity::Warning
+                        && diagnostic.message.contains("server-only")
+                }),
+            "invalid client exports are warnings: {:?}",
+            next_snapshot.diagnostics
+        );
+
+        // A project without Next.js, and a tree with no manifest at all, are
+        // not enough evidence to claim a Next.js build failure.
+        let react_only = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/client.tsx",
+                "\"use client\";\nexport const metadata = { title: \"x\" };\n",
+            ),
+        ]);
+        let missing_manifest = snapshot(&[(
+            "app/client.tsx",
+            "\"use client\";\nexport const metadata = { title: \"x\" };\n",
+        )]);
+        for control in [&react_only, &missing_manifest] {
+            assert!(
+                control
+                    .diagnostics
+                    .iter()
+                    .all(|diagnostic| diagnostic.code != "invalid_client_export"),
+                "no positive Next.js evidence: {:?}",
+                control.diagnostics
+            );
+        }
     }
 
     #[test]

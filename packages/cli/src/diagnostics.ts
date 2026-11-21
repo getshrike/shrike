@@ -54,7 +54,7 @@ function categoryFor(item: DiagnosticLike): { category: string; actionable: bool
     }
     return { category: "unresolved-import", actionable: true };
   }
-  if (item.code === "client-boundary-leak") {
+  if (item.code === "client-boundary-leak" || item.code === "invalid_client_export") {
     return { category: "boundary", actionable: true };
   }
   if (item.code === "stale-build" || item.code === "build-failed" || item.code === "low-coverage") {

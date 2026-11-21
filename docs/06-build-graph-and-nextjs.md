@@ -296,6 +296,29 @@ If a server-only module appears in a client chunk, Shrike reports a
 `client-boundary-leak` diagnostic. It is not a dead-code finding, but it is
 useful and cheap to detect from the same snapshot. It does not block the run.
 
+### 7.4 Invalid client exports
+
+Next.js rejects a `"use client"` module that exports a server-only,
+route-config, or route-handler name. Shrike reports an advisory
+`invalid_client_export` warning for the 22 names fallow 3.45.0 lists:
+`metadata`, `generateMetadata`, `viewport`, `generateViewport`,
+`generateStaticParams`, `dynamic`, `dynamicParams`, `revalidate`,
+`fetchCache`, `runtime`, `preferredRegion`, `maxDuration`,
+`getServerSideProps`, `getStaticProps`, `getStaticPaths`, and the route
+handlers `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`.
+
+The rule is project-wide: it fires when the root manifest or any workspace
+package declares `next`. A shared `"use client"` module is compiled in the
+consuming Next app's context, so its own package need not declare Next. A
+tree without any Next dependency produces no warnings.
+
+Direct exports are anchored on the declaration. A local
+`const metadata; export { metadata }` is anchored on the export specifier and
+reported once, so the fix points at the line a developer must change. Default
+exports, `export type`, and `export { metadata } from "./server"` re-exports
+are not flagged. The warning is advisory: it never removes a candidate or
+suppresses an entry.
+
 ---
 
 ## 8. Proxy, middleware, metadata

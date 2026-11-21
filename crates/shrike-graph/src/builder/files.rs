@@ -9,6 +9,45 @@ use super::Builder;
 use crate::types::{FileRecord, SymbolRecord};
 use crate::util::{declaration_kind, edge};
 
+/// Next.js server-only, route-config, and route-handler exports. Next.js
+/// rejects a `"use client"` module that exports any of these names at build
+/// time.
+///
+/// This is fallow 3.45.0's `ILLEGAL_CLIENT_EXPORTS` set
+/// (`crates/core/src/analyze/invalid_client_exports.rs`). Knip 5.88.1 does not
+/// report the condition. Re-exports are deliberately not included: fallow
+/// leaves `export { metadata } from "./server"` alone, and the re-exported
+/// binding belongs to another module.
+const NEXT_SERVER_ONLY_EXPORTS: &[&str] = &[
+    // Metadata APIs.
+    "metadata",
+    "generateMetadata",
+    "viewport",
+    "generateViewport",
+    // Route-segment static params.
+    "generateStaticParams",
+    // Route-segment config options.
+    "dynamic",
+    "dynamicParams",
+    "revalidate",
+    "fetchCache",
+    "runtime",
+    "preferredRegion",
+    "maxDuration",
+    // Legacy Pages Router data functions.
+    "getServerSideProps",
+    "getStaticProps",
+    "getStaticPaths",
+    // App Router route HTTP method handlers.
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "HEAD",
+    "OPTIONS",
+];
+
 impl<'a> Builder<'a> {
     pub(super) fn build_files(&mut self) {
         let mut diagnostics = Vec::new();
@@ -82,6 +121,74 @@ impl<'a> Builder<'a> {
             }
         }
         self.diagnostics = diagnostics;
+    }
+
+    /// Warn when a `"use client"` module exports a Next.js server-only,
+    /// route-config, or route-handler name. The rule is project-wide: fallow
+    /// collects the union of the root and workspace manifests, because a shared
+    /// `"use client"` module is compiled in the consuming Next app's context.
+    /// The root manifest is checked directly because the resolver only records
+    /// packages that have a `name`.
+    ///
+    /// `directly_exported` distinguishes `export const metadata` from a local
+    /// alias that renames the declaration away
+    /// (`const metadata; export { metadata as config }`).
+    pub(super) fn detect_invalid_client_exports(&mut self) {
+        let next_project = super::entries::package_declares_next(self.resolver.root(), "")
+            == Some(true)
+            || self.resolver.packages().iter().any(|package| {
+                super::entries::package_declares_next(self.resolver.root(), &package.directory)
+                    == Some(true)
+            });
+        if !next_project {
+            return;
+        }
+        let summaries = self.summaries.clone();
+        for summary in &summaries {
+            if summary.parse_status != ParseStatus::Ok || !summary.has_directive("use client") {
+                continue;
+            }
+            let mut invalid: Vec<(&str, Span)> = Vec::new();
+            for declaration in &summary.declarations {
+                if !declaration.directly_exported || declaration.default || declaration.type_only {
+                    continue;
+                }
+                for name in &declaration.names {
+                    if NEXT_SERVER_ONLY_EXPORTS.contains(&name.as_str()) {
+                        invalid.push((name.as_str(), declaration.span));
+                    }
+                }
+            }
+            for local_export in &summary.local_exports {
+                if local_export.type_only {
+                    continue;
+                }
+                let name = local_export.exported.as_str();
+                if !NEXT_SERVER_ONLY_EXPORTS.contains(&name) {
+                    continue;
+                }
+                // One finding per exported name. Prefer the export specifier's
+                // span so `const metadata; export { metadata }` points at the
+                // line a developer must change, matching fallow.
+                if let Some(existing) = invalid.iter_mut().find(|(existing, _)| *existing == name) {
+                    existing.1 = local_export.span;
+                } else {
+                    invalid.push((name, local_export.span));
+                }
+            }
+            for (name, span) in invalid {
+                self.diagnostics.push(
+                    Diagnostic::warning(
+                        "invalid_client_export",
+                        format!(
+                            "`{name}` is a Next.js server-only export and cannot be exported from a \"use client\" module"
+                        ),
+                    )
+                    .in_file(&summary.path)
+                    .at(span),
+                );
+            }
+        }
     }
 
     fn add_symbol(
