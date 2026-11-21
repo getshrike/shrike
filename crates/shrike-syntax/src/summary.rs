@@ -268,6 +268,13 @@ pub struct FileSummary {
     #[serde(default)]
     pub type_imports: Vec<TypeImportRecord>,
     pub dynamic: Vec<DynamicRecord>,
+    /// Specifiers of `import()` calls inside
+    /// `next/dynamic(() => import("./x"), { ssr: false })`.
+    ///
+    /// This is the sanctioned client-only escape hatch: the leak scan does not
+    /// follow such an edge when the same specifier has no runtime static edge.
+    #[serde(default)]
+    pub client_only_dynamic_specifiers: Vec<String>,
     pub unknown: Vec<UnknownRecord>,
     /// `declare module "..."` and `declare global` names. Their bodies are
     /// type-level side effects and are always live once the file is compiled.

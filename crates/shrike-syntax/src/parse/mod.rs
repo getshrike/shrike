@@ -13,6 +13,7 @@ mod collector;
 mod declarations;
 mod html;
 mod mdx;
+mod next_dynamic;
 mod refs;
 mod statements;
 mod type_refs;
@@ -98,6 +99,7 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
                 type_imports: Vec::new(),
                 ambient_modules: Vec::new(),
                 dynamic: Vec::new(),
+                client_only_dynamic_specifiers: Vec::new(),
                 unknown: Vec::new(),
                 generated,
                 diagnostics,
@@ -132,6 +134,7 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
             type_imports: Vec::new(),
             ambient_modules: Vec::new(),
             dynamic: Vec::new(),
+            client_only_dynamic_specifiers: Vec::new(),
             unknown: Vec::new(),
             generated,
             diagnostics: vec![Diagnostic::error("parse_error", message).in_file(path)],
@@ -164,6 +167,7 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
         type_imports: Vec::new(),
         ambient_modules: Vec::new(),
         dynamic: Vec::new(),
+        client_only_dynamic_specifiers: Vec::new(),
         unknown: Vec::new(),
         generated,
         diagnostics: Vec::new(),
@@ -172,6 +176,9 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
     for statement in &program.body {
         statements::extract_statement(statement, source, &line_index, &mut summary);
     }
+    summary.client_only_dynamic_specifiers =
+        next_dynamic::client_only_dynamic_specifiers(&program, &summary.imports);
+    next_dynamic::assign_dynamic_spans(&program, source, &line_index, &mut summary);
 
     let type_refs = type_refs::collect(&program, source);
     summary.type_refs = type_refs.modules;

@@ -390,6 +390,33 @@ is a deliberate precision improvement: a module whose only "server" signal is
 `import type { cookies } from "next/headers"` does not put server code in a
 client bundle, while fallow still reports it.
 
+### 7.8 Client/server leak cones
+
+A `"use client"` module may not reach server-only code through its runtime
+import cone: the client bundle would contain `node:fs`, `next/server`, or a
+server-only `next/headers` API, and the build fails. Shrike reports a
+`client_server_leak` warning for each client root whose cone reaches a sink.
+The warning names the sink and the full import path, is anchored on the first
+import of the shortest path, and is a warning rather than a finding.
+
+The cone follows runtime static imports, re-exports, export-alls, and
+non-worker dynamic imports. Type-only edges are erased and are not followed.
+The sink predicate matches §7.7. An all-action `"use server"` module stops the
+cone: its exports become action references at the client boundary, so its
+server imports never enter the client bundle. A `"use server"` module with any
+non-action value export (a top-level constant, a default value, a re-export)
+keeps walking, because that value can ship the module's imports. Shrike is
+deliberately conservative for `export const action = async () => {}`: variable
+initializers are not classified as actions yet, so the module stays in the
+cone rather than risking a hidden leak.
+
+`next/dynamic(() => import("./chart"), { ssr: false })` marks the target as
+intentionally client-only. Shrike skips that dynamic edge when the same
+specifier has no runtime static edge in the module; a static import or
+re-export of the same specifier keeps the edge, because the target is still
+reached normally. The rule is project-wide and gated on the same seven RSC
+bundlers as `misplaced_directive`. It never changes candidates or entries.
+
 ---
 
 ## 8. Proxy, middleware, metadata

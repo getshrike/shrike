@@ -217,6 +217,7 @@ pub(super) fn parse(
         type_imports: Vec::new(),
         ambient_modules: Vec::new(),
         dynamic: Vec::new(),
+        client_only_dynamic_specifiers: Vec::new(),
         unknown: Vec::new(),
         generated,
         diagnostics: Vec::new(),

@@ -572,6 +572,44 @@ not commitments; commitments are in the plans.
 
 ---
 
+### 2026-11-21 — static client/server leak cones
+
+- Read fallow 3.45.0's `crates/core/src/analyze/security/mod.rs` and
+  `crates/core/src/analyze/server_only.rs`. Fallow walks the transitive import
+  cone of every `"use client"` module and reports server-only sinks:
+  `server-only`, `next/server`, Node `fs`/`fs/promises`/`child_process` (bare
+  or `node:`), and named or namespace `cookies`/`headers`/`draftMode` from
+  `next/headers`. Type-only edges, all-action `"use server"` modules, and
+  `next/dynamic(..., { ssr: false })` targets are excluded.
+- Shrike already detected leaks from build evidence (`client-boundary-leak`),
+  but had no static detector. Added
+  `Builder::detect_client_server_leaks`: a BFS over runtime static imports,
+  re-exports, export-alls, and non-worker dynamic imports. It emits one
+  warning per client root, anchored on the first import of the shortest path,
+  and names the sink plus the full path. It never changes candidates.
+- An all-action `"use server"` module stops the cone because its exports become
+  action references at the boundary; a module with any non-action value export
+  keeps walking. Shrike is deliberately conservative for
+  `export const action = async () => {}` because it does not classify variable
+  initializers as actions yet.
+- `next/dynamic(..., { ssr: false })` is skipped only when the same specifier
+  has no runtime static edge in the module, so a normal import of the same
+  target cannot hide a leak. Added `FileSummary.client_only_dynamic_specifiers`
+  and `parse/next_dynamic.rs`; dynamic-import records now receive real source
+  spans so anchors are useful.
+- On `/tmp/opencode/client-leak-probe`, fallow reports four findings
+  (`app/action-mixed/page.tsx`, `app/direct/page.tsx`,
+  `app/dynamic-no-ssr/page.tsx`, `app/transitive/page.tsx`) and Shrike reports
+  the same four at the same lines. Both exclude the all-action module, the
+  type-only edge, the `ssr: false` escape hatch, the static-edge-plus-
+  `ssr:false` case, and the server component. A React-only control reports
+  zero in both, and a Waku probe fires in both.
+- The rule uses the same seven-bundler gate as `misplaced_directive` and
+  `mixed_client_server_barrel`. `ANALYSIS_VERSION` is bumped to 65; the
+  warning groups under `boundary` and is actionable.
+
+---
+
 ## 9. Change log
 
 | Date | Change | Files |
@@ -635,6 +673,7 @@ not commitments; commitments are in the plans.
 | 2026-11-21 | Added `route_collision` and `dynamic_segment_name_conflict` error diagnostics from fallow 3.45.0's App Router route-tree primitive. Two `page`/`route` leaves at one URL, or sibling dynamic segments with different spellings at one position, are reported per file. Route groups are transparent, parallel slots fork the namespace, and private/intercepting subtrees are excluded. The checks require the owning package to declare `next`; the probe matches fallow's 8 collisions and 3 conflicts when the sibling package declares Next, and deliberately skips a React-only package that fallow flags via its project-wide gate. Bumped `ANALYSIS_VERSION` to 62 and shared the dotted `pageExtensions` parser with entry detection | `crates/shrike-graph/src/builder/files.rs`, `crates/shrike-graph/src/builder/mod.rs`, `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-engine/src/cache.rs`, `packages/cli/src/diagnostics.ts`, `packages/cli/test/diagnostics.test.mjs`, `docs/03-algorithms.md`, `docs/06-build-graph-and-nextjs.md`, `docs/12-decision-log.md` |
 | 2026-11-21 | Added the `misplaced_directive` warning for `"use client"` / `"use server"` strings after the leading prologue. RSC bundlers silently ignore them, so the intended boundary never exists. The project-wide gate is fallow 3.45.0's seven RSC bundler packages; one warning per occurrence, anchored on the statement; `"use strict"` and nested strings are ignored. The parser records `FileSummary.misplaced_directives`, and `ANALYSIS_VERSION` is bumped to 63. Probes match fallow exactly on the three Next findings, a React-only control, and a Waku probe | `crates/shrike-syntax/src/summary.rs`, `crates/shrike-syntax/src/parse/mod.rs`, `crates/shrike-syntax/src/parse/html.rs`, `crates/shrike-syntax/src/parse/mdx.rs`, `crates/shrike-syntax/src/parse/statements.rs`, `crates/shrike-syntax/src/parse/tests.rs`, `crates/shrike-graph/src/builder/files.rs`, `crates/shrike-graph/src/builder/mod.rs`, `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-engine/src/cache.rs`, `packages/cli/src/diagnostics.ts`, `packages/cli/test/diagnostics.test.mjs`, `docs/03-algorithms.md`, `docs/06-build-graph-and-nextjs.md`, `docs/12-decision-log.md` |
 | 2026-11-21 | Added the `mixed_client_server_barrel` warning for barrels that directly re-export both a `"use client"` origin and a server-only origin. Server-only covers `"use server"`, `server-only`, `next/server`, Node `fs`/`fs/promises`/`child_process`, and named or namespace `cookies`/`headers`/`draftMode` imports from `next/headers`; type-only re-exports and type-only imports are erased and skipped. Anchored on the earlier re-export, project-wide over the seven RSC bundlers, and `ANALYSIS_VERSION` is bumped to 64. The probe matches fallow on three real barrels, line anchors, and origins; the only difference is fallow's type-only import false positive | `crates/shrike-graph/src/builder/files.rs`, `crates/shrike-graph/src/builder/mod.rs`, `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-engine/src/cache.rs`, `packages/cli/src/diagnostics.ts`, `packages/cli/test/diagnostics.test.mjs`, `docs/03-algorithms.md`, `docs/06-build-graph-and-nextjs.md`, `docs/12-decision-log.md` |
+| 2026-11-21 | Added the static `client_server_leak` warning for `"use client"` modules whose runtime import cone reaches server-only code, mirroring fallow 3.45.0's `client-server-leak`/`server-only-import` rule. The BFS follows runtime imports, re-exports, export-alls, and non-worker dynamic imports; type-only edges are erased. All-action `"use server"` modules stop the cone, while a module with any non-action value export keeps walking. `next/dynamic(..., { ssr: false })` is skipped only when the same specifier has no static edge. One warning per client root, anchored on the first import of the shortest path and naming the sink plus the path; project-wide over the seven RSC bundlers. Added `FileSummary.client_only_dynamic_specifiers` and dynamic-import spans; `ANALYSIS_VERSION` is bumped to 65. Probe matches fallow on all four findings and all six exclusions | `crates/shrike-graph/src/builder/files.rs`, `crates/shrike-graph/src/builder/mod.rs`, `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-syntax/src/summary.rs`, `crates/shrike-syntax/src/parse/mod.rs`, `crates/shrike-syntax/src/parse/next_dynamic.rs`, `crates/shrike-syntax/src/parse/html.rs`, `crates/shrike-syntax/src/parse/mdx.rs`, `crates/shrike-engine/src/cache.rs`, `packages/cli/src/diagnostics.ts`, `packages/cli/test/diagnostics.test.mjs`, `docs/03-algorithms.md`, `docs/06-build-graph-and-nextjs.md`, `docs/12-decision-log.md` |
 
 ---
 

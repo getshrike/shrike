@@ -374,6 +374,21 @@ analyzable.
   order, and anchors on the earlier re-export. It follows fallow 3.45.0's
   `mixed_client_server_barrel` detector, with the type-only import exclusion
   as a deliberate precision improvement;
+- a `"use client"` module whose runtime import cone reaches server-only code
+  produces a `client_server_leak` warning, not a finding. The cone follows
+  runtime static imports, re-exports, export-alls, and non-worker dynamic
+  imports; type-only edges are erased. The sink predicate is the same one used
+  by `mixed_client_server_barrel`: `server-only`, `next/server`,
+  `fs`/`fs/promises`/`child_process` (bare or `node:`), or a named
+  `cookies`/`headers`/`draftMode` API (or namespace) from `next/headers`. An
+  all-action `"use server"` module stops the cone because its exports become
+  action references at the boundary; a module with any non-action value export
+  keeps walking. A `next/dynamic(..., { ssr: false })` edge is skipped when the
+  same specifier has no runtime static edge, because the target is
+  intentionally client-only. The rule uses the same seven-bundler gate, emits
+  one warning per client root, anchors on the first import of the shortest
+  path, and names the sink plus the full path. It follows fallow 3.45.0's
+  `client_server_leak` detector;
 - metadata exports: `metadata`, `generateMetadata`, `viewport`,
   `generateViewport`, `generateStaticParams`, `generateSitemaps`;
 - dynamic param matching (Next.js 16.4): `unstable_paramMatching` and
