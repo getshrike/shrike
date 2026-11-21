@@ -26,6 +26,98 @@ fn resolves_relative_and_alias() {
 }
 
 #[test]
+fn metro_expands_platform_variants_for_neutral_imports() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(temp.path().join("src/components")).unwrap();
+    fs::create_dir_all(temp.path().join("src/screens")).unwrap();
+    fs::write(
+        temp.path().join("package.json"),
+        r#"{"name":"metro-app","dependencies":{"react-native":"^0.81.0"}}"#,
+    )
+    .unwrap();
+    let files = vec![
+        "src/App.tsx".to_string(),
+        "src/components/Button.tsx".to_string(),
+        "src/components/Button.ios.tsx".to_string(),
+        "src/components/Button.android.tsx".to_string(),
+        "src/components/Icon.ios.tsx".to_string(),
+        "src/components/Icon.android.tsx".to_string(),
+        "src/components/Card/index.ios.tsx".to_string(),
+        "src/components/Card/index.android.tsx".to_string(),
+        "src/screens/Home.native.tsx".to_string(),
+    ];
+    let resolver = Resolver::new(temp.path(), &files, &EngineConfig::default());
+
+    let base = resolver.resolve("src/App.tsx", "./components/Button");
+    assert_eq!(base.target.as_deref(), Some("src/components/Button.tsx"));
+    assert_eq!(
+        base.alternatives,
+        vec![
+            "src/components/Button.ios.tsx".to_string(),
+            "src/components/Button.android.tsx".to_string(),
+        ]
+    );
+
+    let variants_only = resolver.resolve("src/App.tsx", "./components/Icon");
+    assert_eq!(
+        variants_only.target.as_deref(),
+        Some("src/components/Icon.ios.tsx")
+    );
+    assert_eq!(
+        variants_only.alternatives,
+        vec!["src/components/Icon.android.tsx".to_string()]
+    );
+
+    let index_variants = resolver.resolve("src/App.tsx", "./components/Card");
+    assert_eq!(
+        index_variants.target.as_deref(),
+        Some("src/components/Card/index.ios.tsx")
+    );
+    assert_eq!(
+        index_variants.alternatives,
+        vec!["src/components/Card/index.android.tsx".to_string()]
+    );
+
+    let native = resolver.resolve("src/App.tsx", "./screens/Home");
+    assert_eq!(
+        native.target.as_deref(),
+        Some("src/screens/Home.native.tsx")
+    );
+    assert!(native.alternatives.is_empty());
+
+    let explicit = resolver.resolve("src/App.tsx", "./components/Button.ios");
+    assert_eq!(
+        explicit.target.as_deref(),
+        Some("src/components/Button.ios.tsx")
+    );
+    assert!(explicit.alternatives.is_empty());
+}
+
+#[test]
+fn platform_variants_require_a_metro_package() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(temp.path().join("src/components")).unwrap();
+    fs::write(
+        temp.path().join("package.json"),
+        r#"{"name":"plain-app","dependencies":{"react":"^19.0.0"}}"#,
+    )
+    .unwrap();
+    let files = vec![
+        "src/App.tsx".to_string(),
+        "src/components/Button.tsx".to_string(),
+        "src/components/Button.ios.tsx".to_string(),
+        "src/components/Icon.ios.tsx".to_string(),
+    ];
+    let resolver = Resolver::new(temp.path(), &files, &EngineConfig::default());
+    let base = resolver.resolve("src/App.tsx", "./components/Button");
+    assert_eq!(base.target.as_deref(), Some("src/components/Button.tsx"));
+    assert!(base.alternatives.is_empty());
+    let icon = resolver.resolve("src/App.tsx", "./components/Icon");
+    assert_eq!(icon.target, None);
+    assert!(icon.alternatives.is_empty());
+}
+
+#[test]
 fn resolves_root_package_self_reference() {
     let temp = tempfile::tempdir().unwrap();
     fs::create_dir_all(temp.path().join("src")).unwrap();

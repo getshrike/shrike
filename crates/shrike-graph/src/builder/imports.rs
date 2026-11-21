@@ -61,7 +61,7 @@ fn is_non_source_specifier(specifier: &str) -> bool {
 impl<'a> Builder<'a> {
     pub(super) fn resolve_imports(&mut self) {
         let mut imports: BTreeMap<String, BTreeMap<String, (String, String)>> = BTreeMap::new();
-        let mut namespaces: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+        let mut namespaces: BTreeMap<String, BTreeMap<String, Vec<String>>> = BTreeMap::new();
         let summaries = self.summaries.clone();
         for summary in &summaries {
             if summary.parse_status != ParseStatus::Ok {
@@ -94,41 +94,51 @@ impl<'a> Builder<'a> {
                     }
                     continue;
                 }
-                if let Some(target) = &resolution.target {
-                    resolved.push(target.clone());
-                    let target_module = module_symbol_key(target);
-                    self.edges.push(edge(
-                        &module_symbol_key(&summary.path),
-                        &target_module,
-                        "import",
-                        "certain",
-                        &summary.path,
-                        import.span,
-                    ));
-                    for binding in &import.bindings {
-                        match binding.kind {
-                            shrike_syntax::BindingKind::Namespace => {
-                                module_namespaces.insert(binding.local.clone(), target.clone());
-                            }
-                            _ => {
-                                let target_symbol = self.resolve_export(
-                                    target,
-                                    &binding.imported,
-                                    &mut BTreeSet::new(),
-                                );
-                                if let Some(target_symbol) = target_symbol {
-                                    module_imports.insert(
-                                        binding.local.clone(),
-                                        (target.clone(), binding.imported.clone()),
+                let targets: Vec<&String> = resolution.targets().collect();
+                if let Some(primary) = targets.first() {
+                    for target in &targets {
+                        resolved.push((*target).clone());
+                        let target_module = module_symbol_key(target);
+                        self.edges.push(edge(
+                            &module_symbol_key(&summary.path),
+                            &target_module,
+                            "import",
+                            "certain",
+                            &summary.path,
+                            import.span,
+                        ));
+                        for binding in &import.bindings {
+                            match binding.kind {
+                                shrike_syntax::BindingKind::Namespace => {
+                                    let locals = module_namespaces
+                                        .entry(binding.local.clone())
+                                        .or_insert_with(Vec::new);
+                                    if !locals.iter().any(|local| local == *target) {
+                                        locals.push((*target).clone());
+                                    }
+                                }
+                                _ => {
+                                    let target_symbol = self.resolve_export(
+                                        target,
+                                        &binding.imported,
+                                        &mut BTreeSet::new(),
                                     );
-                                    self.edges.push(edge(
-                                        &module_symbol_key(&summary.path),
-                                        &target_symbol,
-                                        "import",
-                                        if binding.type_only { "type" } else { "certain" },
-                                        &summary.path,
-                                        binding.span,
-                                    ));
+                                    if let Some(target_symbol) = target_symbol {
+                                        if *target == *primary {
+                                            module_imports.insert(
+                                                binding.local.clone(),
+                                                ((*target).clone(), binding.imported.clone()),
+                                            );
+                                        }
+                                        self.edges.push(edge(
+                                            &module_symbol_key(&summary.path),
+                                            &target_symbol,
+                                            "import",
+                                            if binding.type_only { "type" } else { "certain" },
+                                            &summary.path,
+                                            binding.span,
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -163,16 +173,19 @@ impl<'a> Builder<'a> {
                             }
                             continue;
                         }
-                        if let Some(target) = resolution.target {
-                            self.edges.push(edge(
-                                &module_symbol_key(&summary.path),
-                                &module_symbol_key(&target),
-                                dynamic_edge_kind(dynamic),
-                                "certain",
-                                &summary.path,
-                                dynamic.span,
-                            ));
-                            self.link_dynamic_exports(&summary.path, &target, dynamic);
+                        let targets: Vec<String> = resolution.targets().cloned().collect();
+                        if !targets.is_empty() {
+                            for target in &targets {
+                                self.edges.push(edge(
+                                    &module_symbol_key(&summary.path),
+                                    &module_symbol_key(target),
+                                    dynamic_edge_kind(dynamic),
+                                    "certain",
+                                    &summary.path,
+                                    dynamic.span,
+                                ));
+                                self.link_dynamic_exports(&summary.path, target, dynamic);
+                            }
                         } else if !resolution.external {
                             self.unknowns.push(UnknownRecord {
                                 reason: format!("dynamic import `{specifier}` did not resolve"),
@@ -584,6 +597,135 @@ mod tests {
     fn is_candidate(snapshot: &GraphSnapshot, key: &str) -> bool {
         assert!(snapshot.symbol(key).is_some(), "missing symbol {key}");
         snapshot.is_candidate(key)
+    }
+
+    #[test]
+    fn metro_platform_variants_are_reachable() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"metro-app","main":"index.js","dependencies":{"react-native":"^0.81.0"}}"#,
+            ),
+            (
+                "index.js",
+                "import { App } from \"./src/App\";\nexport default App;\n",
+            ),
+            (
+                "src/App.tsx",
+                "import { Reexported } from \"./barrel\";\n\
+                 import { Icon } from \"./components/Icon\";\n\
+                 import { HomeScreen } from \"./screens/Home\";\n\
+                 export function App() {\n\
+                   return <main><Reexported /><Icon /><HomeScreen /></main>;\n\
+                 }\n",
+            ),
+            (
+                "src/barrel.ts",
+                "export { Button as Reexported } from \"./components/Button\";\n",
+            ),
+            (
+                "src/components/Button.tsx",
+                "export function Button() { return <button />; }\nexport function unusedButtonHelper() { return 1; }\n",
+            ),
+            (
+                "src/components/Button.ios.tsx",
+                "export function Button() { return <button />; }\nexport function unusedIosButtonHelper() { return 2; }\n",
+            ),
+            (
+                "src/components/Button.android.tsx",
+                "export function Button() { return <button />; }\nexport function unusedAndroidButtonHelper() { return 3; }\n",
+            ),
+            (
+                "src/components/Icon.ios.tsx",
+                "export function Icon() { return <span />; }\nexport function unusedIosIconHelper() { return 4; }\n",
+            ),
+            (
+                "src/components/Icon.android.tsx",
+                "export function Icon() { return <span />; }\nexport function unusedAndroidIconHelper() { return 5; }\n",
+            ),
+            (
+                "src/screens/Home.native.tsx",
+                "export function HomeScreen() { return <section />; }\nexport function unusedNativeHomeHelper() { return 6; }\n",
+            ),
+            (
+                "src/orphan.ios.tsx",
+                "export function Orphan() { return <div />; }\n",
+            ),
+            ("src/dead.ts", "export function DeadThing() { return 7; }\n"),
+        ]);
+        for key in [
+            "src/components/Button.tsx#Button",
+            "src/components/Button.ios.tsx#Button",
+            "src/components/Button.android.tsx#Button",
+            "src/components/Icon.ios.tsx#Icon",
+            "src/components/Icon.android.tsx#Icon",
+            "src/screens/Home.native.tsx#HomeScreen",
+        ] {
+            assert!(
+                is_live(&snapshot, key),
+                "{key} is loaded by a neutral Metro import: {:?}",
+                snapshot.live
+            );
+        }
+        for key in [
+            "src/components/Button.tsx#unusedButtonHelper",
+            "src/components/Button.ios.tsx#unusedIosButtonHelper",
+            "src/components/Button.android.tsx#unusedAndroidButtonHelper",
+            "src/components/Icon.ios.tsx#unusedIosIconHelper",
+            "src/components/Icon.android.tsx#unusedAndroidIconHelper",
+            "src/screens/Home.native.tsx#unusedNativeHomeHelper",
+            "src/orphan.ios.tsx#Orphan",
+            "src/dead.ts#DeadThing",
+        ] {
+            assert!(
+                is_candidate(&snapshot, key),
+                "{key} is unused and must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn platform_variants_require_a_metro_package() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"plain-app","main":"index.js","dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            (
+                "index.js",
+                "import { App } from \"./src/App\";\nexport default App;\n",
+            ),
+            (
+                "src/App.tsx",
+                "import { Button } from \"./components/Button\";\n\
+                 import { Icon } from \"./components/Icon\";\n\
+                 export function App() { return <main><Button /><Icon /></main>; }\n",
+            ),
+            (
+                "src/components/Button.tsx",
+                "export function Button() { return <button />; }\n",
+            ),
+            (
+                "src/components/Button.ios.tsx",
+                "export function Button() { return <button />; }\n",
+            ),
+            (
+                "src/components/Icon.ios.tsx",
+                "export function Icon() { return <span />; }\n",
+            ),
+        ]);
+        assert!(is_live(&snapshot, "src/components/Button.tsx#Button"));
+        for key in [
+            "src/components/Button.ios.tsx#Button",
+            "src/components/Icon.ios.tsx#Icon",
+        ] {
+            assert!(
+                is_candidate(&snapshot, key),
+                "without Metro, {key} is not reachable through a neutral import: {:?}",
+                snapshot.candidates
+            );
+        }
     }
 
     #[test]

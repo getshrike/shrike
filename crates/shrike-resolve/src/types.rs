@@ -20,6 +20,11 @@ pub struct PackageInfo {
     /// commands. They execute without being imported, so they are entries.
     #[serde(default)]
     pub script_files: BTreeSet<String>,
+    /// Whether Metro resolves this package's modules. Metro tries platform
+    /// suffixes (`Button.ios.tsx`, `Button.native.tsx`, ...) for a neutral
+    /// import before falling back to the base module.
+    #[serde(default)]
+    pub metro: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,9 +32,21 @@ pub struct PackageInfo {
 pub struct ResolvedSpecifier {
     pub importer: String,
     pub specifier: String,
+    /// The preferred target. When Metro platform variants exist this is the
+    /// base module when present, otherwise the first platform variant.
     pub target: Option<String>,
+    /// Additional Metro platform variants for the same neutral specifier.
+    #[serde(default)]
+    pub alternatives: Vec<String>,
     pub external: bool,
     pub reason: String,
+}
+
+impl ResolvedSpecifier {
+    /// Every local module the specifier can load, preferred target first.
+    pub fn targets(&self) -> impl Iterator<Item = &String> {
+        self.target.iter().chain(self.alternatives.iter())
+    }
 }
 
 #[derive(Clone, Debug)]

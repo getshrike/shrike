@@ -99,13 +99,10 @@ impl<'a> Builder<'a> {
             );
             for re_export in &summary.re_exports {
                 let source = symbol_key(&summary.path, &re_export.exported);
-                if let Some(target_file) = self
-                    .resolver
-                    .resolve(&summary.path, &re_export.source)
-                    .target
-                {
+                let resolution = self.resolver.resolve(&summary.path, &re_export.source);
+                for target_file in resolution.targets() {
                     if let Some(target) =
-                        self.resolve_export(&target_file, &re_export.imported, &mut BTreeSet::new())
+                        self.resolve_export(target_file, &re_export.imported, &mut BTreeSet::new())
                     {
                         self.edges.push(edge(
                             &source,
@@ -152,9 +149,9 @@ impl<'a> Builder<'a> {
             }
             if let Some(alls) = self.export_alls.get(&summary.path).cloned() {
                 for source in alls {
-                    if let Some(target_file) = self.resolver.resolve(&summary.path, &source).target
-                    {
-                        if let Some(target_exports) = self.exports.get(&target_file).cloned() {
+                    let resolution = self.resolver.resolve(&summary.path, &source);
+                    for target_file in resolution.targets() {
+                        if let Some(target_exports) = self.exports.get(target_file).cloned() {
                             for (_, target) in target_exports {
                                 self.edges.push(edge(
                                     &module,
@@ -174,38 +171,46 @@ impl<'a> Builder<'a> {
 
     fn add_member_edges(&mut self, source: &str, path: &str, span: Span, members: &[MemberAccess]) {
         for member in members {
-            let Some(target_file) = self
+            let Some(target_files) = self
                 .namespaces
                 .get(path)
                 .and_then(|map| map.get(&member.object))
             else {
                 continue;
             };
-            match &member.property {
-                Some(property) => {
-                    if let Some(target) =
-                        self.resolve_export(target_file, property, &mut BTreeSet::new())
-                    {
-                        self.edges
-                            .push(edge(source, &target, "reference", "certain", path, span));
-                    } else {
+            for target_file in target_files {
+                match &member.property {
+                    Some(property) => {
+                        if let Some(target) =
+                            self.resolve_export(target_file, property, &mut BTreeSet::new())
+                        {
+                            self.edges.push(edge(
+                                source,
+                                &target,
+                                "reference",
+                                "certain",
+                                path,
+                                span,
+                            ));
+                        } else {
+                            self.unknowns.push(UnknownRecord {
+                                reason: format!("unknown member `{}`", member.object),
+                                scope: "module".to_string(),
+                                package: self.package_of.get(path).cloned(),
+                                file: target_file.clone(),
+                                span,
+                            });
+                        }
+                    }
+                    None => {
                         self.unknowns.push(UnknownRecord {
-                            reason: format!("unknown member `{}`", member.object),
+                            reason: format!("computed member access on `{}`", member.object),
                             scope: "module".to_string(),
                             package: self.package_of.get(path).cloned(),
                             file: target_file.clone(),
                             span,
                         });
                     }
-                }
-                None => {
-                    self.unknowns.push(UnknownRecord {
-                        reason: format!("computed member access on `{}`", member.object),
-                        scope: "module".to_string(),
-                        package: self.package_of.get(path).cloned(),
-                        file: target_file.clone(),
-                        span,
-                    });
                 }
             }
         }
@@ -218,8 +223,8 @@ impl<'a> Builder<'a> {
         let mut targets = Vec::new();
         if let Some(namespaces) = self.namespaces.get(path) {
             for identifier in free {
-                if let Some(target) = namespaces.get(identifier) {
-                    targets.push(target.clone());
+                if let Some(files) = namespaces.get(identifier) {
+                    targets.extend(files.iter().cloned());
                 }
             }
         }

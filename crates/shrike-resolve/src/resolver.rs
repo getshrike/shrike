@@ -7,6 +7,62 @@ use crate::config::{load_tsconfig, load_workspaces};
 use crate::types::{PackageInfo, ResolvedSpecifier, Resolver};
 use crate::util::{match_alias, parent_dir, split_package};
 
+/// Metro platform suffixes, in resolution order. A neutral import first tries
+/// the platform-specific module, then `.native`, then the base module.
+const METRO_PLATFORMS: &[&str] = &[
+    "ios", "android", "windows", "web", "native", "macos", "default",
+];
+
+/// Insert a platform suffix before the source extension:
+/// `Button.tsx` -> `Button.ios.tsx`, `Icon` -> `Icon.ios`.
+fn platform_candidate(candidate: &str, platform: &str) -> String {
+    let Some((stem, extension)) = candidate.rsplit_once('.') else {
+        return format!("{candidate}.{platform}");
+    };
+    if stem.ends_with(".d")
+        || !matches!(
+            extension,
+            "ts" | "tsx" | "js" | "jsx" | "mjs" | "cjs" | "json"
+        )
+    {
+        return candidate.to_string();
+    }
+    format!("{stem}.{platform}.{extension}")
+}
+
+/// Whether the specifier already names a platform variant. Metro resolves an
+/// explicit `./Button.ios` exactly; only neutral specifiers fan out.
+fn names_platform_variant(specifier: &str) -> bool {
+    let file = specifier.rsplit('/').next().unwrap_or(specifier);
+    let stem = file.rsplit_once('.').map_or(file, |(stem, extension)| {
+        if matches!(
+            extension,
+            "ts" | "tsx" | "js" | "jsx" | "mjs" | "cjs" | "json"
+        ) {
+            stem
+        } else {
+            file
+        }
+    });
+    METRO_PLATFORMS
+        .iter()
+        .any(|platform| stem.ends_with(&format!(".{platform}")))
+}
+
+/// Remove a platform suffix from a resolved target so all variants of the same
+/// base module share one lookup: `Button.ios.tsx` -> `Button.tsx`.
+fn platform_base(target: &str) -> String {
+    let Some((stem, extension)) = target.rsplit_once('.') else {
+        return target.to_string();
+    };
+    for platform in METRO_PLATFORMS {
+        if let Some(base) = stem.strip_suffix(&format!(".{platform}")) {
+            return format!("{base}.{extension}");
+        }
+    }
+    target.to_string()
+}
+
 impl Resolver {
     #[must_use]
     pub fn new(root: &Path, files: &[String], config: &EngineConfig) -> Self {
@@ -68,8 +124,10 @@ impl Resolver {
             } else {
                 normalize_relative(&format!("{}/{}", parent_dir(importer), specifier))
             };
-            if let Some(target) = self.probe(&joined) {
-                return self.resolved(importer, specifier, target, "relative");
+            if let Some(resolved) =
+                self.resolve_candidate(importer, specifier, &joined, "relative", false)
+            {
+                return resolved;
             }
             return self.unresolved(importer, specifier, "relative path not found");
         }
@@ -78,8 +136,14 @@ impl Resolver {
             if let Some(star) = match_alias(pattern, specifier) {
                 for replacement in replacements {
                     let candidate = replacement.replace('*', &star);
-                    if let Some(target) = self.probe(&candidate) {
-                        return self.resolved(importer, specifier, target, "tsconfig-paths");
+                    if let Some(resolved) = self.resolve_candidate(
+                        importer,
+                        specifier,
+                        &candidate,
+                        "tsconfig-paths",
+                        false,
+                    ) {
+                        return resolved;
                     }
                 }
             }
@@ -87,8 +151,10 @@ impl Resolver {
 
         if let Some(base_url) = &self.base_url {
             let candidate = normalize_relative(&format!("{base_url}/{specifier}"));
-            if let Some(target) = self.probe(&candidate) {
-                return self.resolved(importer, specifier, target, "tsconfig-baseurl");
+            if let Some(resolved) =
+                self.resolve_candidate(importer, specifier, &candidate, "tsconfig-baseurl", false)
+            {
+                return resolved;
             }
         }
 
@@ -96,8 +162,14 @@ impl Resolver {
         for prefix in ["@/", "~/"] {
             if let Some(rest) = specifier.strip_prefix(prefix) {
                 let candidate = normalize_relative(&format!("src/{rest}"));
-                if let Some(target) = self.probe(&candidate) {
-                    return self.resolved(importer, specifier, target, "framework-alias");
+                if let Some(resolved) = self.resolve_candidate(
+                    importer,
+                    specifier,
+                    &candidate,
+                    "framework-alias",
+                    false,
+                ) {
+                    return resolved;
                 }
             }
         }
@@ -118,8 +190,14 @@ impl Resolver {
                         normalize_relative(&format!("{}/index", package.directory))
                     })
                 };
-                if let Some(target) = self.probe(&candidate) {
-                    return self.resolved(importer, specifier, target, "workspace-package");
+                if let Some(resolved) = self.resolve_candidate(
+                    importer,
+                    specifier,
+                    &candidate,
+                    "workspace-package",
+                    package.metro,
+                ) {
+                    return resolved;
                 }
                 // `exports` usually points at published build output, which is
                 // absent from the analysis set. Map the specifier back to the
@@ -131,23 +209,25 @@ impl Resolver {
                             "{}/{directory}/{subpath}",
                             package.directory
                         ));
-                        if let Some(target) = self.probe(&base) {
-                            return self.resolved(
-                                importer,
-                                specifier,
-                                target,
-                                "workspace-package-source",
-                            );
+                        if let Some(resolved) = self.resolve_candidate(
+                            importer,
+                            specifier,
+                            &base,
+                            "workspace-package-source",
+                            package.metro,
+                        ) {
+                            return resolved;
                         }
                     }
                 } else if let Some(entry) = &package.entry {
-                    if let Some(target) = self.probe(entry) {
-                        return self.resolved(
-                            importer,
-                            specifier,
-                            target,
-                            "workspace-package-source",
-                        );
+                    if let Some(resolved) = self.resolve_candidate(
+                        importer,
+                        specifier,
+                        entry,
+                        "workspace-package-source",
+                        package.metro,
+                    ) {
+                        return resolved;
                     }
                 }
                 return self.unresolved(importer, specifier, "workspace package entry not found");
@@ -159,12 +239,47 @@ impl Resolver {
                 importer: importer.to_string(),
                 specifier: specifier.to_string(),
                 target: None,
+                alternatives: Vec::new(),
                 external: true,
                 reason: "external-package".to_string(),
             };
         }
 
         self.unresolved(importer, specifier, "bare specifier not found")
+    }
+
+    fn resolve_candidate(
+        &self,
+        importer: &str,
+        specifier: &str,
+        candidate: &str,
+        reason: &str,
+        target_metro: bool,
+    ) -> Option<ResolvedSpecifier> {
+        if let Some(target) = self.probe(candidate) {
+            return Some(self.resolved(importer, specifier, target, reason));
+        }
+        if !target_metro && !self.uses_metro(importer) {
+            return None;
+        }
+        for platform in METRO_PLATFORMS {
+            let platform_file = platform_candidate(candidate, platform);
+            if let Some(target) = self.probe(&platform_file) {
+                return Some(self.resolved(importer, specifier, target, reason));
+            }
+            // Metro also tries a directory index per platform, so an
+            // extensionless import can load `Card/index.ios.tsx` when no base
+            // `Card/index.tsx` exists.
+            let platform_index = format!("{candidate}/index.{platform}");
+            if let Some(target) = self.probe(&platform_index) {
+                return Some(self.resolved(importer, specifier, target, reason));
+            }
+        }
+        None
+    }
+
+    fn uses_metro(&self, path: &str) -> bool {
+        self.package_for(path).is_some_and(|package| package.metro)
     }
 
     fn resolved(
@@ -174,13 +289,36 @@ impl Resolver {
         target: String,
         reason: &str,
     ) -> ResolvedSpecifier {
+        let alternatives = if names_platform_variant(specifier) {
+            Vec::new()
+        } else if self.uses_metro(importer) || self.uses_metro(&target) {
+            self.platform_variants(&target)
+        } else {
+            Vec::new()
+        };
         ResolvedSpecifier {
             importer: importer.to_string(),
             specifier: specifier.to_string(),
             target: Some(target),
+            alternatives,
             external: false,
             reason: reason.to_string(),
         }
+    }
+
+    fn platform_variants(&self, target: &str) -> Vec<String> {
+        let base = platform_base(target);
+        let mut variants = Vec::new();
+        for platform in METRO_PLATFORMS {
+            let candidate = platform_candidate(&base, platform);
+            let Some(path) = self.probe(&candidate) else {
+                continue;
+            };
+            if path != target && !variants.contains(&path) {
+                variants.push(path);
+            }
+        }
+        variants
     }
 
     fn unresolved(&self, importer: &str, specifier: &str, reason: &str) -> ResolvedSpecifier {
@@ -188,6 +326,7 @@ impl Resolver {
             importer: importer.to_string(),
             specifier: specifier.to_string(),
             target: None,
+            alternatives: Vec::new(),
             external: false,
             reason: reason.to_string(),
         }
