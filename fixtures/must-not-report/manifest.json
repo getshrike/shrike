@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 288,
+  "count": 292,
   "entries": [
     {
       "id": "page-entry-1",
@@ -5120,6 +5120,47 @@
       "mustReport": [
         "src/dead.ts#deadConsumer",
         "src/barrel.ts#helper"
+      ]
+    },
+    {
+      "id": "next-param-matching",
+      "category": "next-segment-config",
+      "files": [
+        "app",
+        "components",
+        "package.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/page.tsx#unstable_paramMatching",
+          "reason": "Next.js reads static param matching from page modules"
+        },
+        {
+          "symbol": "app/page.tsx#unstable_generateParamMatching",
+          "reason": "Next.js reads generated param matching from page modules"
+        },
+        {
+          "symbol": "app/layout.tsx#unstable_paramMatching",
+          "reason": "Next.js reads static param matching from layout modules"
+        },
+        {
+          "symbol": "app/layout.tsx#unstable_generateParamMatching",
+          "reason": "Next.js reads generated param matching from layout modules"
+        },
+        {
+          "symbol": "components/param-view.tsx#ParamView",
+          "reason": "the page imports and renders ParamView"
+        }
+      ],
+      "mustReport": [
+        "app/page.tsx#unusedPageHelper",
+        "app/layout.tsx#unusedLayoutHelper",
+        "app/route.ts#unstable_paramMatching",
+        "app/route.ts#unstable_generateParamMatching",
+        "app/loading.tsx#unstable_paramMatching",
+        "app/loading.tsx#unstable_generateParamMatching",
+        "components/param-view.tsx#unusedParamHelper",
+        "components/dead.tsx#DeadComponent"
       ]
     }
   ]
