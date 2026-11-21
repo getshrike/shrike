@@ -78,6 +78,21 @@ test("invalid client exports are actionable boundary diagnostics", () => {
   assert.equal(summary.groups[0].actionable, true);
 });
 
+test("invalid server exports are actionable boundary diagnostics", () => {
+  const summary = summarizeDiagnostics([
+    {
+      code: "invalid_server_export",
+      severity: "warning",
+      message: '`value` cannot be exported from a "use server" module; Next.js requires every action export to be an async function',
+      file: "src/actions.ts",
+    },
+  ]);
+  assert.equal(summary.actionable, 1);
+  assert.equal(summary.groups[0].category, "boundary");
+  assert.equal(summary.groups[0].actionable, true);
+  assert.equal(summary.bySeverity.warning, 1);
+});
+
 test("misplaced directives are actionable boundary diagnostics", () => {
   const summary = summarizeDiagnostics([
     {

@@ -1086,6 +1086,69 @@ exports, or fallow changes its all-action predicate or inline capture.
 
 ---
 
+## D-031 — Definitely non-function `"use server"` exports are warnings
+
+**Decision:** A leading `"use server"` module's value exports that are
+definitely not callable produce an advisory `invalid_server_export` warning.
+The parser records the exported name and a span for literals, objects, arrays,
+class expressions, `new`, tagged templates, `await`, missing initializers, and
+non-ambient enums. It unwraps parentheses and TypeScript `as` / `satisfies` /
+`!` / type-assertion / instantiation wrappers first. Arrows, function
+expressions, calls, and identifiers are skipped because they may be
+Promise-returning functions. Direct class declarations, default
+classes/functions/interfaces, type-only exports, and value re-exports are
+skipped because Next's runtime validator sees a class as a function and its
+TypeScript plugin only checks Promise-returning types. A local
+`const value; export { value }` is resolved from its top-level declaration and
+anchored on the specifier; direct declarations are anchored on the declarator
+or enum. The rule is gated on the project declaring an RSC bundler.
+
+**Alternatives considered:**
+
+- Report every non-async export: Next.js requires async functions, but a call
+  or identifier may return a function or a Promise; the definite subset is the
+  only build-failure claim Shrike can support without type information.
+- Report direct class declarations: Next's flight loader checks
+  `typeof action === 'function'`, which is true for a class; its TS plugin does
+  not handle a direct class export, so a warning would be a false positive.
+- Report value re-exports: the target module owns the value; classifying it
+  here would require cross-module analysis and the runtime failure belongs to
+  the target's export.
+- Report enums only when non-const: a const enum is also an object at runtime
+  in non-isolatedModules builds; both are definitely not functions. Ambient
+  `declare enum` is erased and is skipped.
+- Treat an inline body directive as file-level: the module's other exports are
+  ordinary values, so a module-level rule would misreport them.
+
+**Why:** Read Next.js's flight loader
+(`dist/build/webpack/loaders/next-flight-loader/action-validate.js`), which
+throws when an action export is not a function, and its TypeScript plugin
+(`dist/build/webpack/plugins/next-types-plugin/server-boundary.js`), which
+requires Promise-returning types for `"use server"` exports. Its
+variable-statement check rejects any initializer that is not an arrow,
+function expression, call, or identifier, which covers class expressions and
+`await` even though both pass the runtime `typeof` check. Fallow 3.45.0 does
+not report this condition; knip 5.88.1 does not either. A probe with a Next.js
+app shows the runtime validator rejecting literal, object, array, enum,
+local-alias, `new`, and tagged-template exports while accepting async arrows,
+function expressions, calls, identifiers, classes, class expressions, and
+re-exports.
+
+**Consequences:**
+
+- `FileSummary.invalid_server_exports` records the findings;
+  `ANALYSIS_VERSION` is bumped to 67.
+- Parser and graph tests cover the definite forms, the conservative skips,
+  anchors, project gating, severity, and the message.
+- The warning groups under `boundary` in the CLI diagnostic summary and never
+  changes candidates or entries.
+
+**Revisit if:** Next.js changes its action validator or TypeScript plugin, or
+if Shrike gains type information that can prove a call or identifier is not a
+function.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -1159,6 +1222,7 @@ external app, credential, or participant.
 | D-028 | Mixed client/server barrels are advisory warnings | accepted |
 | D-029 | Client/server leak cones are advisory warnings | accepted |
 | D-030 | Async arrow actions and inline directives are Server Actions | accepted |
+| D-031 | Definitely non-function `"use server"` exports are warnings | accepted |
 
 ## Rejected ideas
 

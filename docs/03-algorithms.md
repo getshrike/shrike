@@ -363,6 +363,21 @@ analyzable.
   anchored on its specifier and reported once. Default, type-only, and
   re-export forms are excluded. The list matches fallow 3.45.0's
   `ILLEGAL_CLIENT_EXPORTS`; knip 5.88.1 does not report the condition;
+- a leading `"use server"` module that exports a value which is definitely not
+  callable produces an advisory `invalid_server_export` warning, not a finding.
+  Next.js's flight loader throws when an action export fails
+  `typeof action === 'function'`. The definite forms are literals, objects,
+  arrays, class expressions, `new`, tagged templates, `await`, declarations
+  with no initializer, and non-ambient enums, after unwrapping parentheses and
+  TypeScript `as` / `satisfies` / `!` / type-assertion / instantiation
+  wrappers. Arrows, function expressions, calls, and identifiers are skipped
+  because they may be Promise-returning functions. Direct class declarations,
+  default classes/functions/interfaces, type-only exports, and value
+  re-exports are skipped because the runtime validator treats a class as a
+  function and the TypeScript plugin only checks Promise-returning types. A
+  local `const value; export { value }` is resolved from its top-level
+  declaration and anchored on the specifier; direct declarations are anchored
+  on the declarator or enum. The rule uses the seven-bundler RSC gate;
 - a `"use client"` or `"use server"` string after the leading prologue
   produces a `misplaced_directive` warning, not a finding. RSC bundlers only
   honor a directive before any other statement and silently ignore the rest,

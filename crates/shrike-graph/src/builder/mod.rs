@@ -112,6 +112,7 @@ impl<'a> Builder<'a> {
         self.build_files();
         self.build_symbols();
         self.detect_invalid_client_exports();
+        self.detect_invalid_server_exports();
         self.detect_misplaced_directives();
         self.resolve_imports();
         self.detect_mixed_client_server_barrels();

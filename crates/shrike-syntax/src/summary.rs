@@ -127,6 +127,16 @@ pub struct LocalExportRecord {
     pub type_only: bool,
 }
 
+/// A value export of a leading `"use server"` module that is definitely not a
+/// function. Next.js fails the build when an action export is not callable, so
+/// the parser records the exported name and the declaration or specifier span.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvalidServerExportRecord {
+    pub name: String,
+    pub span: Span,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReExportRecord {
@@ -257,6 +267,10 @@ pub struct FileSummary {
     /// directive. `"default"` represents a default-exported action.
     #[serde(default)]
     pub inline_server_action_exports: Vec<String>,
+    /// Value exports of a leading `"use server"` module that are definitely not
+    /// functions. Next.js rejects a non-callable action export at build time.
+    #[serde(default)]
+    pub invalid_server_exports: Vec<InvalidServerExportRecord>,
     /// Directive-looking strings after the prologue. Recorded for the
     /// `misplaced_directive` diagnostic; they are not honored as directives.
     #[serde(default)]

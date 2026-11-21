@@ -349,7 +349,37 @@ exports, `export type`, and `export { metadata } from "./server"` re-exports
 are not flagged. The warning is advisory: it never removes a candidate or
 suppresses an entry.
 
-### 7.5 Route conflicts
+### 7.5 Invalid server exports
+
+Next.js validates a `"use server"` module in two places. The flight loader
+runs at module evaluation and throws when an export fails
+`typeof action === 'function'`. The TypeScript plugin rejects any variable
+initializer that is not an arrow, function expression, call, or identifier.
+Shrike reports an advisory `invalid_server_export` warning for the definite
+union: literals, objects, arrays, class expressions, `new`, tagged templates,
+`await`, and declarations with no initializer. A class expression and an
+`await` initializer pass the runtime `typeof` check but fail the TypeScript
+plugin, so they are still build failures. The parser unwraps parentheses and
+TypeScript `as` / `satisfies` / `!` / type-assertion / instantiation wrappers
+before classifying, so `export const value = (1 as number)` is still reported.
+Enums are runtime objects and are reported; `declare enum` is erased and is
+not.
+
+Arrows, function expressions, calls, and identifiers are skipped because they
+may be Promise-returning functions. Direct class declarations, default
+classes/functions/interfaces, type-only exports, and value re-exports are also
+skipped: the runtime validator sees a class as a function, and the TypeScript
+plugin only checks Promise-returning types. A local
+`const value = 1; export { value }` is resolved from its top-level declaration
+and anchored on the export specifier; a direct declaration is anchored on the
+declarator or enum. Only a leading `"use server"` directive counts, and the
+rule is gated on the project declaring `next`, `waku`, `@lazarv/react-server`,
+or one of the `react-server-dom-*` / `@vitejs/plugin-rsc` bundlers, matching
+the other RSC boundary rules.
+
+The warning is advisory: it never removes a candidate or suppresses an entry.
+
+### 7.6 Route conflicts
 
 Two App Router files can make Next.js reject or crash a route without any dead
 code. Shrike reports both as error diagnostics, never as findings:
@@ -372,7 +402,7 @@ app-shaped directory is left alone. This is deliberately more precise than
 fallow 3.45.0's project-wide gate, which flags that package when a sibling
 declares Next.
 
-### 7.6 Misplaced directives
+### 7.7 Misplaced directives
 
 React Server Components bundlers honor `"use client"` and `"use server"` only
 in the leading prologue, before any other statement. A directive-looking
@@ -391,7 +421,7 @@ directives. One warning is emitted per misplaced occurrence. The predicate and
 the two recognized strings match fallow 3.45.0's `misplaced_directive`
 detector.
 
-### 7.7 Mixed client/server barrels
+### 7.8 Mixed client/server barrels
 
 A barrel that re-exports a `"use client"` origin alongside a server-only origin
 is the Next.js App Router footgun: importing either name from the barrel drags
@@ -420,7 +450,7 @@ is a deliberate precision improvement: a module whose only "server" signal is
 `import type { cookies } from "next/headers"` does not put server code in a
 client bundle, while fallow still reports it.
 
-### 7.8 Client/server leak cones
+### 7.9 Client/server leak cones
 
 A `"use client"` module may not reach server-only code through its runtime
 import cone: the client bundle would contain `node:fs`, `next/server`, or a
@@ -431,7 +461,7 @@ import of the shortest path, and is a warning rather than a finding.
 
 The cone follows runtime static imports, re-exports, export-alls, and
 non-worker dynamic imports. Type-only edges are erased and are not followed.
-The sink predicate matches §7.7. An all-action `"use server"` module stops the
+The sink predicate matches §7.8. An all-action `"use server"` module stops the
 cone: its exports become action references at the client boundary, so its
 server imports never enter the client bundle. A `"use server"` module with any
 non-action value export (a top-level constant, a default value, a re-export)
