@@ -54,7 +54,11 @@ function categoryFor(item: DiagnosticLike): { category: string; actionable: bool
     }
     return { category: "unresolved-import", actionable: true };
   }
-  if (item.code === "client-boundary-leak" || item.code === "invalid_client_export") {
+  if (
+    item.code === "client-boundary-leak" ||
+    item.code === "invalid_client_export" ||
+    item.code === "misplaced_directive"
+  ) {
     return { category: "boundary", actionable: true };
   }
   if (item.code === "route_collision" || item.code === "dynamic_segment_name_conflict") {

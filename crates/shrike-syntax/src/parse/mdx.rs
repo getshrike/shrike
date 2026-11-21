@@ -206,6 +206,7 @@ pub(super) fn parse(
         parse_message: None,
         line_count,
         directives: Vec::new(),
+        misplaced_directives: Vec::new(),
         imports: Vec::new(),
         declarations: Vec::new(),
         local_exports: Vec::new(),

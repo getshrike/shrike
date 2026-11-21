@@ -865,6 +865,53 @@ fallow's route-tree semantics diverge.
 
 ---
 
+## D-027 — Misplaced RSC directives are advisory warnings
+
+**Decision:** A `"use client"` or `"use server"` string that appears after the
+leading prologue produces a `misplaced_directive` warning. RSC bundlers
+silently ignore it, so the intended client or server boundary is never
+created. The rule is gated project-wide on an RSC bundler dependency: `next`,
+`waku`, `@lazarv/react-server`, `react-server-dom-webpack`,
+`react-server-dom-vite`, `react-server-dom-parcel`, or `@vitejs/plugin-rsc`
+in the root or any workspace manifest. It never changes candidates, entries,
+or unused files.
+
+**Alternatives considered:**
+
+- Treat the module as a client boundary anyway. The bundler does not, so the
+  analysis would be wrong about the file's semantics.
+- Flag only in Next.js. Waku and the `react-server-dom-*` toolchains honor the
+  same directives, and fallow gates on the same seven packages.
+- Gate on the owning package. A shared module can be compiled by a sibling
+  RSC app; the directive is ignored there regardless of the module's own
+  manifest.
+- Flag `"use strict"`. It is a harmless JavaScript prologue directive with no
+  RSC meaning.
+
+**Why:** Read fallow 3.45.0's `misplaced_directive.rs`,
+`predicates/import.rs`, and the extract visitor. On
+`/tmp/opencode/misplaced-directive-probe`, fallow reports three findings
+(`app/late-client.tsx#2`, `app/late-server.ts#2`,
+`packages/plain/src/late-client.ts#2`) and Shrike reports the same three at
+the same lines. Both exclude a leading directive, a nested string, and
+`"use strict"`. The React-only control reports zero in both tools, and a Waku
+probe reports the same single finding in both.
+
+**Consequences:**
+
+- The parser records `FileSummary.misplaced_directives` with a span; the
+  leading directives remain in `FileSummary.directives` only.
+- `ANALYSIS_VERSION` is bumped to 63 so cached summaries include the new
+  record.
+- The warning groups under `boundary` and is actionable in the CLI diagnostic
+  summary.
+- Corpus candidates are unchanged; the rule is diagnostics-only.
+
+**Revisit if:** an RSC bundler starts honoring body-position directives, or
+fallow's bundler predicate diverges.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -934,6 +981,7 @@ external app, credential, or participant.
 | D-024 | `scripts/` files are entries only when referenced | accepted |
 | D-025 | `"use client"` server-only exports are advisory warnings | accepted |
 | D-026 | App Router route conflicts are error diagnostics | accepted |
+| D-027 | Misplaced RSC directives are advisory warnings | accepted |
 
 ## Rejected ideas
 

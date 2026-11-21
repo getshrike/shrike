@@ -1,5 +1,5 @@
 use oxc_ast::ast::{
-    Declaration, ExportDefaultDeclarationKind, ImportDeclarationSpecifier, Statement,
+    Declaration, ExportDefaultDeclarationKind, Expression, ImportDeclarationSpecifier, Statement,
     TSModuleDeclarationKind, TSModuleDeclarationName, TSModuleReference,
 };
 use oxc_ast_visit::Visit;
@@ -7,7 +7,7 @@ use shrike_core::LineIndex;
 
 use crate::summary::{
     BindingKind, DeclarationKind, DeclarationRecord, ExportAllRecord, FileSummary, ImportBinding,
-    ImportKind, ImportRecord, LocalExportRecord, ReExportRecord,
+    ImportKind, ImportRecord, LocalExportRecord, MisplacedDirectiveRecord, ReExportRecord,
 };
 
 use super::collector::RefCollector;
@@ -379,6 +379,27 @@ pub(super) fn extract_statement(
                 directives: Vec::new(),
                 references: refs,
             });
+        }
+        Statement::ExpressionStatement(statement) => {
+            // oxc keeps the honored leading directives in `program.directives`,
+            // so a directive-looking string in the body was silently ignored by
+            // every RSC bundler. Record it for the `misplaced_directive`
+            // diagnostic; it does not establish a boundary.
+            if let Expression::StringLiteral(literal) = &statement.expression {
+                let directive = literal.value.as_str();
+                if directive == "use client" || directive == "use server" {
+                    summary.misplaced_directives.push(MisplacedDirectiveRecord {
+                        directive: directive.to_string(),
+                        span: span_of(line_index, source, statement.span),
+                    });
+                    return;
+                }
+            }
+            let mut refs = RefCollector::default();
+            refs.visit_expression_statement(statement);
+            merge_refs(&mut summary.module_refs, &refs);
+            summary.dynamic.extend(refs.dynamic);
+            summary.unknown.extend(refs.unknown);
         }
         other => {
             let mut refs = RefCollector::default();

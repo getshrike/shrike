@@ -342,6 +342,25 @@ app-shaped directory is left alone. This is deliberately more precise than
 fallow 3.45.0's project-wide gate, which flags that package when a sibling
 declares Next.
 
+### 7.6 Misplaced directives
+
+React Server Components bundlers honor `"use client"` and `"use server"` only
+in the leading prologue, before any other statement. A directive-looking
+string after an import or a declaration is parsed as an ordinary expression
+statement and silently ignored: the developer intended a boundary, but the
+module is treated as a server module. Shrike reports a `misplaced_directive`
+warning anchored on the offending statement. It is not a finding and never
+changes candidates.
+
+The rule is project-wide and gated on a React Server Components bundler:
+`next`, `waku`, `@lazarv/react-server`, `react-server-dom-webpack`,
+`react-server-dom-vite`, `react-server-dom-parcel`, or `@vitejs/plugin-rsc`
+in the root or any workspace manifest. A leading directive is honored even
+when imports follow it; a nested string and a stray `"use strict"` are not
+directives. One warning is emitted per misplaced occurrence. The predicate and
+the two recognized strings match fallow 3.45.0's `misplaced_directive`
+detector.
+
 ---
 
 ## 8. Proxy, middleware, metadata

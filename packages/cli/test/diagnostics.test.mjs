@@ -78,6 +78,21 @@ test("invalid client exports are actionable boundary diagnostics", () => {
   assert.equal(summary.groups[0].actionable, true);
 });
 
+test("misplaced directives are actionable boundary diagnostics", () => {
+  const summary = summarizeDiagnostics([
+    {
+      code: "misplaced_directive",
+      severity: "warning",
+      message: '"use client" is ignored because it is not in the leading prologue',
+      file: "app/page.tsx",
+    },
+  ]);
+  assert.equal(summary.actionable, 1);
+  assert.equal(summary.groups[0].category, "boundary");
+  assert.equal(summary.groups[0].actionable, true);
+  assert.equal(summary.bySeverity.warning, 1);
+});
+
 test("Next.js route conflicts are actionable routing diagnostics", () => {
   const summary = summarizeDiagnostics([
     {

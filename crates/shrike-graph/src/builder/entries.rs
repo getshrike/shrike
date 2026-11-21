@@ -187,7 +187,7 @@ fn package_depends_on(root: &Path, directory: &str, name: &str) -> bool {
 /// Whether the package manifest explicitly declares any of `names`. A missing
 /// or unreadable manifest returns `None`, so convention detection stays
 /// conservative for incomplete trees instead of hiding a possible entry.
-fn package_declares_any(root: &Path, directory: &str, names: &[&str]) -> Option<bool> {
+pub(super) fn package_declares_any(root: &Path, directory: &str, names: &[&str]) -> Option<bool> {
     let text = fs::read_to_string(root.join(directory).join("package.json")).ok()?;
     let value = serde_json::from_str::<serde_json::Value>(&text).ok()?;
     Some(
@@ -3312,6 +3312,144 @@ mod tests {
                 control.diagnostics
             );
         }
+    }
+
+    #[test]
+    fn misplaced_rsc_directives_are_project_gated_warnings() {
+        let next_snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "packages/plain/package.json",
+                r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/late-client.tsx",
+                "import { Widget } from \"../components/widget\";\n\"use client\";\nexport function Page() { return <Widget />; }\n",
+            ),
+            (
+                "app/late-server.ts",
+                "const value = 1;\n\"use server\";\nexport async function action() { return value; }\n",
+            ),
+            // A leading directive is honored, even when imports follow it.
+            (
+                "app/leading.tsx",
+                "\"use client\";\nimport { Widget } from \"../components/widget\";\nexport function Page() { return <Widget />; }\n",
+            ),
+            // A nested string and an out-of-scope `"use strict"` are not
+            // directive statements.
+            (
+                "app/nested.ts",
+                "export const labels = { directive: \"use client\" };\n",
+            ),
+            (
+                "app/strict.ts",
+                "import { Widget } from \"../components/widget\";\n\"use strict\";\nexport const Page = Widget;\n",
+            ),
+            // The gate is project-wide: a shared package inside an RSC project
+            // is compiled in the consuming app's context.
+            (
+                "packages/plain/src/late-client.ts",
+                "const value = 1;\n\"use client\";\nexport const Widget = value;\n",
+            ),
+            (
+                "components/widget.tsx",
+                "export function Widget() { return null; }\n",
+            ),
+        ]);
+        let misplaced: Vec<(&str, u32, &str)> = next_snapshot
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "misplaced_directive")
+            .map(|diagnostic| {
+                (
+                    diagnostic.file.as_deref().unwrap_or(""),
+                    diagnostic.span.map_or(0, |span| span.line),
+                    diagnostic.message.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            misplaced.len(),
+            3,
+            "one warning per misplaced occurrence: {:?}",
+            next_snapshot.diagnostics
+        );
+        assert_eq!(
+            misplaced
+                .iter()
+                .map(|(file, line, _)| (*file, *line))
+                .collect::<Vec<_>>(),
+            vec![
+                ("app/late-client.tsx", 2),
+                ("app/late-server.ts", 2),
+                ("packages/plain/src/late-client.ts", 2),
+            ],
+            "{:?}",
+            next_snapshot.diagnostics
+        );
+        assert!(
+            misplaced[0].2.contains("\"use client\"")
+                && misplaced[1].2.contains("\"use server\"")
+                && misplaced[0].2.contains("leading prologue"),
+            "the warning names the ignored directive: {:?}",
+            misplaced
+        );
+        assert!(
+            next_snapshot
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "misplaced_directive")
+                .all(|diagnostic| diagnostic.severity == shrike_core::Severity::Warning),
+            "a misplaced directive is a warning, not an error: {:?}",
+            next_snapshot.diagnostics
+        );
+
+        // Without an RSC bundler dependency the directives carry no special
+        // meaning, so the same files produce no warning.
+        let react_only = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/late-client.tsx",
+                "import { Widget } from \"../components/widget\";\n\"use client\";\nexport function Page() { return <Widget />; }\n",
+            ),
+            (
+                "components/widget.tsx",
+                "export function Widget() { return null; }\n",
+            ),
+        ]);
+        assert!(
+            react_only
+                .diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.code != "misplaced_directive"),
+            "no RSC bundler evidence: {:?}",
+            react_only.diagnostics
+        );
+
+        // Any of the framework-agnostic RSC bundlers is enough.
+        let waku = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"app","dependencies":{"waku":"^0.21.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "src/late-client.ts",
+                "const value = 1;\n\"use client\";\nexport const Widget = value;\n",
+            ),
+        ]);
+        assert!(
+            waku.diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "misplaced_directive"),
+            "waku is an RSC bundler: {:?}",
+            waku.diagnostics
+        );
     }
 
     #[test]

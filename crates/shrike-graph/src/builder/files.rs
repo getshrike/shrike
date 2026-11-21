@@ -48,6 +48,19 @@ const NEXT_SERVER_ONLY_EXPORTS: &[&str] = &[
     "OPTIONS",
 ];
 
+/// Bundlers that honor `"use client"` / `"use server"` directives. This is
+/// fallow 3.45.0's `RSC_BUNDLER_DEPS` predicate: Next.js plus the
+/// framework-agnostic React Server Components toolchains.
+const RSC_BUNDLER_PACKAGES: &[&str] = &[
+    "next",
+    "waku",
+    "@lazarv/react-server",
+    "react-server-dom-webpack",
+    "react-server-dom-vite",
+    "react-server-dom-parcel",
+    "@vitejs/plugin-rsc",
+];
+
 /// App Router convention stems that own a URL. A URL has at most one owner,
 /// whether a `page` or a `route`, so both share the collision namespace.
 const NEXT_URL_LEAF_STEMS: &[&str] = &["page", "route"];
@@ -350,6 +363,43 @@ impl<'a> Builder<'a> {
                     )
                     .in_file(&summary.path)
                     .at(span),
+                );
+            }
+        }
+    }
+
+    /// Warn when a `"use client"` / `"use server"` string is not in the leading
+    /// prologue. RSC bundlers silently ignore it, so the intended boundary is
+    /// never created. The rule is project-wide, matching fallow 3.45.0's
+    /// `project_uses_rsc_directives` gate: a shared module may be compiled by a
+    /// sibling RSC app even when its own package does not declare the bundler.
+    pub(super) fn detect_misplaced_directives(&mut self) {
+        let uses_rsc =
+            super::entries::package_declares_any(self.resolver.root(), "", RSC_BUNDLER_PACKAGES)
+                == Some(true)
+                || self.resolver.packages().iter().any(|package| {
+                    super::entries::package_declares_any(
+                        self.resolver.root(),
+                        &package.directory,
+                        RSC_BUNDLER_PACKAGES,
+                    ) == Some(true)
+                });
+        if !uses_rsc {
+            return;
+        }
+        let summaries = self.summaries.clone();
+        for summary in &summaries {
+            for site in &summary.misplaced_directives {
+                self.diagnostics.push(
+                    Diagnostic::warning(
+                        "misplaced_directive",
+                        format!(
+                            "\"{}\" is ignored because it is not in the leading prologue; move it to the top of the file",
+                            site.directive
+                        ),
+                    )
+                    .in_file(&summary.path)
+                    .at(site.span),
                 );
             }
         }

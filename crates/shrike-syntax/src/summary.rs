@@ -227,6 +227,16 @@ pub struct TypeImportRecord {
     pub imported: Option<String>,
 }
 
+/// A `"use client"` or `"use server"` string that is not in the leading
+/// prologue. RSC bundlers silently ignore it, so it does not create the
+/// intended client or server boundary.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MisplacedDirectiveRecord {
+    pub directive: String,
+    pub span: Span,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileSummary {
@@ -238,6 +248,10 @@ pub struct FileSummary {
     pub parse_message: Option<String>,
     pub line_count: u32,
     pub directives: Vec<String>,
+    /// Directive-looking strings after the prologue. Recorded for the
+    /// `misplaced_directive` diagnostic; they are not honored as directives.
+    #[serde(default)]
+    pub misplaced_directives: Vec<MisplacedDirectiveRecord>,
     pub imports: Vec<ImportRecord>,
     pub declarations: Vec<DeclarationRecord>,
     pub local_exports: Vec<LocalExportRecord>,

@@ -51,6 +51,43 @@ export function Component() { return null; }
 "#;
     let parsed = summary(source, "src/components/x.tsx");
     assert!(parsed.has_directive("use client"));
+    assert!(parsed.misplaced_directives.is_empty());
+}
+
+#[test]
+fn records_directive_strings_after_the_prologue() {
+    let source = r#"
+import { thing } from "./thing";
+"use client";
+const value = 1;
+"use server";
+"use strict";
+const nested = { directive: "use client" };
+"#;
+    let parsed = summary(source, "src/components/x.tsx");
+    assert!(!parsed.has_directive("use client"));
+    assert!(!parsed.has_directive("use server"));
+    let directives: Vec<(&str, u32)> = parsed
+        .misplaced_directives
+        .iter()
+        .map(|record| (record.directive.as_str(), record.span.line))
+        .collect();
+    assert_eq!(directives, vec![("use client", 3), ("use server", 5)]);
+}
+
+#[test]
+fn a_leading_directive_before_imports_is_not_misplaced() {
+    let source = r#"
+"use client";
+import { thing } from "./thing";
+"use server";
+export function Component() { return null; }
+"#;
+    let parsed = summary(source, "src/components/x.tsx");
+    assert!(parsed.has_directive("use client"));
+    assert_eq!(parsed.misplaced_directives.len(), 1);
+    assert_eq!(parsed.misplaced_directives[0].directive, "use server");
+    assert_eq!(parsed.misplaced_directives[0].span.line, 4);
 }
 
 #[test]
