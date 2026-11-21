@@ -99,6 +99,19 @@ fn at_package_root(path: &str, relative: &str) -> bool {
     path == relative || path.ends_with(&format!("/{relative}"))
 }
 
+/// Compare a path against a convention relative to its owning package. The
+/// package directory is already known, so a nested `lib/middleware.ts` is not
+/// mistaken for `<package>/middleware.ts`.
+fn at_own_package_root(path: &str, package_directory: &str, relative: &str) -> bool {
+    let local = if package_directory.is_empty() {
+        path
+    } else {
+        path.strip_prefix(&format!("{package_directory}/"))
+            .unwrap_or(path)
+    };
+    local == relative
+}
+
 /// next-intl reads `{src/,}i18n/request.*` and `{src/,}i18n/routing.*` by
 /// convention when its plugin is configured. Only the file names are fixed, so
 /// the dependency check decides whether the convention applies.
@@ -1367,12 +1380,20 @@ impl<'a> Builder<'a> {
             let route = route_of(path);
             let is_app = path.starts_with("app/") || path.contains("/app/");
             let is_pages = path.starts_with("pages/") || path.contains("/pages/");
-            // Next.js middleware/proxy and the MDX component map live at the
-            // project root (or `src/`), not under `app/`, but they are still
-            // framework entrypoints.
+            let package_directory = self
+                .resolver
+                .package_for(path)
+                .map_or("", |package| package.directory.as_str());
+            // Next.js middleware/proxy, instrumentation, and the MDX component
+            // map live at the project root (or `src/`), not under `app/`, but
+            // they are still framework entrypoints.
             let root_convention = matches!(
                 stem,
-                "middleware" | "proxy" | "mdx-components" | "instrumentation-client"
+                "middleware"
+                    | "proxy"
+                    | "mdx-components"
+                    | "instrumentation"
+                    | "instrumentation-client"
             ) && path
                 .strip_suffix(".tsx")
                 .or_else(|| path.strip_suffix(".ts"))
@@ -1383,22 +1404,20 @@ impl<'a> Builder<'a> {
                         "middleware",
                         "proxy",
                         "mdx-components",
+                        "instrumentation",
                         "instrumentation-client",
                         "src/middleware",
                         "src/proxy",
                         "src/mdx-components",
+                        "src/instrumentation",
                         "src/instrumentation-client",
                     ]
                     .iter()
-                    .any(|relative| at_package_root(base, relative))
+                    .any(|relative| at_own_package_root(base, package_directory, relative))
                 });
             // next-intl loads its request/routing modules by convention. Gate
             // the protection on the project actually depending on next-intl so
             // an unrelated `i18n/request.ts` stays analyzable.
-            let package_directory = self
-                .resolver
-                .package_for(path)
-                .map_or("", |package| package.directory.as_str());
             if is_next_intl_convention(path)
                 && package_depends_on(self.resolver.root(), package_directory, "next-intl")
             {
@@ -2024,8 +2043,7 @@ impl<'a> Builder<'a> {
             // both the module and everything it exports are entries. Matching
             // on the `.config` suffix covers rollup, drizzle, shrike, and any
             // future tool without maintaining a name list.
-            let config_file =
-                stem.ends_with(".config") || matches!(stem, "tsconfig" | "instrumentation");
+            let config_file = stem.ends_with(".config") || stem == "tsconfig";
             if config_file {
                 for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
                     add(self, key, "config", "config-export", None, "both");
@@ -2236,6 +2254,76 @@ mod tests {
         let entries = entry_symbols(&snapshot);
         assert!(entries.contains(&"proxy.ts#proxy"), "{entries:?}");
         assert!(entries.contains(&"proxy.ts#config"), "{entries:?}");
+    }
+
+    #[test]
+    fn root_next_instrumentation_entries_keep_only_the_api_live() {
+        let snapshot = snapshot(&[
+            (
+                "instrumentation.ts",
+                "import { setup } from \"./lib/setup\";\n\
+                 export async function register() { setup(); }\n\
+                 export function onRequestError() {}\n\
+                 export function unusedInstrumentationHelper() {}\n",
+            ),
+            (
+                "instrumentation-client.ts",
+                "export function onRouterTransitionStart() {}\n\
+                 export const unusedClientHelper = 1;\n",
+            ),
+            ("lib/setup.ts", "export function setup() { return 1; }\n"),
+            (
+                "src/instrumentation.ts",
+                "export function register() {}\n\
+                 export const unusedSrcInstrumentationHelper = 1;\n",
+            ),
+            (
+                "lib/instrumentation.ts",
+                "export function unrelatedInstrumentation() {}\n",
+            ),
+            (
+                "app/page.tsx",
+                "export default function Page() { return null; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for key in [
+            "instrumentation.ts#__module__",
+            "instrumentation.ts#register",
+            "instrumentation.ts#onRequestError",
+            "instrumentation-client.ts#__module__",
+            "instrumentation-client.ts#onRouterTransitionStart",
+            "src/instrumentation.ts#__module__",
+            "src/instrumentation.ts#register",
+            "app/page.tsx#default",
+        ] {
+            assert!(
+                snapshot.is_live(key),
+                "{key} must stay live: {:?}",
+                snapshot.live
+            );
+            assert!(
+                entries.contains(&key),
+                "{key} must be an entry: {entries:?}"
+            );
+        }
+        assert!(
+            snapshot.is_live("lib/setup.ts#setup"),
+            "an import from instrumentation must keep setup live: {:?}",
+            snapshot.live
+        );
+        for key in [
+            "instrumentation.ts#unusedInstrumentationHelper",
+            "instrumentation-client.ts#unusedClientHelper",
+            "src/instrumentation.ts#unusedSrcInstrumentationHelper",
+            "lib/instrumentation.ts#unrelatedInstrumentation",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "{key} is unused and must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
     }
 
     #[test]

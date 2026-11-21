@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "jsx": "preserve",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "target": "es2022"
+  },
+  "include": ["app", "instrumentation.ts", "instrumentation-client.ts", "lib", "src"]
+}
