@@ -272,6 +272,36 @@ fallow. `serverActionPolicy: "protect"` instead seeds every export and the
 module as entries, because Next.js registers actions in the server-reference
 manifest once the module is reached.
 
+The all-action module shape matches fallow 3.45.0. A leading `"use server"`
+module is all-action only when every value export is async-function-shaped:
+async function declarations, async arrow functions, and async function
+expressions count; type exports, ambient declarations, and overload signatures
+are allowed because they have no runtime value; a value re-export or any other
+value export keeps the module out of the shape. A local `export { action }` or
+`export default action` resolves from its top-level declaration.
+
+An inline `"use server"` body directive is an action even when the file has no
+leading directive:
+
+```ts
+export async function save() {
+  "use server";
+  // ...
+}
+
+export const remove = async () => {
+  "use server";
+  // ...
+};
+```
+
+Under `protect`, an inline action is seeded as an entry when the project has
+RSC bundler evidence and the file has no file-level `"use server"` directive.
+Without that evidence the directive has no special meaning, and under the
+default `graph` policy an unreferenced inline action is reported like any other
+export. This matches fallow's exported-only capture and its
+`unused-server-action` reclassification.
+
 - If the client-reference manifest maps the action to a client module, create a
   `certain` edge. This keeps a referenced action live under either policy.
 - If the manifest is unavailable, the default policy relies on static
@@ -405,10 +435,11 @@ The sink predicate matches §7.7. An all-action `"use server"` module stops the
 cone: its exports become action references at the client boundary, so its
 server imports never enter the client bundle. A `"use server"` module with any
 non-action value export (a top-level constant, a default value, a re-export)
-keeps walking, because that value can ship the module's imports. Shrike is
-deliberately conservative for `export const action = async () => {}`: variable
-initializers are not classified as actions yet, so the module stays in the
-cone rather than risking a hidden leak.
+keeps walking, because that value can ship the module's imports. The
+all-action predicate accepts async function declarations, async arrow
+functions, and async function expressions; type exports, ambient declarations,
+and overload signatures are allowed. This matches fallow 3.45.0's
+`is_server_action_module`.
 
 `next/dynamic(() => import("./chart"), { ssr: false })` marks the target as
 intentionally client-only. Shrike skips that dynamic edge when the same

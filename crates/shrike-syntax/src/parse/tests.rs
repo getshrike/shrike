@@ -55,6 +55,72 @@ export function Component() { return null; }
 }
 
 #[test]
+fn classifies_all_action_use_server_modules() {
+    let action = summary(
+        r#"
+"use server";
+export async function declared() { return 1; }
+export const arrow = async () => 2;
+export const expression = async function () { return 3; };
+export type Payload = string;
+"#,
+        "src/actions.ts",
+    );
+    assert!(action.server_action_module);
+    assert!(action.inline_server_action_exports.is_empty());
+
+    for source in [
+        "\"use server\";\nexport function sync() { return 1; }\n",
+        "\"use server\";\nexport const value = 1;\n",
+        "\"use server\";\nexport const mixed = async () => 1, value = 2;\n",
+        "\"use server\";\nexport { helper } from \"./helper\";\n",
+    ] {
+        assert!(
+            !summary(source, "src/actions.ts").server_action_module,
+            "{source}"
+        );
+    }
+
+    let aliased = summary(
+        "\"use server\";\nconst action = async () => 1;\nexport { action };\nexport default action;\n",
+        "src/actions.ts",
+    );
+    assert!(aliased.server_action_module);
+
+    let type_reexport = summary(
+        "\"use server\";\nexport type { Payload } from \"./types\";\n",
+        "src/actions.ts",
+    );
+    assert!(type_reexport.server_action_module);
+}
+
+#[test]
+fn records_inline_server_action_exports() {
+    let parsed = summary(
+        r#"
+export async function declared() { "use server"; return 1; }
+export const arrow = async () => { "use server"; return 2; };
+export const expression = function () { "use server"; return 3; };
+export default async function () { "use server"; return 4; }
+function local() { "use server"; return 5; }
+const notExported = async () => { "use server"; return 6; };
+"#,
+        "src/actions.ts",
+    );
+    assert_eq!(
+        parsed.inline_server_action_exports,
+        vec!["arrow", "declared", "default", "expression"]
+    );
+    assert!(!parsed.server_action_module);
+
+    let default_arrow = summary(
+        "export default async () => { \"use server\"; return 7; };\n",
+        "src/actions.ts",
+    );
+    assert_eq!(default_arrow.inline_server_action_exports, vec!["default"]);
+}
+
+#[test]
 fn records_directive_strings_after_the_prologue() {
     let source = r#"
 import { thing } from "./thing";

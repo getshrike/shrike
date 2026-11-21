@@ -15,6 +15,7 @@ mod html;
 mod mdx;
 mod next_dynamic;
 mod refs;
+mod server_actions;
 mod statements;
 mod type_refs;
 
@@ -88,6 +89,8 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
                 parse_message: Some("unsupported source extension".to_string()),
                 line_count,
                 directives: Vec::new(),
+                server_action_module: false,
+                inline_server_action_exports: Vec::new(),
                 misplaced_directives: Vec::new(),
                 imports: Vec::new(),
                 declarations: Vec::new(),
@@ -123,6 +126,8 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
             parse_message: Some(message.clone()),
             line_count,
             directives: Vec::new(),
+            server_action_module: false,
+            inline_server_action_exports: Vec::new(),
             misplaced_directives: Vec::new(),
             imports: Vec::new(),
             declarations: Vec::new(),
@@ -156,6 +161,8 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
         parse_message: None,
         line_count,
         directives,
+        server_action_module: false,
+        inline_server_action_exports: Vec::new(),
         misplaced_directives: Vec::new(),
         imports: Vec::new(),
         declarations: Vec::new(),
@@ -176,6 +183,8 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
     for statement in &program.body {
         statements::extract_statement(statement, source, &line_index, &mut summary);
     }
+    summary.server_action_module = server_actions::is_server_action_module(&program);
+    summary.inline_server_action_exports = server_actions::inline_server_action_exports(&program);
     summary.client_only_dynamic_specifiers =
         next_dynamic::client_only_dynamic_specifiers(&program, &summary.imports);
     next_dynamic::assign_dynamic_spans(&program, source, &line_index, &mut summary);
