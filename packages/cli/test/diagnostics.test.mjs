@@ -68,14 +68,15 @@ test("invalid client exports are actionable boundary diagnostics", () => {
   const summary = summarizeDiagnostics([
     {
       code: "invalid_client_export",
-      severity: "warning",
-      message: '`metadata` is a Next.js server-only export and cannot be exported from a "use client" module',
-      file: "app/client.tsx",
+      severity: "error",
+      message: '`metadata` cannot be exported from a `"use client"` Next.js route; Next.js resolves it on the server and fails the build',
+      file: "app/page.tsx",
     },
   ]);
   assert.equal(summary.actionable, 1);
   assert.equal(summary.groups[0].category, "boundary");
   assert.equal(summary.groups[0].actionable, true);
+  assert.equal(summary.bySeverity.error, 1);
 });
 
 test("invalid server exports are actionable boundary diagnostics", () => {

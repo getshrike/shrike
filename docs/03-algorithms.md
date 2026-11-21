@@ -350,19 +350,22 @@ analyzable.
   arrow, or default export is also an action: under `protect`, with RSC bundler
   evidence and no file-level directive, the export is seeded as an entry;
 - `"use client"` module exports (client boundary);
-- a `"use client"` module that exports a Next.js server-only, route-config, or
-  route-handler name produces an advisory `invalid_client_export` warning, not
-  a finding. The names are `metadata`, `generateMetadata`, `viewport`,
-  `generateViewport`, `generateStaticParams`, `dynamic`, `dynamicParams`,
-  `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, `maxDuration`,
-  `getServerSideProps`, `getStaticProps`, `getStaticPaths`, `GET`, `POST`,
-  `PUT`, `PATCH`, `DELETE`, `HEAD`, and `OPTIONS`. The rule is gated on the
-  project declaring `next` in the root or a workspace manifest, because a
-  shared client module is compiled in the consuming Next app's context. A
-  direct export is anchored on its declaration; a local `export { name }` is
-  anchored on its specifier and reported once. Default, type-only, and
-  re-export forms are excluded. The list matches fallow 3.45.0's
-  `ILLEGAL_CLIENT_EXPORTS`; knip 5.88.1 does not report the condition;
+- a `"use client"` page, layout, or route handler that exports a Next.js
+  server-only API produces an `invalid_client_export` error, not a finding.
+  Pages and layouts reject `metadata`, `generateMetadata`, `viewport`,
+  `generateViewport`, and `revalidate`; route handlers reject the first three
+  plus `revalidate` but ignore `viewport` and `generateViewport`. The rule is
+  gated per package on `next`, because an app-shaped directory in a package
+  that does not declare Next is not a Next app. A direct export is anchored on
+  its declaration; a local `export { name }` is anchored on its specifier and
+  reported once. Explicit re-exports and `export * as name` are included,
+  including type-only specifiers, because Next.js flags the exported name.
+  Local `interface` and `type` declarations are erased and are not reported.
+  `template`, `not-found`, `error`, and `loading` files and non-route client
+  modules are not reported. `dynamic`, `dynamicParams`, `fetchCache`, `runtime`,
+  `preferredRegion`, `maxDuration`, and the HTTP method handlers build
+  successfully in Next 16.4.6 even though fallow 3.45.0 lists them. Knip 5.88.1
+  does not report the condition;
 - a leading `"use server"` module that exports a value which is definitely not
   callable produces an advisory `invalid_server_export` warning, not a finding.
   Next.js's flight loader throws when an action export fails

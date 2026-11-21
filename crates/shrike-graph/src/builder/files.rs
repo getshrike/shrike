@@ -4,52 +4,42 @@ use shrike_core::glob::glob_match;
 use shrike_core::ids::{module_symbol_key, symbol_key};
 use shrike_core::{Diagnostic, Span};
 use shrike_syntax::{
-    BindingKind, DynamicKind, DynamicSpecifier, ExportedConstValue, FileSummary, ImportRecord,
-    ParseStatus,
+    BindingKind, DeclarationKind, DynamicKind, DynamicSpecifier, ExportedConstValue, FileSummary,
+    ImportRecord, ParseStatus,
 };
 
 use super::Builder;
 use crate::types::{FileRecord, SymbolRecord};
 use crate::util::{declaration_kind, edge};
 
-/// Next.js server-only, route-config, and route-handler exports. Next.js
-/// rejects a `"use client"` module that exports any of these names at build
-/// time.
+/// Server-only exports that Next.js rejects from a `"use client"` page or
+/// layout at build time.
 ///
-/// This is fallow 3.45.0's `ILLEGAL_CLIENT_EXPORTS` set
-/// (`crates/core/src/analyze/invalid_client_exports.rs`). Knip 5.88.1 does not
-/// report the condition. Re-exports are deliberately not included: fallow
-/// leaves `export { metadata } from "./server"` alone, and the re-exported
-/// binding belongs to another module.
+/// Verified against Next.js 16.4.6 with real `next build` probes. A client
+/// page or layout fails for all five names. A client route handler fails for
+/// `metadata`, `generateMetadata`, and `revalidate`, but ignores `viewport`
+/// and `generateViewport`, so [`NEXT_ROUTE_HANDLER_SERVER_ONLY_EXPORTS`] is the
+/// narrower set used for `route` files.
+///
+/// Fallow 3.45.0's `ILLEGAL_CLIENT_EXPORTS` also lists `dynamic`,
+/// `dynamicParams`, `fetchCache`, `runtime`, `preferredRegion`, `maxDuration`,
+/// the HTTP method handlers, and the legacy Pages Router data functions. Those
+/// builds succeed in Next 16.4.6, so reporting them would be a false positive.
+/// Next also ignores these exports in `template`, `not-found`, `error`, and
+/// `loading` files, and in client modules that are not route files.
 const NEXT_SERVER_ONLY_EXPORTS: &[&str] = &[
-    // Metadata APIs.
     "metadata",
     "generateMetadata",
     "viewport",
     "generateViewport",
-    // Route-segment static params.
-    "generateStaticParams",
-    // Route-segment config options.
-    "dynamic",
-    "dynamicParams",
     "revalidate",
-    "fetchCache",
-    "runtime",
-    "preferredRegion",
-    "maxDuration",
-    // Legacy Pages Router data functions.
-    "getServerSideProps",
-    "getStaticProps",
-    "getStaticPaths",
-    // App Router route HTTP method handlers.
-    "GET",
-    "POST",
-    "PUT",
-    "PATCH",
-    "DELETE",
-    "HEAD",
-    "OPTIONS",
 ];
+
+/// Server-only exports Next.js rejects from a `"use client"` route handler.
+/// `viewport` and `generateViewport` are not part of a route handler's config
+/// surface and a client route handler exporting them builds successfully.
+const NEXT_ROUTE_HANDLER_SERVER_ONLY_EXPORTS: &[&str] =
+    &["metadata", "generateMetadata", "revalidate"];
 
 /// Bundlers that honor `"use client"` / `"use server"` directives. This is
 /// fallow 3.45.0's `RSC_BUNDLER_DEPS` predicate: Next.js plus the
@@ -431,65 +421,106 @@ impl<'a> Builder<'a> {
         self.diagnostics = diagnostics;
     }
 
-    /// Warn when a `"use client"` module exports a Next.js server-only,
-    /// route-config, or route-handler name. The rule is project-wide: fallow
-    /// collects the union of the root and workspace manifests, because a shared
-    /// `"use client"` module is compiled in the consuming Next app's context.
-    /// The root manifest is checked directly because the resolver only records
-    /// packages that have a `name`.
+    /// Report `"use client"` route files that export a Next.js server-only API.
     ///
-    /// `directly_exported` distinguishes `export const metadata` from a local
-    /// alias that renames the declaration away
-    /// (`const metadata; export { metadata as config }`).
+    /// Verified against Next.js 16.4.6 with real `next build` probes: the app
+    /// loader rejects `metadata`, `generateMetadata`, `viewport`,
+    /// `generateViewport`, and `revalidate` from a client page or layout, and
+    /// `metadata`, `generateMetadata`, and `revalidate` from a client route
+    /// handler. The same names are ignored in `template`, `not-found`, `error`,
+    /// and `loading` files and in client modules that are not route files, so
+    /// those are not reported. `dynamic`, `dynamicParams`, `fetchCache`,
+    /// `runtime`, `preferredRegion`, `maxDuration`, and the HTTP method handlers
+    /// build successfully even though fallow 3.45.0 lists them.
+    ///
+    /// The rule is per package: only an app route owned by a package that
+    /// declares `next` is a Next.js route. `directly_exported` distinguishes
+    /// `export const metadata` from a local alias that renames the declaration
+    /// away (`const metadata; export { metadata as config }`). Explicit export
+    /// specifiers are included even when type-only because Next.js flags the
+    /// exported name; local `interface` and `type` declarations are erased and
+    /// are not reported.
     pub(super) fn detect_invalid_client_exports(&mut self) {
-        let next_project = super::entries::package_declares_next(self.resolver.root(), "")
-            == Some(true)
-            || self.resolver.packages().iter().any(|package| {
-                super::entries::package_declares_next(self.resolver.root(), &package.directory)
-                    == Some(true)
-            });
-        if !next_project {
-            return;
-        }
         let summaries = self.summaries.clone();
+        let page_extensions = self.configured_page_extensions();
         for summary in &summaries {
             if summary.parse_status != ParseStatus::Ok || !summary.has_directive("use client") {
                 continue;
             }
+            let package_directory = self
+                .resolver
+                .package_for(&summary.path)
+                .map_or_else(String::new, |package| package.directory.clone());
+            if super::entries::package_declares_next(self.resolver.root(), &package_directory)
+                != Some(true)
+            {
+                continue;
+            }
+            let Some(route) = classify_app_route(
+                &summary.path,
+                &package_directory,
+                page_extensions.get(&package_directory),
+            ) else {
+                continue;
+            };
+            let names: &[&str] = match route.stem {
+                "page" | "layout" => NEXT_SERVER_ONLY_EXPORTS,
+                "route" => NEXT_ROUTE_HANDLER_SERVER_ONLY_EXPORTS,
+                _ => continue,
+            };
             let mut invalid: Vec<(&str, Span)> = Vec::new();
             for declaration in &summary.declarations {
                 if !declaration.directly_exported || declaration.default || declaration.type_only {
                     continue;
                 }
+                if matches!(
+                    declaration.kind,
+                    DeclarationKind::Type | DeclarationKind::Interface
+                ) {
+                    continue;
+                }
                 for name in &declaration.names {
-                    if NEXT_SERVER_ONLY_EXPORTS.contains(&name.as_str()) {
+                    if names.contains(&name.as_str()) {
                         invalid.push((name.as_str(), declaration.span));
                     }
                 }
             }
             for local_export in &summary.local_exports {
-                if local_export.type_only {
-                    continue;
-                }
                 let name = local_export.exported.as_str();
-                if !NEXT_SERVER_ONLY_EXPORTS.contains(&name) {
+                if !names.contains(&name) {
                     continue;
                 }
                 // One finding per exported name. Prefer the export specifier's
                 // span so `const metadata; export { metadata }` points at the
-                // line a developer must change, matching fallow.
+                // line a developer must change.
                 if let Some(existing) = invalid.iter_mut().find(|(existing, _)| *existing == name) {
                     existing.1 = local_export.span;
                 } else {
                     invalid.push((name, local_export.span));
                 }
             }
+            for re_export in &summary.re_exports {
+                let name = re_export.exported.as_str();
+                if !names.contains(&name) || invalid.iter().any(|(existing, _)| *existing == name) {
+                    continue;
+                }
+                invalid.push((name, re_export.span));
+            }
+            for export_all in &summary.export_alls {
+                let Some(name) = export_all.exported.as_deref() else {
+                    continue;
+                };
+                if !names.contains(&name) || invalid.iter().any(|(existing, _)| *existing == name) {
+                    continue;
+                }
+                invalid.push((name, export_all.span));
+            }
             for (name, span) in invalid {
                 self.diagnostics.push(
-                    Diagnostic::warning(
+                    Diagnostic::error(
                         "invalid_client_export",
                         format!(
-                            "`{name}` is a Next.js server-only export and cannot be exported from a \"use client\" module"
+                            "`{name}` cannot be exported from a `\"use client\"` Next.js route; Next.js resolves it on the server and fails the build"
                         ),
                     )
                     .in_file(&summary.path)

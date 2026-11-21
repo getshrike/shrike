@@ -328,26 +328,33 @@ useful and cheap to detect from the same snapshot. It does not block the run.
 
 ### 7.4 Invalid client exports
 
-Next.js rejects a `"use client"` module that exports a server-only,
-route-config, or route-handler name. Shrike reports an advisory
-`invalid_client_export` warning for the 22 names fallow 3.45.0 lists:
-`metadata`, `generateMetadata`, `viewport`, `generateViewport`,
-`generateStaticParams`, `dynamic`, `dynamicParams`, `revalidate`,
-`fetchCache`, `runtime`, `preferredRegion`, `maxDuration`,
-`getServerSideProps`, `getStaticProps`, `getStaticPaths`, and the route
-handlers `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`.
+Next.js rejects a `"use client"` route file that exports a server-only API.
+Shrike reports an `invalid_client_export` error for the combinations Next.js
+16.4.6 fails on:
 
-The rule is project-wide: it fires when the root manifest or any workspace
-package declares `next`. A shared `"use client"` module is compiled in the
-consuming Next app's context, so its own package need not declare Next. A
-tree without any Next dependency produces no warnings.
+- a page or layout exporting `metadata`, `generateMetadata`, `viewport`,
+  `generateViewport`, or `revalidate`;
+- a route handler exporting `metadata`, `generateMetadata`, or `revalidate`.
+
+A route handler that exports `viewport` or `generateViewport` builds
+successfully, so those names are not reported for `route` files. The same
+names are ignored in `template`, `not-found`, `error`, and `loading` files and
+in client modules that are not route files. `dynamic`, `dynamicParams`,
+`fetchCache`, `runtime`, `preferredRegion`, `maxDuration`, and the HTTP method
+handlers also build successfully; fallow 3.45.0's broader
+`ILLEGAL_CLIENT_EXPORTS` list would be a false positive for them.
+
+The rule is per package: only an app route owned by a package that declares
+`next` is a Next.js route. A tree without a Next dependency produces no
+diagnostics.
 
 Direct exports are anchored on the declaration. A local
 `const metadata; export { metadata }` is anchored on the export specifier and
-reported once, so the fix points at the line a developer must change. Default
-exports, `export type`, and `export { metadata } from "./server"` re-exports
-are not flagged. The warning is advisory: it never removes a candidate or
-suppresses an entry.
+reported once, so the fix points at the line a developer must change. Explicit
+re-exports and `export * as metadata` are reported, including type-only
+specifiers, because Next.js flags the exported name; local `interface` and
+`type` declarations are erased and are not. Default exports are never
+reported. The error never removes a candidate or suppresses an entry.
 
 ### 7.5 Invalid server exports
 
