@@ -1,0 +1,5 @@
+{
+  "name": "corpus-local-export-alias",
+  "private": true,
+  "type": "module"
+}

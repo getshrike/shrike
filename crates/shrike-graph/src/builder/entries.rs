@@ -3913,6 +3913,96 @@ export default config;
     }
 
     #[test]
+    fn local_exports_of_imported_bindings_are_alias_candidates() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"local-alias","private":true,"dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/page.tsx",
+                "import { used } from \"../src/impl\";\n\nexport default function Page() {\n  return used;\n}\n",
+            ),
+            (
+                "src/barrel.ts",
+                "import { used as localUsed, dead } from \"./impl\";\nexport { localUsed as used, dead };\n",
+            ),
+            (
+                "src/impl.ts",
+                "export const used = 1;\nexport const dead = 2;\n",
+            ),
+        ]);
+        assert!(
+            snapshot.is_live("src/impl.ts#used"),
+            "directly imported declaration must be live: {:?}",
+            snapshot.candidates
+        );
+        let alias = snapshot
+            .symbols
+            .iter()
+            .find(|symbol| symbol.key == "src/barrel.ts#used")
+            .expect("local export of an import must create an alias symbol");
+        assert_eq!(alias.kind, "re-export");
+        assert!(
+            snapshot.is_candidate("src/barrel.ts#used"),
+            "unused local alias with a live target is actionable: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot.is_candidate("src/impl.ts#dead"),
+            "dead declaration must be reported: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            !snapshot.is_candidate("src/barrel.ts#dead"),
+            "a dead target is reported at its declaration, not through the alias: {:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn importing_a_local_export_alias_keeps_the_alias_and_target_live() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"local-alias-live","private":true,"dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/page.tsx",
+                "import { used } from \"../src/barrel\";\n\nexport default function Page() {\n  return used;\n}\n",
+            ),
+            (
+                "src/barrel.ts",
+                "import { used } from \"./impl\";\nexport { used };\n",
+            ),
+            (
+                "src/impl.ts",
+                "export const used = 1;\nexport const dead = 2;\n",
+            ),
+        ]);
+        assert!(
+            snapshot.is_live("src/barrel.ts#used"),
+            "importing the alias must keep it live: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            !snapshot.is_candidate("src/barrel.ts#used"),
+            "a live alias is not a candidate: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot.is_live("src/impl.ts#used"),
+            "the alias chain must keep the target live: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot.is_candidate("src/impl.ts#dead"),
+            "dead declaration must be reported: {:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
     fn nuxt_app_dir_and_expo_src_app_are_entries() {
         let snapshot = snapshot(&[
             ("nuxt.config.ts", "export default defineNuxtConfig({});\n"),
