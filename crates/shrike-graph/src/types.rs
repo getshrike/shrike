@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 use shrike_core::{Diagnostic, Span};
 use shrike_syntax::ParseStatus;
@@ -113,6 +115,12 @@ pub struct GraphSnapshot {
     pub sccs: Vec<Vec<String>>,
     pub live: Vec<String>,
     pub candidates: Vec<String>,
+    /// Files that no entry and no other module reach: no entry symbol, no
+    /// incoming edge from another file, and a dead module symbol. A dead
+    /// declaration in an otherwise imported file is not a dead file, and a
+    /// file imported only by dead code is left to the cascade on a later pass.
+    #[serde(default)]
+    pub unused_files: Vec<String>,
     /// Exported symbols that are live only because their own module references
     /// them. They are not deletion candidates; this list exists for parity with
     /// tools that report unused exports.
@@ -140,4 +148,39 @@ impl GraphSnapshot {
     pub fn is_candidate(&self, key: &str) -> bool {
         self.candidates.iter().any(|value| value == key)
     }
+}
+
+/// Files no entry and no other module reaches. A file is unused only when it
+/// parsed, is neither public API nor generated, has no entry symbol, has no
+/// incoming edge from another file, and its module symbol is not live. This is
+/// stricter than "every declaration is a candidate": an imported barrel is
+/// used even when its exports are dead, and a file imported only by dead code
+/// waits for the deletion cascade.
+#[must_use]
+pub fn unused_files(snapshot: &GraphSnapshot) -> Vec<String> {
+    fn file_of(key: &str) -> &str {
+        key.split_once('#').map_or(key, |(file, _)| file)
+    }
+    let entry_files: BTreeSet<&str> = snapshot
+        .entries
+        .iter()
+        .map(|entry| file_of(entry.symbol.as_str()))
+        .collect();
+    let incoming_files: BTreeSet<&str> = snapshot
+        .edges
+        .iter()
+        .filter(|edge| file_of(&edge.source) != file_of(&edge.target))
+        .map(|edge| file_of(&edge.target))
+        .collect();
+    let live: BTreeSet<&str> = snapshot.live.iter().map(String::as_str).collect();
+    snapshot
+        .files
+        .iter()
+        .filter(|file| file.parse_status == ParseStatus::Ok)
+        .filter(|file| !file.public_api && !file.generated)
+        .filter(|file| !entry_files.contains(file.path.as_str()))
+        .filter(|file| !incoming_files.contains(file.path.as_str()))
+        .filter(|file| !live.contains(format!("{}#__module__", file.path).as_str()))
+        .map(|file| file.path.clone())
+        .collect()
 }

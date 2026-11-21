@@ -14,7 +14,8 @@ pub mod ids;
 pub mod span;
 
 pub use config::{
-    BatchPolicy, ClientBoundaryPolicy, EngineConfig, EntryPolicy, normalize_relative,
+    BatchPolicy, ClientBoundaryPolicy, EngineConfig, EntryPolicy, ServerActionPolicy,
+    normalize_relative,
 };
 pub use diagnostic::{Diagnostic, Severity};
 pub use error::{ShrikeError, ShrikeResult};

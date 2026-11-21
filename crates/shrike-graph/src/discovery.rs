@@ -132,6 +132,13 @@ pub fn discover(root: &Path, config: &EngineConfig) -> Discovery {
         if relative == "cosmos.config.json" || relative.ends_with("/cosmos.config.json") {
             cache_inputs.push(relative.clone());
         }
+        // Package manifests decide framework gates (Next.js, `@next/mdx`,
+        // Storybook, Gatsby, Metro, ...) and workspace boundaries. Without
+        // hashing them a dependency edit could reuse a snapshot from before the
+        // gate changed, so every manifest is a cache input.
+        if relative == "package.json" || relative.ends_with("/package.json") {
+            cache_inputs.push(relative.clone());
+        }
         let markdown_file = relative.ends_with(".md") || relative.ends_with(".mdx");
         if markdown_file {
             markdown.push(relative.clone());
@@ -481,6 +488,30 @@ mod tests {
             discovery.cache_inputs,
             vec!["apps/web/cosmos.config.json", "cosmos.config.json"],
             "config content must participate in the snapshot cache key"
+        );
+    }
+
+    #[test]
+    fn package_manifests_are_cache_inputs_not_source_files() {
+        let directory = tempdir().expect("tempdir");
+        let root = directory.path();
+        write(root, "package.json", r#"{"name":"root"}"#);
+        write(
+            root,
+            "apps/web/package.json",
+            r#"{"name":"web","dependencies":{"next":"^16.0.0","@next/mdx":"^16.0.0"}}"#,
+        );
+        write(root, "apps/web/app/page.tsx", "export default 1;\n");
+        let discovery = discover(root, &EngineConfig::default());
+        assert_eq!(
+            discovery.files,
+            vec!["apps/web/app/page.tsx"],
+            "manifests are not parsed as source modules"
+        );
+        assert_eq!(
+            discovery.cache_inputs,
+            vec!["apps/web/package.json", "package.json"],
+            "dependency edits must invalidate the entry-classification cache"
         );
     }
 }

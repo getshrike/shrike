@@ -149,39 +149,20 @@ impl<'a> Builder<'a> {
         }
         let (live, witnesses, mut proofs) = self.reachability();
         let internal_only = self.internal_only(&live);
-        // A barrel alias is actionable only when its chain reaches a live
-        // symbol. Report every dead link in that chain: removing an inner
-        // alias would otherwise leave an outer alias dangling. When the chain
-        // ends at a dead declaration, report the declaration instead so the
-        // alias does not duplicate it.
-        let mut re_export_sources: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-        for edge in &self.edges {
-            if edge.kind == "re-export" {
-                re_export_sources
-                    .entry(edge.target.as_str())
-                    .or_default()
-                    .push(edge.source.as_str());
-            }
-        }
-        let mut actionable_re_exports: BTreeSet<&str> = BTreeSet::new();
-        let mut queue: Vec<&str> = live.iter().map(String::as_str).collect();
-        while let Some(target) = queue.pop() {
-            if let Some(sources) = re_export_sources.get(target) {
-                for source in sources {
-                    if actionable_re_exports.insert(source) {
-                        queue.push(source);
-                    }
-                }
-            }
-        }
+        // Every dead named re-export is its own deletion candidate, even when
+        // its target declaration is dead too. The declaration alone is not a
+        // complete patch: the barrel line still names the removed symbol, so
+        // deleting only the target leaves a dangling re-export. Fallow and Knip
+        // report these aliases; Shrike reports both links so the batch removes
+        // the declaration and every barrel specifier that exposed it.
+        //
+        // `export *` does not create per-name alias symbols, so this only
+        // covers named re-exports whose specifier span the patch can remove.
         let candidates: Vec<String> = self
             .symbols
             .iter()
             .filter(|symbol| !live.contains(&symbol.key))
             .filter(|symbol| symbol.kind != "module")
-            .filter(|symbol| {
-                symbol.kind != "re-export" || actionable_re_exports.contains(symbol.key.as_str())
-            })
             .filter(|symbol| !symbol.entry && !symbol.public_api && !symbol.generated)
             .filter(|symbol| !self.config.include_generated || !symbol.generated)
             .filter(|symbol| self.file_parse_ok.contains(&symbol.file))
@@ -207,6 +188,7 @@ impl<'a> Builder<'a> {
             sccs,
             live: live.into_iter().collect(),
             candidates: candidates.clone(),
+            unused_files: Vec::new(),
             internal_only,
             witnesses: witnesses
                 .into_iter()
@@ -217,6 +199,7 @@ impl<'a> Builder<'a> {
             diagnostics,
             graph_hash: String::new(),
         };
+        snapshot.unused_files = crate::types::unused_files(&snapshot);
         snapshot.graph_hash = graph_hash(&snapshot);
         snapshot
     }

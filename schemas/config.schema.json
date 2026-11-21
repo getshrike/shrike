@@ -74,7 +74,13 @@
       "type": "string",
       "enum": ["graph", "protect"],
       "default": "graph",
-      "description": "How `\"use client\"` files seed liveness. graph (default) lets normal import reachability decide; protect also seeds every export in a client-boundary file as an entry. Every `\"use server\"` export is always an entry because Next.js registers actions independently of imports. Default: \"graph\"."
+      "description": "How `\"use client\"` files seed liveness. graph (default) lets normal import reachability decide; protect also seeds every export in a client-boundary file as an entry. Default: \"graph\"."
+    },
+    "serverActionPolicy": {
+      "type": "string",
+      "enum": ["graph", "protect"],
+      "default": "graph",
+      "description": "How `\"use server\"` modules seed liveness. graph (default) treats actions as ordinary exports and reports actions with no project reference; protect seeds every export in a server-action module as an entry. Default: \"graph\"."
     },
     "ignoreDependencies": {
       "type": "array",

@@ -64,6 +64,7 @@ fn snapshot() -> GraphSnapshot {
         sccs: Vec::new(),
         live: Vec::new(),
         candidates: Vec::new(),
+        unused_files: Vec::new(),
         internal_only: Vec::new(),
         witnesses: Vec::new(),
         proofs: Vec::new(),

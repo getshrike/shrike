@@ -61,6 +61,22 @@ for (const entry of entries) {
       failures.push(`case ${entry.id}: ${symbol} is both must-report and internal-only`);
     }
   }
+  for (const field of ["unusedFiles", "usedFiles"]) {
+    if (entry[field] !== undefined && !Array.isArray(entry[field])) {
+      failures.push(`case ${entry.id}: ${field} must be an array`);
+      continue;
+    }
+    for (const file of entry[field] ?? []) {
+      if (!existsSync(join(directory, String(file)))) {
+        failures.push(`case ${entry.id}: ${field} file missing: ${file}`);
+      }
+    }
+  }
+  for (const file of entry.unusedFiles ?? []) {
+    if ((entry.usedFiles ?? []).includes(file)) {
+      failures.push(`case ${entry.id}: ${file} is both unused and used`);
+    }
+  }
   if (readdirSync(directory).length === 0) failures.push(`case ${entry.id} is empty`);
 }
 

@@ -139,6 +139,7 @@ pub fn augment_snapshot(
     augmented.edges = edges;
     augmented.live = live.into_iter().collect();
     augmented.candidates = candidates;
+    augmented.unused_files = shrike_graph::unused_files(&augmented);
     augmented.witnesses = witnesses;
     augmented.proofs = proofs;
     shrike_graph::rehash_snapshot(&mut augmented);

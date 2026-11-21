@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 300,
+  "count": 304,
   "entries": [
     {
       "id": "page-entry-1",
@@ -717,6 +717,37 @@
           "symbol": "src/helper.ts#helper8",
           "reason": "test files are entries under the local policy"
         }
+      ]
+    },
+    {
+      "id": "test-entry-unused-export",
+      "category": "test-entry",
+      "files": [
+        "__mocks__",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/helper.ts#usedHelper",
+          "reason": "a helper imported by a test stays live"
+        },
+        {
+          "symbol": "src/Button.stories.tsx#default",
+          "reason": "Storybook renders every story export"
+        },
+        {
+          "symbol": "src/Button.stories.tsx#Primary",
+          "reason": "Storybook renders every story export"
+        },
+        {
+          "symbol": "__mocks__/client.ts#mockValue",
+          "reason": "Jest loads __mocks__ by convention"
+        }
+      ],
+      "mustReport": [
+        "src/helper.ts#unusedHelper"
       ]
     },
     {
@@ -1875,14 +1906,11 @@
       "protected": [
         {
           "symbol": "src/actions.ts#importedAction",
-          "reason": "an imported server action is an entry"
-        },
-        {
-          "symbol": "src/actions.ts#unimportedAction",
-          "reason": "every export of a use server module is a callable action"
+          "reason": "an imported server action stays live through its import"
         }
       ],
       "mustReport": [
+        "src/actions.ts#unimportedAction",
         "src/helper.ts#unusedHelper"
       ]
     },
@@ -4120,6 +4148,28 @@
       ]
     },
     {
+      "id": "mdx-components-gate",
+      "category": "mdx",
+      "files": [
+        "app",
+        "components",
+        "mdx-components.tsx",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/widget.tsx#Widget",
+          "reason": "rendered by the Next page"
+        }
+      ],
+      "mustReport": [
+        "mdx-components.tsx#useMDXComponents",
+        "mdx-components.tsx#unusedMdxHelper",
+        "components/widget.tsx#UnusedWidget"
+      ]
+    },
+    {
       "id": "next-image-two-sided",
       "category": "next-image-metadata",
       "files": [
@@ -4517,6 +4567,28 @@
       ],
       "mustReport": [
         "app/components/dead.tsx#deadThing"
+      ]
+    },
+    {
+      "id": "remix-custom-server",
+      "category": "remix",
+      "files": [
+        "app",
+        "package.json",
+        "server-lib.ts",
+        "server.ts",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "server-lib.ts#startServer",
+          "reason": "called at the top level of the executed Remix custom-server module"
+        }
+      ],
+      "mustReport": [
+        "server.ts#createServer",
+        "server.ts#unusedServerHelper",
+        "app/root.tsx#unusedRootHelper"
       ]
     },
     {
@@ -5023,6 +5095,50 @@
       ]
     },
     {
+      "id": "next-dotted-page-extensions",
+      "category": "next-pages",
+      "files": [
+        "app",
+        "components",
+        "next.config.ts",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/widget.tsx#Widget",
+          "reason": "rendered by the page.page.tsx route selected by pageExtensions"
+        }
+      ],
+      "mustReport": [
+        "app/page.page.tsx#unusedPageHelper",
+        "app/layout.page.tsx#unusedLayoutHelper",
+        "app/route.page.tsx#unusedRouteHelper",
+        "components/widget.tsx#unusedWidgetHelper"
+      ]
+    },
+    {
+      "id": "next-custom-server",
+      "category": "next-config",
+      "files": [
+        "app",
+        "package.json",
+        "server-lib.js",
+        "server.js",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "server-lib.js#boot",
+          "reason": "called at the top level of the executed Next custom-server module"
+        }
+      ],
+      "mustReport": [
+        "server.js#start",
+        "server.js#unusedServerHelper"
+      ]
+    },
+    {
       "id": "webpack-entries",
       "category": "webpack",
       "files": [
@@ -5119,19 +5235,13 @@
         {
           "symbol": "src/impl.ts#used",
           "reason": "the page imports the declaration directly"
-        },
-        {
-          "symbol": "src/barrel.ts#dead",
-          "reason": "a dead alias whose target is dead is reported at the declaration, not duplicated"
-        },
-        {
-          "symbol": "src/outer.ts#dead",
-          "reason": "a dead alias whose target is dead is reported at the declaration, not duplicated"
         }
       ],
       "mustReport": [
         "src/barrel.ts#used",
         "src/outer.ts#used",
+        "src/barrel.ts#dead",
+        "src/outer.ts#dead",
         "src/impl.ts#dead"
       ]
     },
@@ -5148,14 +5258,11 @@
         {
           "symbol": "src/impl.ts#used",
           "reason": "the page imports the declaration directly"
-        },
-        {
-          "symbol": "src/barrel.ts#dead",
-          "reason": "a dead alias whose target is dead is reported at the declaration, not duplicated"
         }
       ],
       "mustReport": [
         "src/barrel.ts#used",
+        "src/barrel.ts#dead",
         "src/impl.ts#dead"
       ]
     },
@@ -5657,6 +5764,41 @@
         "packages/app/src/layout.tsx#unusedLayoutHelper",
         "packages/pages/src/settings.tsx#default",
         "packages/pages/src/settings.tsx#unusedSettingsHelper"
+      ]
+    },
+    {
+      "id": "unused-files",
+      "category": "unused-file",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "app/page.tsx#default",
+          "reason": "the route default is an entry"
+        },
+        {
+          "symbol": "src/used.ts#used",
+          "reason": "the page imports and renders the helper"
+        }
+      ],
+      "mustReport": [
+        "src/dead-importer.ts#deadImporter",
+        "src/dead.ts#dead",
+        "src/transitively-dead.ts#transitivelyDead"
+      ],
+      "unusedFiles": [
+        "src/dead-importer.ts",
+        "src/dead.ts",
+        "src/effects.ts"
+      ],
+      "usedFiles": [
+        "app/page.tsx",
+        "src/transitively-dead.ts",
+        "src/used.ts"
       ]
     }
   ]

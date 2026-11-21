@@ -112,6 +112,12 @@
       "items": { "$ref": "#/$defs/symbolKey" },
       "uniqueItems": true
     },
+    "unusedFiles": {
+      "type": "array",
+      "description": "Files no entry and no other module reaches: no entry symbol in the file, no incoming edge from another file, and no live module symbol. A dead declaration in an imported file is not a dead file, and a file imported only by dead code is left to the deletion cascade.",
+      "items": { "$ref": "#/$defs/filePath" },
+      "uniqueItems": true
+    },
     "internalOnly": {
       "type": "array",
       "description": "Exported symbols that are live only because their own file references them. Not deletion candidates; reported for parity with unused-export tools.",

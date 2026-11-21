@@ -10,6 +10,7 @@ export interface Snapshot {
   proofs?: { symbol: string; reason: string; incoming: string[]; outgoing: string[] }[];
   diagnostics?: { code: string; severity: string; message: string; file?: string }[];
   candidates: string[];
+  unusedFiles?: string[];
   live?: string[];
   internalOnly?: string[];
   graphHash: string;
