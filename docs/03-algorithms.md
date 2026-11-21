@@ -485,6 +485,18 @@ configuration in Node.
   `src/templates/` in that package is an entry instead. Every module under the
   package's `src/pages/` directory is also a page entry, with the same API
   surface. A nested `src/gatsby-node.ts` is not a Gatsby node file;
+- Cypress specs and support files. When the owning package depends on
+  `cypress`, `cypress.config.*` is read statically. E2E specs come from
+  `e2e.specPattern` (default `cypress/e2e/**/*.cy.{js,jsx,ts,tsx}`) minus
+  `e2e.excludeSpecPattern`, and the support module comes from
+  `e2e.supportFile` (default `cypress/support/e2e.{js,jsx,ts,tsx}`);
+  `supportFile: false` disables it. Component patterns apply only when the
+  config declares a `component` object, because the component default
+  `**/*.cy.*` would otherwise protect unrelated files in an e2e-only project.
+  Patterns are anchored at the config's directory. Only literal strings are
+  trusted; a computed value falls back to Cypress's documented default. Specs
+  and support are module entries: Cypress executes them, while their unimported
+  named exports remain analyzable;
 - `next.config`, `postcss.config`, `tailwind.config`, `eslint.config`,
   `tsconfig`;
 - test runner config.

@@ -8,6 +8,7 @@ use shrike_syntax::{BindingKind, FileSummary, ParseStatus};
 
 use super::Builder;
 use crate::cosmos_config;
+use crate::cypress_config;
 use crate::docusaurus_config;
 use crate::gatsby_config;
 use crate::ladle_config;
@@ -1350,6 +1351,31 @@ impl<'a> Builder<'a> {
                 &source,
             ));
         }
+        // Cypress discovers specs from `specPattern` and loads its support
+        // module before them; neither is imported by application code. Only
+        // read configs in packages that depend on Cypress, and only trust
+        // literal values, so an unrelated `cypress.config.*` cannot protect
+        // dead files.
+        let mut cypress_specs: BTreeSet<String> = BTreeSet::new();
+        let mut cypress_support: BTreeSet<String> = BTreeSet::new();
+        for summary in &summaries {
+            if !cypress_config::is_config_path(&summary.path) {
+                continue;
+            }
+            let package_directory = self
+                .resolver
+                .package_for(&summary.path)
+                .map_or("", |package| package.directory.as_str());
+            if !package_depends_on(self.resolver.root(), package_directory, "cypress") {
+                continue;
+            }
+            let Ok(source) = fs::read_to_string(self.resolver.root().join(&summary.path)) else {
+                continue;
+            };
+            let entries = cypress_config::entries(&analyzed, &summary.path, &source);
+            cypress_specs.extend(entries.specs);
+            cypress_support.extend(entries.support);
+        }
         for summary in &summaries {
             let path = summary.path.as_str();
             let package_directory = self
@@ -2192,18 +2218,42 @@ impl<'a> Builder<'a> {
                     }
                 }
             }
-            let test = path.contains(".test.")
-                || path.contains(".spec.")
-                || path.contains(".test-d.")
-                || path.contains("__tests__/")
-                || path.contains("__typetest__/")
-                || path.contains("__mocks__/")
-                // Node's test runner executes every file under a `test/`
-                // directory. Other runners discover only matching filenames,
-                // so support modules under `tests/` follow the graph like any
-                // other module unless a test or a test config references them.
-                || path.starts_with("test/")
-                || path.contains("/test/");
+            let cypress_spec = cypress_specs.contains(path);
+            let cypress_support_file = cypress_support.contains(path);
+            if self.config.test_entries
+                && self.config.entry_policy != EntryPolicy::Production
+                && (cypress_spec || cypress_support_file)
+            {
+                // Cypress executes the module for its hooks; like other test
+                // runners it does not consume arbitrary named exports.
+                add(
+                    self,
+                    module.clone(),
+                    "cypress",
+                    if cypress_support_file {
+                        "support"
+                    } else {
+                        "spec"
+                    },
+                    None,
+                    "both",
+                );
+            }
+            let test = !cypress_spec
+                && !cypress_support_file
+                && (path.contains(".test.")
+                    || path.contains(".spec.")
+                    || path.contains(".test-d.")
+                    || path.contains("__tests__/")
+                    || path.contains("__typetest__/")
+                    || path.contains("__mocks__/")
+                    // Node's test runner executes every file under a `test/`
+                    // directory. Other runners discover only matching
+                    // filenames, so support modules under `tests/` follow the
+                    // graph like any other module unless a test or a test
+                    // config references them.
+                    || path.starts_with("test/")
+                    || path.contains("/test/"));
             let story = path.contains(".stories.")
                 || path.contains(".story.")
                 || path.starts_with(".storybook/")
@@ -2504,6 +2554,118 @@ mod tests {
             "the dead support module is an unused file: {:?}",
             snapshot.unused_files
         );
+    }
+
+    #[test]
+    fn cypress_specs_and_support_are_entries_only_with_the_dependency() {
+        let files = [
+            (
+                "package.json",
+                r#"{"name":"web","private":true,"dependencies":{"next":"^16.0.0","react":"^19.1.0"},"devDependencies":{"cypress":"^15.0.0"}}"#,
+            ),
+            (
+                "cypress.config.ts",
+                "export default { e2e: { specPattern: ['cypress/e2e/**/*.cy.ts', 'cypress/e2e/**/*.spec.ts'] } };\n",
+            ),
+            (
+                "cypress/e2e/home.cy.ts",
+                "import { specHelper } from '../../lib/spec-helper';\nspecHelper();\n",
+            ),
+            (
+                "cypress/e2e/checkout.spec.ts",
+                "import { specHelper } from '../../lib/spec-helper';\nspecHelper();\n",
+            ),
+            (
+                "cypress/support/e2e.ts",
+                "import { commandHelper } from '../../lib/command-helper';\ncommandHelper();\n",
+            ),
+            (
+                "lib/spec-helper.ts",
+                "export const specHelper = () => 1;\nexport const unusedSpecHelper = 2;\n",
+            ),
+            (
+                "lib/command-helper.ts",
+                "export const commandHelper = () => 1;\nexport const unusedCommandHelper = 2;\n",
+            ),
+            ("lib/dead.ts", "export const dead = 1;\n"),
+        ];
+        let cypress = snapshot(&files);
+        let entries = entry_symbols(&cypress);
+        for key in [
+            "cypress/e2e/home.cy.ts#__module__",
+            "cypress/support/e2e.ts#__module__",
+        ] {
+            assert!(
+                entries.contains(&key),
+                "{key} is executed by Cypress: {entries:?}"
+            );
+        }
+        for key in [
+            "lib/spec-helper.ts#specHelper",
+            "lib/command-helper.ts#commandHelper",
+        ] {
+            assert!(
+                cypress.is_live(key),
+                "{key} is imported by Cypress: {:?}",
+                cypress.live
+            );
+        }
+        for key in [
+            "lib/spec-helper.ts#unusedSpecHelper",
+            "lib/command-helper.ts#unusedCommandHelper",
+            "lib/dead.ts#dead",
+        ] {
+            assert!(
+                cypress.is_candidate(key),
+                "{key} is genuinely unused: {:?}",
+                cypress.candidates
+            );
+        }
+        assert!(
+            cypress.unused_files.contains(&"lib/dead.ts".to_string()),
+            "only the genuinely dead file is unused: {:?}",
+            cypress.unused_files
+        );
+        // A custom pattern may also match the generic `.spec.` convention.
+        // The file is still one Cypress spec, not a Cypress spec plus a test.
+        let checkout: Vec<&str> = cypress
+            .entries
+            .iter()
+            .filter(|entry| entry.symbol == "cypress/e2e/checkout.spec.ts#__module__")
+            .map(|entry| entry.framework.as_str())
+            .collect();
+        assert_eq!(
+            checkout,
+            ["cypress"],
+            "a Cypress spec is not also a generic test: {entries:?}"
+        );
+
+        let plain = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"plain","dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            ("cypress.config.ts", "export default { e2e: {} };\n"),
+            ("cypress/e2e/home.cy.ts", "export const home = 1;\n"),
+            ("cypress/support/e2e.ts", "export const support = 1;\n"),
+        ]);
+        let entries = entry_symbols(&plain);
+        for key in [
+            "cypress/e2e/home.cy.ts#__module__",
+            "cypress/support/e2e.ts#__module__",
+        ] {
+            assert!(
+                !entries.contains(&key),
+                "without a cypress dependency the config is inert: {key}"
+            );
+        }
+        for path in ["cypress/e2e/home.cy.ts", "cypress/support/e2e.ts"] {
+            assert!(
+                plain.unused_files.contains(&path.to_string()),
+                "unprotected Cypress files are dead: {:?}",
+                plain.unused_files
+            );
+        }
     }
 
     #[test]
