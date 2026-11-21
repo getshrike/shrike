@@ -1244,6 +1244,75 @@ failing for the names that currently build.
 
 ---
 
+## D-034 — Pages Router build failures are error diagnostics
+
+**Decision:** A Pages Router page whose data-fetching exports or runtime
+configuration Next.js rejects produces an `invalid_pages_router_export` error
+diagnostic. The definite combinations are `getStaticProps` with
+`getServerSideProps`; `getInitialProps` on the default component with either;
+`getStaticPaths` with `getServerSideProps`; `getStaticPaths` without
+`getStaticProps` when there is no `getInitialProps` or `getServerSideProps`;
+`getStaticPaths` on a non-dynamic page with `getStaticProps`; a dynamic page
+with `getStaticProps` but no `getStaticPaths`; `runtime: 'edge'` on a non-API
+page; and a runtime value outside `nodejs`, `edge`, and
+`experimental-edge`. The rule is package-relative under `pages/` or
+`src/pages/`, honors a configured `pageExtensions`, and is gated on the owning
+package declaring `next`.
+
+**Alternatives considered:**
+
+- Report `getInitialProps` with `getStaticPaths`: real Next.js 16.4.6 builds
+  succeed; only runtime behavior differs, so this would be a false positive.
+- Report every `getStaticPaths` without `getStaticProps`: builds succeed when
+  `getInitialProps` or `getServerSideProps` supplies the data.
+- Match export names without the parser shapes: type-only exports, a
+  default-exported component named `getStaticProps`, and
+  `export * as getStaticProps` are not read by Next.js and would produce false
+  positives.
+- Treat any `Page.getInitialProps` assignment as present: Next.js checks
+  truthiness, so `Page.getInitialProps = undefined`, `null`, `false`, `0`,
+  `""`, and `void` do not count.
+- Apply the data-function checks to `pages/api`, `_app`, `_document`, and
+  `_error`: Next.js skips them there. Runtime config is still validated, but
+  API routes accept `edge`.
+- Gate project-wide: a `pages` directory in a React-only workspace package is
+  not a Next app.
+- Report warnings: Next.js throws before the build completes, so these are
+  errors.
+
+**Why:** Probed Next.js 16.4.6 with real `next build` runs at
+`/tmp/opencode/next-pages-probe`. Confirmed failures: `getStaticProps` with
+`getServerSideProps`; `getInitialProps` with either; `getStaticPaths` with
+`getServerSideProps`; non-dynamic `getStaticProps` with `getStaticPaths`;
+dynamic `getStaticProps` without `getStaticPaths`; `getStaticPaths` without
+`getStaticProps`; `runtime: 'edge'` on a non-API page (top-level or
+`config.runtime`) and on `_app`; and invalid or non-string runtime values,
+including on API routes. Confirmed successes: `getInitialProps` with
+`getStaticPaths` on dynamic and non-dynamic pages, `runtime:
+'experimental-edge'`, `runtime: 'edge'` on an API route, and
+`config = { revalidate: 'nope' }`. The failure comes from the loaded page
+module check in `dist/build/utils.js` and the Pages Router segment schema in
+`dist/build/segment-config/pages/pages-segment-config.js`; fallow 3.45.0 and
+knip 5.88.1 do not detect these conflicts.
+
+**Consequences:**
+
+- `FileSummary.default_export_local`,
+  `FileSummary.default_export_has_get_initial_props`, and
+  `FileSummary.pages_config_runtime` record the parser facts, backed by the new
+  `PagesRouterInfo`; `ANALYSIS_VERSION` is bumped to 70.
+- Parser and graph tests cover the recognized and ignored export shapes, the
+  statically falsy assignments, the conflict matrix, the page-extension and
+  package gates, the API/reserved exceptions, anchors, severity, and unchanged
+  candidates.
+- The error groups under `routing` in the CLI diagnostic summary and never
+  changes candidates or entries.
+
+**Revisit if:** Next.js changes its Pages Router data-function validation, the
+runtime schema, or the reserved-page set.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -1320,6 +1389,7 @@ external app, credential, or participant.
 | D-031 | Definitely non-function `"use server"` exports are warnings | accepted |
 | D-032 | Invalid route segment configuration is an error diagnostic | accepted |
 | D-033 | Invalid client exports are route-only build errors | accepted |
+| D-034 | Pages Router build failures are error diagnostics | accepted |
 
 ## Rejected ideas
 

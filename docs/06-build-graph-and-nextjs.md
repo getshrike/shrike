@@ -419,7 +419,55 @@ gated per package on `next`, like the route-conflict checks; a React-only
 workspace package with an app-shaped directory is not analyzed. These are
 build-failure errors, never findings, and never change candidates or entries.
 
-### 7.7 Route conflicts
+### 7.7 Invalid Pages Router exports
+
+The Pages Router validates data-fetching exports after loading each page
+module, so a static analyzer can see the same conflicts Next.js throws on.
+Shrike reports an `invalid_pages_router_export` error for the combinations
+Next.js 16.4.6 fails on:
+
+- `getStaticProps` together with `getServerSideProps`;
+- `getInitialProps` on the default-exported component together with either;
+- `getStaticPaths` together with `getServerSideProps`;
+- `getStaticPaths` without `getStaticProps` when the page has no
+  `getInitialProps` or `getServerSideProps`;
+- `getStaticPaths` on a non-dynamic page that exports `getStaticProps`;
+- `getStaticProps` on a dynamic page without `getStaticPaths`;
+- `runtime: 'edge'` on a non-API page, where the edge render runtime is still
+  experimental (`'experimental-edge'` builds);
+- a `runtime` value outside `nodejs`, `edge`, and `experimental-edge`,
+  including a non-string value.
+
+`getInitialProps` together with `getStaticPaths` builds successfully and is
+not reported; only its runtime behavior differs. `getStaticPaths` without
+`getStaticProps` is also not reported when `getInitialProps` or
+`getServerSideProps` supplies the data, matching the probe matrix.
+
+The rule is package-relative: only files under `<package>/pages/` or
+`<package>/src/pages/` in a package that declares `next` are Pages Router
+pages. A configured `pageExtensions` list replaces the default `tsx`, `ts`,
+`jsx`, and `js`; a bare `pages` directory in a React-only package is left
+alone. `pages/api`, `_app`, `_document`, and `_error` skip the data-function
+checks, as they do in Next.js, but their runtime config is still validated,
+except that API routes accept `runtime: 'edge'`.
+
+The parser records only the shapes Next.js reads. `getStaticProps`,
+`getServerSideProps`, and `getStaticPaths` count as value exports; type-only
+exports, a default-exported component named `getStaticProps`, and
+`export * as getStaticProps` do not. `getInitialProps` counts only on the
+default component, as `Page.getInitialProps = ...`, a static class member, or
+a static property on an anonymous default class; a named
+`export const getInitialProps` does not. Statically falsy assignments such as
+`Page.getInitialProps = undefined` leave Next.js's truthiness check false and
+do not count. Runtime is read from a directly exported `const` `config`
+object, preferring a top-level `export const runtime` when both exist, using
+the same static-value extraction as the App Router segment config.
+
+Each diagnostic is anchored on the offending data-function export, the
+`getStaticPaths` export, or the `runtime` property. These are build-failure
+errors, never findings, and never change candidates or entries.
+
+### 7.8 Route conflicts
 
 Two App Router files can make Next.js reject or crash a route without any dead
 code. Shrike reports both as error diagnostics, never as findings:
@@ -442,7 +490,7 @@ app-shaped directory is left alone. This is deliberately more precise than
 fallow 3.45.0's project-wide gate, which flags that package when a sibling
 declares Next.
 
-### 7.8 Misplaced directives
+### 7.9 Misplaced directives
 
 React Server Components bundlers honor `"use client"` and `"use server"` only
 in the leading prologue, before any other statement. A directive-looking
@@ -461,7 +509,7 @@ directives. One warning is emitted per misplaced occurrence. The predicate and
 the two recognized strings match fallow 3.45.0's `misplaced_directive`
 detector.
 
-### 7.9 Mixed client/server barrels
+### 7.10 Mixed client/server barrels
 
 A barrel that re-exports a `"use client"` origin alongside a server-only origin
 is the Next.js App Router footgun: importing either name from the barrel drags
@@ -490,7 +538,7 @@ is a deliberate precision improvement: a module whose only "server" signal is
 `import type { cookies } from "next/headers"` does not put server code in a
 client bundle, while fallow still reports it.
 
-### 7.10 Client/server leak cones
+### 7.11 Client/server leak cones
 
 A `"use client"` module may not reach server-only code through its runtime
 import cone: the client bundle would contain `node:fs`, `next/server`, or a
@@ -501,7 +549,7 @@ import of the shortest path, and is a warning rather than a finding.
 
 The cone follows runtime static imports, re-exports, export-alls, and
 non-worker dynamic imports. Type-only edges are erased and are not followed.
-The sink predicate matches §7.9. An all-action `"use server"` module stops the
+The sink predicate matches §7.10. An all-action `"use server"` module stops the
 cone: its exports become action references at the client boundary, so its
 server imports never enter the client bundle. A `"use server"` module with any
 non-action value export (a top-level constant, a default value, a re-export)

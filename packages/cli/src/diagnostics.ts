@@ -67,7 +67,8 @@ function categoryFor(item: DiagnosticLike): { category: string; actionable: bool
   if (
     item.code === "route_collision" ||
     item.code === "dynamic_segment_name_conflict" ||
-    item.code === "invalid_route_segment_config"
+    item.code === "invalid_route_segment_config" ||
+    item.code === "invalid_pages_router_export"
   ) {
     return { category: "routing", actionable: true };
   }

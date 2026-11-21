@@ -470,7 +470,25 @@ analyzable.
   ESM imports are reachability edges;
 - `pages/api/**` HTTP method exports;
 - `_app`, `_document`, `_error`;
-- `getServerSideProps`, `getStaticProps`, `getStaticPaths`, `getInitialProps`.
+- `getServerSideProps`, `getStaticProps`, `getStaticPaths`, `getInitialProps`;
+- a Pages Router page that combines data-fetching exports or runtime
+  configuration Next.js rejects at build time produces an
+  `invalid_pages_router_export` error, not a finding. The definite combinations
+  are `getStaticProps` with `getServerSideProps`; `getInitialProps` on the
+  default component with either; `getStaticPaths` with `getServerSideProps`;
+  `getStaticPaths` without `getStaticProps` and without
+  `getInitialProps`/`getServerSideProps`; `getStaticPaths` on a non-dynamic
+  page with `getStaticProps`; a dynamic page with `getStaticProps` but no
+  `getStaticPaths`; `runtime: 'edge'` on a non-API page; and a runtime value
+  outside `nodejs`, `edge`, and `experimental-edge`. `getInitialProps` with
+  `getStaticPaths` builds and is not reported. Only files under `pages/` or
+  `src/pages/` with a configured `pageExtensions` extension count; API routes
+  and `_app`/`_document`/`_error` skip the data checks but keep runtime
+  validation, and API routes accept `edge`. The parser records value exports
+  (excluding type-only, default-exported components named like a data
+  function, and `export * as`), `getInitialProps` on the default component
+  (ignoring statically falsy assignments), and `config.runtime`. The rule is
+  gated per package on `next` and never changes candidates or entries.
 
 ### 9.3 React
 

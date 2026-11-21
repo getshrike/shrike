@@ -141,6 +141,22 @@ test("invalid route segment configs are actionable routing diagnostics", () => {
   assert.equal(summary.bySeverity.error, 1);
 });
 
+test("invalid Pages Router exports are actionable routing diagnostics", () => {
+  const summary = summarizeDiagnostics([
+    {
+      code: "invalid_pages_router_export",
+      severity: "error",
+      message:
+        "`pages/index.tsx` exports both `getStaticProps` and `getServerSideProps`; Next.js fails the build because a page cannot combine SSG and SSR",
+      file: "pages/index.tsx",
+    },
+  ]);
+  assert.equal(summary.actionable, 1);
+  assert.equal(summary.groups[0].category, "routing");
+  assert.equal(summary.groups[0].actionable, true);
+  assert.equal(summary.bySeverity.error, 1);
+});
+
 test("client/server leaks are actionable boundary diagnostics", () => {
   const summary = summarizeDiagnostics([
     {
