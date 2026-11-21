@@ -3829,6 +3829,83 @@ export default config;
     }
 
     #[test]
+    fn imports_from_dead_modules_do_not_make_exports_external() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"internal-dead-import","private":true,"dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/page.tsx",
+                "import { bootstrap } from '../src/registry';\nexport default function Page() { bootstrap(); return null; }\n",
+            ),
+            (
+                "src/registry.ts",
+                "export function helper() { return 1; }\nexport function bootstrap() { return helper(); }\n",
+            ),
+            (
+                "src/dead.ts",
+                "import { helper } from './registry';\nexport function deadConsumer() { return helper(); }\n",
+            ),
+            ("src/barrel.ts", "export { helper } from './registry';\n"),
+        ]);
+        assert!(
+            snapshot.is_candidate("src/dead.ts#deadConsumer"),
+            "dead importer must remain a candidate: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot
+                .internal_only
+                .iter()
+                .any(|key| key == "src/registry.ts#helper"),
+            "a use from a dead module must not count as external visibility: {:?}",
+            snapshot.internal_only
+        );
+        assert!(
+            !snapshot.is_candidate("src/registry.ts#helper"),
+            "the helper is still used by live bootstrap code: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot.is_candidate("src/barrel.ts#helper"),
+            "the dead alias to the live helper is actionable: {:?}",
+            snapshot.candidates
+        );
+    }
+
+    #[test]
+    fn live_external_imports_keep_exports_out_of_internal_only() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"internal-live-import","private":true,"dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/page.tsx",
+                "import { helper } from '../src/registry';\nexport default function Page() { return helper(); }\n",
+            ),
+            (
+                "src/registry.ts",
+                "export function helper() { return 1; }\n",
+            ),
+        ]);
+        assert!(
+            snapshot.is_live("src/registry.ts#helper"),
+            "a live import must keep the export live"
+        );
+        assert!(
+            !snapshot
+                .internal_only
+                .iter()
+                .any(|key| key == "src/registry.ts#helper"),
+            "a live external import is external visibility: {:?}",
+            snapshot.internal_only
+        );
+        assert!(!snapshot.is_candidate("src/registry.ts#helper"));
+    }
+
+    #[test]
     fn unused_barrel_aliases_are_candidates_only_when_their_target_is_live() {
         let snapshot = snapshot(&[
             (
