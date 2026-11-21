@@ -5379,6 +5379,10 @@
           "reason": "createPage registers the template module"
         },
         {
+          "symbol": "src/pages/index.tsx#default",
+          "reason": "Gatsby renders src/pages defaults"
+        },
+        {
           "symbol": "src/templates/blog-post.tsx#default",
           "reason": "Gatsby renders the template default export"
         },

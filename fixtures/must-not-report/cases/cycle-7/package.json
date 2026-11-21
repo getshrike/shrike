@@ -1,5 +1,8 @@
 {
   "name": "corpus-cycle-7",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "next": "^16.0.0"
+  }
 }

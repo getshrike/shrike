@@ -133,6 +133,29 @@ fn package_depends_on(root: &Path, directory: &str, name: &str) -> bool {
     package_depends_on_any(root, directory, &[name])
 }
 
+/// Whether the package manifest explicitly declares `next`. A missing or
+/// unreadable manifest returns `None`, so convention detection stays
+/// conservative for incomplete trees instead of hiding a possible route.
+fn package_declares_next(root: &Path, directory: &str) -> Option<bool> {
+    let text = fs::read_to_string(root.join(directory).join("package.json")).ok()?;
+    let value = serde_json::from_str::<serde_json::Value>(&text).ok()?;
+    Some(
+        [
+            "dependencies",
+            "devDependencies",
+            "peerDependencies",
+            "optionalDependencies",
+        ]
+        .iter()
+        .any(|section| {
+            value
+                .get(section)
+                .and_then(|dependencies| dependencies.get("next"))
+                .is_some()
+        }),
+    )
+}
+
 /// Storybook's default story glob includes every `.mdx` page, not just files
 /// named `*.stories.mdx`, and the plugin only applies when the package depends
 /// on Storybook. `@nrwl/storybook` is the Nx wrapper.
@@ -1381,20 +1404,21 @@ impl<'a> Builder<'a> {
             let package_directory = self
                 .resolver
                 .package_for(path)
-                .map_or("", |package| package.directory.as_str());
+                .map_or_else(String::new, |package| package.directory.clone());
             let package_path = if package_directory.is_empty() {
                 path
             } else {
                 path.strip_prefix(&format!("{package_directory}/"))
                     .unwrap_or(path)
             };
-            let is_app = package_path.starts_with("app/") || package_path.starts_with("src/app/");
-            let is_pages =
+            let is_app_shape =
+                package_path.starts_with("app/") || package_path.starts_with("src/app/");
+            let is_pages_shape =
                 package_path.starts_with("pages/") || package_path.starts_with("src/pages/");
             // Next.js middleware/proxy, instrumentation, and the MDX component
             // map live at the project root (or `src/`), not under `app/`, but
             // they are still framework entrypoints.
-            let root_convention = matches!(
+            let root_convention_shape = matches!(
                 stem,
                 "middleware"
                     | "proxy"
@@ -1420,13 +1444,26 @@ impl<'a> Builder<'a> {
                         "src/instrumentation-client",
                     ]
                     .iter()
-                    .any(|relative| at_own_package_root(base, package_directory, relative))
+                    .any(|relative| at_own_package_root(base, &package_directory, relative))
                 });
+            // Next.js conventions only apply to a project that depends on
+            // Next.js. An `app/` or `pages/` directory in a Remix, Expo Router,
+            // or plain React package is not a Next route, and treating it as
+            // one would hide genuinely dead files. Only consult the manifest
+            // for paths that could match a convention.
+            let package_uses_next = if is_app_shape || is_pages_shape || root_convention_shape {
+                package_declares_next(self.resolver.root(), &package_directory).unwrap_or(true)
+            } else {
+                true
+            };
+            let is_app = package_uses_next && is_app_shape;
+            let is_pages = package_uses_next && is_pages_shape;
+            let root_convention = package_uses_next && root_convention_shape;
             // next-intl loads its request/routing modules by convention. Gate
             // the protection on the project actually depending on next-intl so
             // an unrelated `i18n/request.ts` stays analyzable.
             if is_next_intl_convention(path)
-                && package_depends_on(self.resolver.root(), package_directory, "next-intl")
+                && package_depends_on(self.resolver.root(), &package_directory, "next-intl")
             {
                 for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
                     add(self, key, "next-intl", "convention-export", None, "both");
@@ -1467,6 +1504,22 @@ impl<'a> Builder<'a> {
                         "default" | "query" | "Head" | "getServerData"
                     ) {
                         add(self, key, "gatsby", "page-template-export", None, "both");
+                    }
+                }
+            }
+            if gatsby_packages.contains(&package_directory)
+                && package_path.starts_with("src/pages/")
+            {
+                // Gatsby's default page directory is `src/pages`. The default
+                // component and the page query/Head/getServerData exports are
+                // framework API; other exports remain application code.
+                add(self, module.clone(), "gatsby", "page", None, "both");
+                for (name, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                    if matches!(
+                        name.as_str(),
+                        "default" | "query" | "Head" | "getServerData"
+                    ) {
+                        add(self, key, "gatsby", "page-export", None, "both");
                     }
                 }
             }
@@ -2390,6 +2443,86 @@ mod tests {
                 snapshot.candidates
             );
         }
+    }
+
+    #[test]
+    fn next_conventions_require_a_next_dependency() {
+        let plain = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"plain-react","dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/page.tsx",
+                "export default function Page() { return null; }\n",
+            ),
+            (
+                "pages/index.tsx",
+                "export default function Home() { return null; }\n",
+            ),
+            (
+                "middleware.ts",
+                "export function middleware() { return null; }\n",
+            ),
+        ]);
+        for key in [
+            "app/page.tsx#default",
+            "pages/index.tsx#default",
+            "middleware.ts#middleware",
+        ] {
+            assert!(
+                plain.is_candidate(key),
+                "{key} is not a Next convention without a next dependency: {:?}",
+                plain.candidates
+            );
+        }
+
+        let next = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"next-app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/page.tsx",
+                "export default function Page() { return null; }\nexport const unusedPageHelper = 1;\n",
+            ),
+            (
+                "pages/index.tsx",
+                "export default function Home() { return null; }\n",
+            ),
+            (
+                "middleware.ts",
+                "export function middleware() { return null; }\n",
+            ),
+        ]);
+        for key in [
+            "app/page.tsx#default",
+            "pages/index.tsx#default",
+            "middleware.ts#middleware",
+        ] {
+            assert!(
+                next.is_live(key),
+                "{key} is a Next convention when the package depends on next: {:?}",
+                next.live
+            );
+        }
+        assert!(
+            next.is_candidate("app/page.tsx#unusedPageHelper"),
+            "a route helper stays analyzable: {:?}",
+            next.candidates
+        );
+
+        // An incomplete tree has no manifest to consult; keep the convention
+        // rather than hiding a possible route.
+        let unknown = snapshot(&[(
+            "app/page.tsx",
+            "export default function Page() { return null; }\n",
+        )]);
+        assert!(
+            unknown.is_live("app/page.tsx#default"),
+            "a missing manifest fails open: {:?}",
+            unknown.candidates
+        );
     }
 
     #[test]
@@ -5370,7 +5503,7 @@ export default config;
             ("gatsby-node.ts", node_source),
             (
                 "src/pages/index.tsx",
-                "import { PostBody } from \"../components/post-body\";\nexport default function Home() { return <PostBody title=\"home\" />; }\n",
+                "import { PostBody } from \"../components/post-body\";\nexport default function Home() { return <PostBody title=\"home\" />; }\nexport function unusedHomeHelper() { return 4; }\n",
             ),
             (
                 "src/components/post-body.tsx",
@@ -5436,6 +5569,34 @@ export default config;
             }),
             "the template records its framework: {:?}",
             snapshot.entries
+        );
+    }
+
+    #[test]
+    fn gatsby_pages_are_entries_only_with_the_dependency() {
+        let snapshot = gatsby_app(
+            r#"{"name":"gatsby-site","private":true,"dependencies":{"gatsby":"^5.14.0","react":"^18.3.1"}}"#,
+            "export {};\n",
+        );
+        assert!(
+            snapshot.is_live("src/pages/index.tsx#default"),
+            "Gatsby renders src/pages defaults: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot.is_candidate("src/pages/index.tsx#unusedHomeHelper"),
+            "only the page API is framework-invoked: {:?}",
+            snapshot.candidates
+        );
+
+        let plain = gatsby_app(
+            r#"{"name":"plain-site","private":true,"dependencies":{"react":"^18.3.1"}}"#,
+            "export {};\n",
+        );
+        assert!(
+            plain.is_candidate("src/pages/index.tsx#default"),
+            "without Gatsby, src/pages is not a framework page directory: {:?}",
+            plain.candidates
         );
     }
 

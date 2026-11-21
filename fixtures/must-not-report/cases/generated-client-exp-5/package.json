@@ -1,5 +1,8 @@
 {
   "name": "corpus-generated-client-exp-5",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "next": "^16.0.0"
+  }
 }

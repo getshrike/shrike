@@ -1,5 +1,8 @@
 {
   "name": "corpus-dynamic-import-exp-2",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "next": "^16.0.0"
+  }
 }
