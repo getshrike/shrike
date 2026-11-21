@@ -305,6 +305,10 @@ a symbol is live.
 
 ### 9.1 Next.js App Router
 
+`app/` and `src/app/` are resolved relative to the owning package, not to the
+repository root or any nested path segment. A directory named `app` inside an
+unrelated package is not a Next.js route.
+
 - `page`, `layout`, `template`, `loading`, `error`, `global-error`, `not-found`,
   `forbidden`, `unauthorized`, `route`, `default`; with `pageExtensions`
   containing `md` or `mdx`, the same convention stems are routes as Markdown,
@@ -338,6 +342,8 @@ a symbol is live.
   aliases): the module and all its exports are entries.
 
 ### 9.2 Next.js Pages Router
+
+`pages/` and `src/pages/` are likewise package-relative.
 
 - `pages/**` default exports;
 - `pages/**` Markdown files when `pageExtensions` includes `md` or `mdx`; their

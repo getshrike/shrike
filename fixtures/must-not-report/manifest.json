@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 299,
+  "count": 300,
   "entries": [
     {
       "id": "page-entry-1",
@@ -3248,6 +3248,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3264,6 +3267,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3280,6 +3286,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3296,6 +3305,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3312,6 +3324,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3328,6 +3343,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3344,6 +3362,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3360,6 +3381,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3376,6 +3400,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3392,6 +3419,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3408,6 +3438,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3424,6 +3457,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3440,6 +3476,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3456,6 +3495,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3472,6 +3514,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3488,6 +3533,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3504,6 +3552,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3520,6 +3571,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3536,6 +3590,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -3552,6 +3609,9 @@
           "symbol": "packages/ui/src/Button.tsx#Button",
           "reason": "client-boundary component is imported across a workspace"
         }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#default"
       ]
     },
     {
@@ -5560,6 +5620,39 @@
         "instrumentation-client.ts#unusedClientHelper",
         "src/widget.tsx#unusedWidgetHelper",
         "lib/instrumentation.ts#unrelatedInstrumentation"
+      ]
+    },
+    {
+      "id": "monorepo-next-paths",
+      "category": "monorepo-next-paths",
+      "files": [
+        "apps",
+        "package.json",
+        "packages",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "apps/web/app/page.tsx#__module__",
+          "reason": "the nested web package's App Router page is an entry"
+        },
+        {
+          "symbol": "apps/web/app/page.tsx#default",
+          "reason": "Next.js renders the nested page default export"
+        },
+        {
+          "symbol": "apps/web/lib/widget.tsx#Widget",
+          "reason": "the nested page imports and renders Widget"
+        }
+      ],
+      "mustReport": [
+        "apps/web/app/page.tsx#unusedWebHelper",
+        "packages/app/src/page.tsx#default",
+        "packages/app/src/page.tsx#unusedPageHelper",
+        "packages/app/src/layout.tsx#default",
+        "packages/app/src/layout.tsx#unusedLayoutHelper",
+        "packages/pages/src/settings.tsx#default",
+        "packages/pages/src/settings.tsx#unusedSettingsHelper"
       ]
     }
   ]
