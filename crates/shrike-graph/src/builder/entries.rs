@@ -3453,6 +3453,228 @@ mod tests {
     }
 
     #[test]
+    fn mixed_client_server_barrels_are_project_gated_warnings() {
+        let next_snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "packages/plain/package.json",
+                r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            (
+                "components/client.tsx",
+                "\"use client\";\nexport function Button() { return null; }\n",
+            ),
+            (
+                "lib/server.ts",
+                "import \"server-only\";\nexport function readFile() { return null; }\n",
+            ),
+            (
+                "lib/action.ts",
+                "\"use server\";\nexport async function action() { return 1; }\n",
+            ),
+            (
+                "lib/headers.ts",
+                "import { cookies } from \"next/headers\";\nexport function getCookie() { return cookies(); }\n",
+            ),
+            (
+                "lib/headers-namespace.ts",
+                "import * as headers from \"next/headers\";\nexport function getHeader() { return headers.headers(); }\n",
+            ),
+            (
+                "lib/headers-type-only.ts",
+                "import type { cookies } from \"next/headers\";\nexport const util = 1;\n",
+            ),
+            (
+                "lib/headers-side-effect.ts",
+                "import \"next/headers\";\nexport const util = 1;\n",
+            ),
+            (
+                "lib/format.ts",
+                "export function format() { return \"\"; }\n",
+            ),
+            // Explicit re-exports, in both source orders.
+            (
+                "src/barrel.ts",
+                "export { Button } from \"../components/client\";\nexport { readFile } from \"../lib/server\";\n",
+            ),
+            (
+                "src/barrel-server-first.ts",
+                "export { readFile } from \"../lib/server\";\nexport { Button } from \"../components/client\";\n",
+            ),
+            (
+                "src/barrel-order-client.ts",
+                "export const note = 1;\nexport { Button } from \"../components/client\";\nexport { readFile } from \"../lib/server\";\n",
+            ),
+            (
+                "src/barrel-order-server.ts",
+                "export const note = 1;\nexport const other = 2;\nexport { readFile } from \"../lib/server\";\nexport { Button } from \"../components/client\";\n",
+            ),
+            // Whole-module re-exports.
+            (
+                "src/barrel-star.ts",
+                "export * from \"../components/client\";\nexport * from \"../lib/server\";\n",
+            ),
+            (
+                "src/barrel-namespace.ts",
+                "export * as client from \"../components/client\";\nexport * as server from \"../lib/server\";\n",
+            ),
+            // `"use server"` and a named `next/headers` API are server-only.
+            (
+                "src/barrel-action.ts",
+                "export { Button } from \"../components/client\";\nexport { action } from \"../lib/action\";\n",
+            ),
+            (
+                "src/barrel-headers.ts",
+                "export { Button } from \"../components/client\";\nexport { getCookie } from \"../lib/headers\";\n",
+            ),
+            (
+                "src/barrel-headers-namespace.ts",
+                "export { Button } from \"../components/client\";\nexport { getHeader } from \"../lib/headers-namespace\";\n",
+            ),
+            // An ordinary utility, an external package, a type-only
+            // re-export, and a type-only or side-effect server import are not
+            // mixed boundaries.
+            (
+                "src/barrel-plain.ts",
+                "export { Button } from \"../components/client\";\nexport { format } from \"../lib/format\";\n",
+            ),
+            (
+                "src/barrel-external.ts",
+                "export { Button } from \"../components/client\";\nexport { something } from \"some-package\";\n",
+            ),
+            (
+                "src/barrel-type-only-reexport.ts",
+                "export type { Button } from \"../components/client\";\nexport { readFile } from \"../lib/server\";\n",
+            ),
+            (
+                "src/barrel-type-only-server.ts",
+                "export { Button } from \"../components/client\";\nexport { util } from \"../lib/headers-type-only\";\n",
+            ),
+            (
+                "src/barrel-side-effect-server.ts",
+                "export { Button } from \"../components/client\";\nexport { util } from \"../lib/headers-side-effect\";\n",
+            ),
+            (
+                "src/barrel-no-client.ts",
+                "export { readFile } from \"../lib/server\";\nexport { format } from \"../lib/format\";\n",
+            ),
+            (
+                "src/barrel-no-server.ts",
+                "export { Button } from \"../components/client\";\n",
+            ),
+            // The gate is project-wide: a shared barrel in a React-only
+            // workspace package is compiled by the sibling Next app.
+            (
+                "packages/plain/src/barrel.ts",
+                "export { Button } from \"../../../components/client\";\nexport { readFile } from \"../../../lib/server\";\n",
+            ),
+        ]);
+        let mut mixed: Vec<(String, u32)> = next_snapshot
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "mixed_client_server_barrel")
+            .map(|diagnostic| {
+                (
+                    diagnostic.file.clone().unwrap_or_default(),
+                    diagnostic.span.map_or(0, |span| span.line),
+                )
+            })
+            .collect();
+        mixed.sort();
+        assert_eq!(
+            mixed,
+            vec![
+                ("packages/plain/src/barrel.ts".to_string(), 1),
+                ("src/barrel-action.ts".to_string(), 1),
+                ("src/barrel-headers-namespace.ts".to_string(), 1),
+                ("src/barrel-headers.ts".to_string(), 1),
+                ("src/barrel-namespace.ts".to_string(), 1),
+                ("src/barrel-order-client.ts".to_string(), 2),
+                ("src/barrel-order-server.ts".to_string(), 3),
+                ("src/barrel-server-first.ts".to_string(), 1),
+                ("src/barrel-star.ts".to_string(), 1),
+                ("src/barrel.ts".to_string(), 1),
+            ],
+            "{:?}",
+            next_snapshot.diagnostics
+        );
+        let first = next_snapshot
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == "mixed_client_server_barrel")
+            .expect("a mixed barrel");
+        assert_eq!(first.severity, shrike_core::Severity::Warning);
+        assert!(
+            first.message.contains("../components/client")
+                && first.message.contains("../lib/server")
+                && first.message.contains("\"use client\"")
+                && first.message.contains("server-only"),
+            "the warning names both origins: {}",
+            first.message
+        );
+
+        // Without an RSC bundler the directives carry no special meaning.
+        let react_only = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            (
+                "components/client.tsx",
+                "\"use client\";\nexport function Button() { return null; }\n",
+            ),
+            (
+                "lib/server.ts",
+                "import \"server-only\";\nexport function readFile() { return null; }\n",
+            ),
+            (
+                "src/barrel.ts",
+                "export { Button } from \"../components/client\";\nexport { readFile } from \"../lib/server\";\n",
+            ),
+        ]);
+        assert!(
+            react_only
+                .diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.code != "mixed_client_server_barrel"),
+            "no RSC bundler evidence: {:?}",
+            react_only.diagnostics
+        );
+
+        // Any framework-agnostic RSC bundler enables the rule.
+        let waku = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"app","dependencies":{"waku":"^0.21.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "components/client.tsx",
+                "\"use client\";\nexport function Button() { return null; }\n",
+            ),
+            (
+                "lib/server.ts",
+                "import \"server-only\";\nexport function readFile() { return null; }\n",
+            ),
+            (
+                "src/barrel.ts",
+                "export { Button } from \"../components/client\";\nexport { readFile } from \"../lib/server\";\n",
+            ),
+        ]);
+        assert_eq!(
+            waku.diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "mixed_client_server_barrel")
+                .count(),
+            1,
+            "{:?}",
+            waku.diagnostics
+        );
+    }
+
+    #[test]
     fn next_route_collisions_and_dynamic_segment_conflicts_are_reported() {
         let routes = snapshot(&[
             (

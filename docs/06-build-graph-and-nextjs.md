@@ -361,6 +361,35 @@ directives. One warning is emitted per misplaced occurrence. The predicate and
 the two recognized strings match fallow 3.45.0's `misplaced_directive`
 detector.
 
+### 7.7 Mixed client/server barrels
+
+A barrel that re-exports a `"use client"` origin alongside a server-only origin
+is the Next.js App Router footgun: importing either name from the barrel drags
+the other's directive context across the React Server Components boundary.
+Shrike reports a `mixed_client_server_barrel` warning anchored on the earlier
+of the two offending re-exports and names both origins. It is not a finding
+and never changes candidates.
+
+The server-only predicate is deliberately narrow: `"use server"`, the
+`server-only` poison package, `next/server`, Node's `fs`, `fs/promises`, or
+`child_process` (bare or `node:`), or a named `cookies`, `headers`, or
+`draftMode` import from `next/headers`. A namespace import of `next/headers`
+counts conservatively because any member access could reach one of those APIs;
+a default or side-effect import does not. Type-only re-exports and type-only
+imports are erased before bundling and are ignored. Only direct re-export
+origins that resolve to local source modules are classified; npm packages and
+unresolved sources are skipped.
+
+The rule is project-wide and gated on the same seven RSC bundlers as
+`misplaced_directive`: `next`, `waku`, `@lazarv/react-server`,
+`react-server-dom-webpack`, `react-server-dom-vite`,
+`react-server-dom-parcel`, or `@vitejs/plugin-rsc` in the root or any
+workspace manifest. The origin list and warning semantics match fallow
+3.45.0's `mixed_client_server_barrel` detector. The type-only import exclusion
+is a deliberate precision improvement: a module whose only "server" signal is
+`import type { cookies } from "next/headers"` does not put server code in a
+client bundle, while fallow still reports it.
+
 ---
 
 ## 8. Proxy, middleware, metadata

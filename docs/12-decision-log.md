@@ -912,6 +912,51 @@ fallow's bundler predicate diverges.
 
 ---
 
+## D-028 — Mixed client/server barrels are advisory warnings
+
+**Decision:** A barrel that directly re-exports a `"use client"` origin and a
+server-only origin produces a `mixed_client_server_barrel` warning anchored on
+the earlier re-export. A server-only origin carries `"use server"`, imports
+`server-only`, `next/server`, `fs`/`fs/promises`/`child_process` (bare or
+`node:`), or imports a named `cookies`/`headers`/`draftMode` API (or the whole
+namespace) from `next/headers`. Type-only re-exports and type-only imports are
+ignored, and only direct local origins are classified. The rule is project-wide
+and gated on the seven RSC bundlers in D-027. It never changes candidates,
+entries, or unused files.
+
+**Alternatives considered:**
+
+- Match fallow exactly, including type-only imports. `import type { cookies }
+  from "next/headers"` is erased and does not put server code in the client
+  bundle, so flagging it would be a false positive.
+- Treat any re-export from a server module as mixed. A client component plus an
+  ordinary utility is a normal barrel and must not flag.
+- Walk transitive re-export chains. Direct origins keep the rule precise and
+  avoid npm conditional-export ambiguity.
+- Report the barrel as a dead-code finding. The barrel can be perfectly live;
+  the problem is a boundary shape, not liveness.
+
+**Why:** Read fallow 3.45.0's `mixed_barrel.rs`, `server_only.rs`, and
+`predicates/import.rs`. On `/tmp/opencode/mixed-barrel-probe`, fallow reports
+four barrels and Shrike reports the same three real ones at the same lines and
+origins; the fourth is `src/barrel-type-only-server.ts`, whose only server-side
+signal is `import type { cookies } from "next/headers"`. A plain utility
+barrel and a type-only client re-export produce zero in both tools. A
+React-only control produces zero in both, and a Waku probe fires in both.
+
+**Consequences:**
+
+- `ANALYSIS_VERSION` is bumped to 64 so cached snapshots include the new
+  diagnostics.
+- The warning groups under `boundary` and is actionable in the CLI diagnostic
+  summary.
+- Corpus candidates are unchanged; the rule is diagnostics-only.
+
+**Revisit if:** React Server Components tooling starts honoring type-only
+imports at runtime, or fallow removes its type-only false positive.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -982,6 +1027,7 @@ external app, credential, or participant.
 | D-025 | `"use client"` server-only exports are advisory warnings | accepted |
 | D-026 | App Router route conflicts are error diagnostics | accepted |
 | D-027 | Misplaced RSC directives are advisory warnings | accepted |
+| D-028 | Mixed client/server barrels are advisory warnings | accepted |
 
 ## Rejected ideas
 

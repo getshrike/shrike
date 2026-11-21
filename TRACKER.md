@@ -545,6 +545,33 @@ not commitments; commitments are in the plans.
 
 ---
 
+### 2026-11-21 — mixed client/server barrels
+
+- Read fallow 3.45.0's `mixed_barrel.rs`, `server_only.rs`, and
+  `predicates/import.rs`. A barrel that directly re-exports both a
+  `"use client"` origin and a server-only origin is a Next.js App Router
+  footgun: importing one name drags the other's directive context across the
+  RSC boundary. The server-only predicate is `"use server"`, `server-only`,
+  `next/server`, `fs`/`fs/promises`/`child_process` (bare or `node:`), or a
+  named `cookies`/`headers`/`draftMode` API (or namespace) from
+  `next/headers`. Type-only re-exports are skipped; only direct origins that
+  resolve to local modules are classified.
+- Shrike emits one `mixed_client_server_barrel` warning per barrel, anchored
+  on the earlier of the first client and first server re-export and naming
+  both origins. The rule is project-wide and uses the same seven-bundler gate
+  as `misplaced_directive`. It never changes candidates or entries.
+- On `/tmp/opencode/mixed-barrel-probe`, fallow reports four barrels and
+  Shrike reports the same three real ones at the same lines and origins. The
+  fourth is `src/barrel-type-only-server.ts`, whose only server-side signal is
+  `import type { cookies } from "next/headers"`; the import is erased before
+  bundling, so Shrike deliberately does not treat it as server-only. A plain
+  utility barrel and a type-only client re-export produce zero in both tools.
+  A React-only control produces zero in both, and a Waku probe fires in both.
+- `ANALYSIS_VERSION` is bumped to 64. The warning groups under `boundary` in
+  the CLI diagnostic summary and is actionable.
+
+---
+
 ## 9. Change log
 
 | Date | Change | Files |
@@ -607,6 +634,7 @@ not commitments; commitments are in the plans.
 | 2026-11-21 | Added the `invalid_client_export` advisory warning for `"use client"` modules that export a Next.js server-only, route-config, or route-handler name. The 22-name set is fallow 3.45.0's `ILLEGAL_CLIENT_EXPORTS`; the gate is project-wide over root and workspace manifests. Direct exports anchor on the declaration, local `export { name }` anchors on the specifier and reports once, and default/type-only/re-exports are excluded. Added `DeclarationRecord.directly_exported` and bumped `ANALYSIS_VERSION` to 61. Probes match fallow exactly on the 22-name set, file/line anchors, the monorepo gate, and a no-Next control | `crates/shrike-graph/src/builder/files.rs`, `crates/shrike-graph/src/builder/mod.rs`, `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-syntax/src/summary.rs`, `crates/shrike-syntax/src/parse/declarations.rs`, `crates/shrike-syntax/src/parse/statements.rs`, `crates/shrike-engine/src/cache.rs`, `packages/cli/src/diagnostics.ts`, `packages/cli/test/diagnostics.test.mjs`, `docs/03-algorithms.md`, `docs/06-build-graph-and-nextjs.md`, `docs/12-decision-log.md` |
 | 2026-11-21 | Added `route_collision` and `dynamic_segment_name_conflict` error diagnostics from fallow 3.45.0's App Router route-tree primitive. Two `page`/`route` leaves at one URL, or sibling dynamic segments with different spellings at one position, are reported per file. Route groups are transparent, parallel slots fork the namespace, and private/intercepting subtrees are excluded. The checks require the owning package to declare `next`; the probe matches fallow's 8 collisions and 3 conflicts when the sibling package declares Next, and deliberately skips a React-only package that fallow flags via its project-wide gate. Bumped `ANALYSIS_VERSION` to 62 and shared the dotted `pageExtensions` parser with entry detection | `crates/shrike-graph/src/builder/files.rs`, `crates/shrike-graph/src/builder/mod.rs`, `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-engine/src/cache.rs`, `packages/cli/src/diagnostics.ts`, `packages/cli/test/diagnostics.test.mjs`, `docs/03-algorithms.md`, `docs/06-build-graph-and-nextjs.md`, `docs/12-decision-log.md` |
 | 2026-11-21 | Added the `misplaced_directive` warning for `"use client"` / `"use server"` strings after the leading prologue. RSC bundlers silently ignore them, so the intended boundary never exists. The project-wide gate is fallow 3.45.0's seven RSC bundler packages; one warning per occurrence, anchored on the statement; `"use strict"` and nested strings are ignored. The parser records `FileSummary.misplaced_directives`, and `ANALYSIS_VERSION` is bumped to 63. Probes match fallow exactly on the three Next findings, a React-only control, and a Waku probe | `crates/shrike-syntax/src/summary.rs`, `crates/shrike-syntax/src/parse/mod.rs`, `crates/shrike-syntax/src/parse/html.rs`, `crates/shrike-syntax/src/parse/mdx.rs`, `crates/shrike-syntax/src/parse/statements.rs`, `crates/shrike-syntax/src/parse/tests.rs`, `crates/shrike-graph/src/builder/files.rs`, `crates/shrike-graph/src/builder/mod.rs`, `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-engine/src/cache.rs`, `packages/cli/src/diagnostics.ts`, `packages/cli/test/diagnostics.test.mjs`, `docs/03-algorithms.md`, `docs/06-build-graph-and-nextjs.md`, `docs/12-decision-log.md` |
+| 2026-11-21 | Added the `mixed_client_server_barrel` warning for barrels that directly re-export both a `"use client"` origin and a server-only origin. Server-only covers `"use server"`, `server-only`, `next/server`, Node `fs`/`fs/promises`/`child_process`, and named or namespace `cookies`/`headers`/`draftMode` imports from `next/headers`; type-only re-exports and type-only imports are erased and skipped. Anchored on the earlier re-export, project-wide over the seven RSC bundlers, and `ANALYSIS_VERSION` is bumped to 64. The probe matches fallow on three real barrels, line anchors, and origins; the only difference is fallow's type-only import false positive | `crates/shrike-graph/src/builder/files.rs`, `crates/shrike-graph/src/builder/mod.rs`, `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-engine/src/cache.rs`, `packages/cli/src/diagnostics.ts`, `packages/cli/test/diagnostics.test.mjs`, `docs/03-algorithms.md`, `docs/06-build-graph-and-nextjs.md`, `docs/12-decision-log.md` |
 
 ---
 

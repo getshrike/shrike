@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use shrike_core::glob::glob_match;
 use shrike_core::ids::{module_symbol_key, symbol_key};
 use shrike_core::{Diagnostic, Span};
-use shrike_syntax::{FileSummary, ParseStatus};
+use shrike_syntax::{BindingKind, FileSummary, ImportRecord, ParseStatus};
 
 use super::Builder;
 use crate::types::{FileRecord, SymbolRecord};
@@ -60,6 +60,59 @@ const RSC_BUNDLER_PACKAGES: &[&str] = &[
     "react-server-dom-parcel",
     "@vitejs/plugin-rsc",
 ];
+
+/// Packages whose import makes a module server-only. This is fallow 3.45.0's
+/// `SERVER_ONLY_PACKAGES` set (`crates/core/src/analyze/server_only.rs`). The
+/// `node:` and bare forms are both listed because the check matches the
+/// specifier as written.
+const SERVER_ONLY_PACKAGES: &[&str] = &[
+    "server-only",
+    "next/server",
+    "node:fs",
+    "fs",
+    "node:fs/promises",
+    "fs/promises",
+    "node:child_process",
+    "child_process",
+];
+
+/// Named `next/headers` APIs that only run on the server. A namespace import
+/// counts conservatively because any member access could reach one of these;
+/// a side-effect or default import does not.
+const NEXT_HEADERS_SERVER_NAMES: &[&str] = &["cookies", "headers", "draftMode"];
+
+/// Whether a module is a server-only origin for the mixed-barrel rule: it
+/// carries `"use server"`, imports the `server-only` poison package or another
+/// known server runtime, or imports a named server API from `next/headers`.
+///
+/// Type-only imports are skipped: they are erased before bundling, so they do
+/// not drag server code into a client bundle. Fallow 3.45.0 does not make this
+/// distinction; Shrike deliberately prefers the runtime-accurate reading.
+fn summary_is_server_only(summary: &FileSummary) -> bool {
+    summary.has_directive("use server") || summary.imports.iter().any(import_is_server_only)
+}
+
+fn import_is_server_only(import: &ImportRecord) -> bool {
+    if import.type_only {
+        return false;
+    }
+    if SERVER_ONLY_PACKAGES.contains(&import.source.as_str()) {
+        return true;
+    }
+    if import.source != "next/headers" {
+        return false;
+    }
+    import.bindings.iter().any(|binding| {
+        if binding.type_only {
+            return false;
+        }
+        match binding.kind {
+            BindingKind::Namespace => true,
+            BindingKind::Named => NEXT_HEADERS_SERVER_NAMES.contains(&binding.imported.as_str()),
+            BindingKind::Default => false,
+        }
+    })
+}
 
 /// App Router convention stems that own a URL. A URL has at most one owner,
 /// whether a `page` or a `route`, so both share the collision namespace.
@@ -368,23 +421,28 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// Whether the project uses a React Server Components bundler. The gate is
+    /// project-wide, matching fallow 3.45.0's `project_uses_rsc_directives`:
+    /// a shared module may be compiled by a sibling RSC app even when its own
+    /// package does not declare the bundler. The root manifest is checked
+    /// directly because the resolver only records packages that have a name.
+    fn project_uses_rsc_directives(&self) -> bool {
+        super::entries::package_declares_any(self.resolver.root(), "", RSC_BUNDLER_PACKAGES)
+            == Some(true)
+            || self.resolver.packages().iter().any(|package| {
+                super::entries::package_declares_any(
+                    self.resolver.root(),
+                    &package.directory,
+                    RSC_BUNDLER_PACKAGES,
+                ) == Some(true)
+            })
+    }
+
     /// Warn when a `"use client"` / `"use server"` string is not in the leading
     /// prologue. RSC bundlers silently ignore it, so the intended boundary is
-    /// never created. The rule is project-wide, matching fallow 3.45.0's
-    /// `project_uses_rsc_directives` gate: a shared module may be compiled by a
-    /// sibling RSC app even when its own package does not declare the bundler.
+    /// never created.
     pub(super) fn detect_misplaced_directives(&mut self) {
-        let uses_rsc =
-            super::entries::package_declares_any(self.resolver.root(), "", RSC_BUNDLER_PACKAGES)
-                == Some(true)
-                || self.resolver.packages().iter().any(|package| {
-                    super::entries::package_declares_any(
-                        self.resolver.root(),
-                        &package.directory,
-                        RSC_BUNDLER_PACKAGES,
-                    ) == Some(true)
-                });
-        if !uses_rsc {
+        if !self.project_uses_rsc_directives() {
             return;
         }
         let summaries = self.summaries.clone();
@@ -402,6 +460,111 @@ impl<'a> Builder<'a> {
                     .at(site.span),
                 );
             }
+        }
+    }
+
+    /// Warn when a barrel re-exports both a `"use client"` origin and a
+    /// server-only origin. Importing either name from the barrel drags the
+    /// other's directive context across the React Server Components boundary.
+    ///
+    /// Only direct re-export origins are classified, and only when they resolve
+    /// to a local module. A type-only re-export is erased and carries no
+    /// runtime directive. The first client and first server origin in source
+    /// order are named, and the warning is anchored on the earlier of the two.
+    /// This mirrors fallow 3.45.0's `mixed_client_server_barrel` detector,
+    /// except that type-only imports do not make an origin server-only.
+    pub(super) fn detect_mixed_client_server_barrels(&mut self) {
+        if !self.project_uses_rsc_directives() {
+            return;
+        }
+        let summaries = self.summaries.clone();
+        let by_path: BTreeMap<&str, &FileSummary> = summaries
+            .iter()
+            .map(|summary| (summary.path.as_str(), summary))
+            .collect();
+        for summary in &summaries {
+            if summary.parse_status != ParseStatus::Ok
+                || (summary.re_exports.is_empty() && summary.export_alls.is_empty())
+            {
+                continue;
+            }
+            // Explicit re-exports and `export *` are stored separately, so
+            // collect both and restore source order before classifying.
+            let mut origins: Vec<(u32, Span, &str, &FileSummary)> = Vec::new();
+            for re_export in &summary.re_exports {
+                if re_export.type_only {
+                    continue;
+                }
+                let Some(target) = self
+                    .resolver
+                    .resolve(&summary.path, &re_export.source)
+                    .target
+                else {
+                    continue;
+                };
+                let Some(origin) = by_path.get(target.as_str()) else {
+                    continue;
+                };
+                origins.push((
+                    re_export.span.start,
+                    re_export.span,
+                    re_export.source.as_str(),
+                    *origin,
+                ));
+            }
+            for export_all in &summary.export_alls {
+                if export_all.type_only {
+                    continue;
+                }
+                let Some(target) = self
+                    .resolver
+                    .resolve(&summary.path, &export_all.source)
+                    .target
+                else {
+                    continue;
+                };
+                let Some(origin) = by_path.get(target.as_str()) else {
+                    continue;
+                };
+                origins.push((
+                    export_all.span.start,
+                    export_all.span,
+                    export_all.source.as_str(),
+                    *origin,
+                ));
+            }
+            origins.sort_by_key(|(start, _, _, _)| *start);
+            let mut client: Option<(Span, &str)> = None;
+            let mut server: Option<(Span, &str)> = None;
+            for (_, span, source, origin) in origins {
+                // `else if`: a module that is somehow both client and
+                // server-only counts as the client origin, as in fallow.
+                if client.is_none() && origin.has_directive("use client") {
+                    client = Some((span, source));
+                } else if server.is_none() && summary_is_server_only(origin) {
+                    server = Some((span, source));
+                }
+            }
+            let (Some((client_span, client_source)), Some((server_span, server_source))) =
+                (client, server)
+            else {
+                continue;
+            };
+            let anchor = if client_span.start <= server_span.start {
+                client_span
+            } else {
+                server_span
+            };
+            self.diagnostics.push(
+                Diagnostic::warning(
+                    "mixed_client_server_barrel",
+                    format!(
+                        "barrel re-exports both a \"use client\" module (`{client_source}`) and a server-only module (`{server_source}`); one import drags the other's directive across the RSC boundary"
+                    ),
+                )
+                .in_file(&summary.path)
+                .at(anchor),
+            );
         }
     }
 
