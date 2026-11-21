@@ -572,12 +572,18 @@ bundlers as `misplaced_directive`. It never changes candidates or entries.
 
 These are entries and are never deletion candidates:
 
-- `proxy.ts` / `proxy.js` (Next.js 16) and `middleware.ts` / `middleware.js`;
-- `instrumentation.ts`, `instrumentation-client.ts`;
-- `app/**/sitemap.ts`, `robots.ts`, `manifest.ts`;
-- `app/**/icon.*`, `apple-icon.*`, `opengraph-image.*`, `twitter-image.*`;
-- `app/**/not-found.tsx`, `error.tsx`, `global-error.tsx`, `loading.tsx`,
-  `template.tsx`;
+- `proxy.ts` / `proxy.js` (Next.js 16) and `middleware.ts` / `middleware.js`
+  at the package root or `src/`;
+- `instrumentation.ts` and `instrumentation-client.ts` at the package root or
+  `src/`;
+- `app/**/sitemap.ts`, `app/**/icon.*`, `app/**/apple-icon.*`,
+  `app/**/opengraph-image.*`, and `app/**/twitter-image.*` at any depth;
+- `app/robots.ts`, `app/manifest.ts`, `app/global-error.tsx`, and
+  `app/global-not-found.tsx` only directly under the app root. Next.js ignores
+  the same stems in a route group, parallel slot, or nested segment, so they
+  stay analyzable there. The same applies under `src/app/`;
+- `app/**/not-found.tsx`, `app/**/error.tsx`, `app/**/loading.tsx`, and
+  `app/**/template.tsx`;
 - metadata exports: `metadata`, `generateMetadata`, `viewport`,
   `generateViewport`, `generateStaticParams`, `generateSitemaps`.
 

@@ -176,6 +176,41 @@ fn is_next_intl_convention(path: &str) -> bool {
         && at_package_root(path, &format!("i18n/{file}"))
 }
 
+/// App Router convention stems that Next.js loads at any depth. `sitemap` and
+/// the image-metadata routes are matched anywhere in the app tree.
+pub(super) const NEXT_APP_ANY_DEPTH_STEMS: &[&str] = &[
+    "page",
+    "layout",
+    "template",
+    "loading",
+    "error",
+    "not-found",
+    "forbidden",
+    "unauthorized",
+    "route",
+    "default",
+    "sitemap",
+    "icon",
+    "apple-icon",
+    "opengraph-image",
+    "twitter-image",
+];
+
+/// App Router convention stems that Next.js loads only directly under the app
+/// root. A route group, parallel slot, or nested segment is not a framework
+/// file: `next build` ignores `app/(group)/robots.ts`, `app/@slot/robots.ts`,
+/// and `app/nested/robots.ts`. Verified against Next.js 16.4.6.
+pub(super) const NEXT_APP_ROOT_ONLY_STEMS: &[&str] =
+    &["global-error", "global-not-found", "manifest", "robots"];
+
+/// Whether a package-relative path is a file directly under the app root.
+fn is_app_root_file(package_path: &str) -> bool {
+    package_path
+        .strip_prefix("app/")
+        .or_else(|| package_path.strip_prefix("src/app/"))
+        .is_some_and(|rest| !rest.contains('/'))
+}
+
 /// Packages that make Vite the project's bundler. `vitest` implies a Vite
 /// toolchain, and `rolldown-vite` is the drop-in Vite distribution.
 const VITE_ENABLERS: &[&str] = &["vite", "vitest", "rolldown-vite"];
@@ -1677,33 +1712,15 @@ impl<'a> Builder<'a> {
                     }
                 }
             }
+            // `middleware`, `proxy`, and instrumentation live at the package
+            // root (or `src/`), never under `app/`; `root_convention` covers
+            // those. The root-only app conventions are ignored inside a route
+            // group, parallel slot, or nested segment, so only a direct app
+            // root file is a framework entry.
             let app_entry = (is_app
-                && matches!(
-                    stem,
-                    "page"
-                        | "layout"
-                        | "template"
-                        | "loading"
-                        | "error"
-                        | "global-error"
-                        | "not-found"
-                        | "global-not-found"
-                        | "forbidden"
-                        | "unauthorized"
-                        | "route"
-                        | "default"
-                        | "sitemap"
-                        | "robots"
-                        | "manifest"
-                        | "icon"
-                        | "apple-icon"
-                        | "opengraph-image"
-                        | "twitter-image"
-                        | "middleware"
-                        | "proxy"
-                        | "instrumentation"
-                        | "instrumentation-client"
-                ))
+                && (NEXT_APP_ANY_DEPTH_STEMS.contains(&stem)
+                    || (NEXT_APP_ROOT_ONLY_STEMS.contains(&stem)
+                        && is_app_root_file(package_path))))
                 || root_convention;
             let pages_entry = is_pages;
             if app_entry || pages_entry {
@@ -4322,6 +4339,43 @@ mod tests {
     }
 
     #[test]
+    fn nested_root_only_app_stems_do_not_decorate_routes() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/shop/[id]/page.tsx",
+                "export default function Page() { return null; }\n",
+            ),
+            // Next.js ignores `robots` under a dynamic segment, a route group,
+            // or a parallel slot, so it must not introduce a competing
+            // `[slug]` segment or a route participant.
+            (
+                "app/shop/[slug]/robots.ts",
+                "export default function robots() { return {}; }\n",
+            ),
+            (
+                "app/(group)/robots.ts",
+                "export default function robots() { return {}; }\n",
+            ),
+            (
+                "app/@slot/robots.ts",
+                "export default function robots() { return {}; }\n",
+            ),
+        ]);
+        assert!(
+            snapshot
+                .diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.code != "dynamic_segment_name_conflict"),
+            "{:?}",
+            snapshot.diagnostics
+        );
+    }
+
+    #[test]
     fn next_segment_config_conflicts_are_build_errors() {
         let routes = snapshot(&[
             (
@@ -4851,6 +4905,105 @@ mod tests {
             "the page helper should remain a candidate: {:?}",
             snapshot.candidates
         );
+    }
+
+    #[test]
+    fn next_root_only_conventions_require_the_app_root() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"probe","private":true,"dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/page.tsx",
+                "export default function Page() { return null; }\n",
+            ),
+            (
+                "app/robots.ts",
+                "export default function robots() { return {}; }\n",
+            ),
+            (
+                "app/manifest.ts",
+                "export default function manifest() { return {}; }\n",
+            ),
+            (
+                "app/global-error.tsx",
+                "\"use client\";\nexport default function GlobalError() { return null; }\n",
+            ),
+            (
+                "app/nested/robots.ts",
+                "export default function robots() { return {}; }\n",
+            ),
+            (
+                "app/nested/manifest.ts",
+                "export default function manifest() { return {}; }\n",
+            ),
+            (
+                "app/nested/global-error.tsx",
+                "\"use client\";\nexport default function GlobalError() { return null; }\n",
+            ),
+            (
+                "app/(group)/robots.ts",
+                "export default function robots() { return {}; }\n",
+            ),
+            (
+                "app/@slot/robots.ts",
+                "export default function robots() { return {}; }\n",
+            ),
+            (
+                "app/nested/sitemap.ts",
+                "export default function sitemap() { return []; }\n",
+            ),
+            (
+                "app/nested/middleware.ts",
+                "export function middleware() { return null; }\n",
+            ),
+            (
+                "app/nested/instrumentation.ts",
+                "export function register() { return null; }\n",
+            ),
+            (
+                "app/nested/instrumentation-client.ts",
+                "export function onRouterTransitionStart() { return null; }\n",
+            ),
+            (
+                "middleware.ts",
+                "export function middleware() { return null; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for key in [
+            "app/robots.ts#default",
+            "app/manifest.ts#default",
+            "app/global-error.tsx#default",
+            "app/nested/sitemap.ts#default",
+            "middleware.ts#middleware",
+        ] {
+            assert!(
+                entries.contains(&key),
+                "{key} must be an entry: {entries:?}"
+            );
+        }
+        for key in [
+            "app/nested/robots.ts#default",
+            "app/nested/manifest.ts#default",
+            "app/nested/global-error.tsx#default",
+            "app/(group)/robots.ts#default",
+            "app/@slot/robots.ts#default",
+            "app/nested/middleware.ts#middleware",
+            "app/nested/instrumentation.ts#register",
+            "app/nested/instrumentation-client.ts#onRouterTransitionStart",
+        ] {
+            assert!(
+                !entries.contains(&key),
+                "{key} is not a Next convention outside the app root: {entries:?}"
+            );
+            assert!(
+                snapshot.is_candidate(key),
+                "{key} should remain analyzable: {:?}",
+                snapshot.candidates
+            );
+        }
     }
 
     #[test]

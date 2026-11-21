@@ -312,16 +312,22 @@ unrelated package is not a Next.js route. The owning package must declare
 `package.json` fails open, while a manifest without `next` leaves the files
 analyzable.
 
-- `page`, `layout`, `template`, `loading`, `error`, `global-error`, `not-found`,
-  `forbidden`, `unauthorized`, `route`, `default`; with `pageExtensions`
-  containing `md` or `mdx`, the same convention stems are routes as Markdown,
-  and their ESM imports keep rendered components live. A dotted value is one
-  extension: with `["page.tsx"]`, `app/page.page.tsx` has the stem `page` and
+- `page`, `layout`, `template`, `loading`, `error`, `not-found`, `forbidden`,
+  `unauthorized`, `route`, `default`; with `pageExtensions` containing `md` or
+  `mdx`, the same convention stems are routes as Markdown, and their ESM
+  imports keep rendered components live. A dotted value is one extension: with
+  `["page.tsx"]`, `app/page.page.tsx` has the stem `page` and
   `app/layout.page.tsx` the stem `layout`, matching knip's AST-derived patterns
   and Next's own suffix strip. Only framework-invoked exports become live, so
   other exports in those files stay analyzable;
-- `sitemap`, `robots`, `manifest`, `icon`, `apple-icon`, `opengraph-image`,
-  `twitter-image`;
+- `sitemap`, `icon`, `apple-icon`, `opengraph-image`, `twitter-image` at any
+  depth;
+- `robots`, `manifest`, `global-error`, and `global-not-found` only directly
+  under the app root. A route group, parallel slot, or nested segment is not a
+  framework file: Next.js 16.4.6 ignores `app/(group)/robots.ts`,
+  `app/@slot/robots.ts`, and `app/nested/global-error.tsx`. `middleware`,
+  `proxy`, and instrumentation live at the package root or `src/`, never under
+  `app/`;
 - image-route metadata: `size`, `contentType`, `alt`, `generateImageMetadata`
   (scoped to image-route stems, never global);
 - `proxy.ts` (Next.js 16) and `middleware.ts` (15) exports;
