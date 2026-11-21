@@ -4,8 +4,7 @@ use shrike_core::glob::glob_match;
 use shrike_core::ids::{module_symbol_key, symbol_key};
 use shrike_core::{Diagnostic, Span};
 use shrike_syntax::{
-    BindingKind, DeclarationKind, DynamicKind, DynamicSpecifier, FileSummary, ImportRecord,
-    ParseStatus,
+    BindingKind, DynamicKind, DynamicSpecifier, FileSummary, ImportRecord, ParseStatus,
 };
 
 use super::Builder;
@@ -152,51 +151,14 @@ fn summary_server_only_import_reason(summary: &FileSummary) -> Option<(String, S
 
 /// Whether a `"use server"` module contains only Server Action exports.
 ///
-/// A module qualifies when every value export is an async function declaration
-/// (or a type-only export) and there are no value re-exports. Such a module is
-/// replaced by action references at the client boundary, so the leak cone stops
-/// there. A non-action export (a top-level const, a default value, or a
-/// re-export) can ship the module's imports to the client, so the cone keeps
-/// walking. This is deliberately conservative for `export const action = async
-/// () => {}`: Shrike does not classify variable initializers as actions yet, so
-/// it keeps such a module in the cone rather than risk hiding a leak.
+/// The parser classifies the module from the AST, including async function
+/// declarations, async `const` arrow/function expressions, overload and
+/// ambient declarations, type exports, and local/default export aliases. Such
+/// a module is replaced by action references at the client boundary, so the
+/// leak cone stops there. A non-action export (a top-level const, a default
+/// value, or a re-export) keeps the cone walking.
 fn summary_is_server_action_module(summary: &FileSummary) -> bool {
-    if !summary.has_directive("use server") {
-        return false;
-    }
-    if summary
-        .re_exports
-        .iter()
-        .any(|re_export| !re_export.type_only)
-        || summary
-            .export_alls
-            .iter()
-            .any(|export_all| !export_all.type_only)
-    {
-        return false;
-    }
-    for local_export in &summary.local_exports {
-        if local_export.type_only {
-            continue;
-        }
-        let Some(declaration) = summary
-            .declarations
-            .iter()
-            .find(|declaration| declaration.name == local_export.local)
-        else {
-            return false;
-        };
-        if !declaration_is_action(declaration) {
-            return false;
-        }
-    }
-    summary.declarations.iter().all(|declaration| {
-        !declaration.exported || declaration.type_only || declaration_is_action(declaration)
-    })
-}
-
-fn declaration_is_action(declaration: &shrike_syntax::DeclarationRecord) -> bool {
-    declaration.kind == DeclarationKind::Function && declaration.r#async
+    summary.server_action_module
 }
 
 /// Whether a module has a runtime static edge to `specifier`. When it does, a
@@ -530,7 +492,7 @@ impl<'a> Builder<'a> {
     /// a shared module may be compiled by a sibling RSC app even when its own
     /// package does not declare the bundler. The root manifest is checked
     /// directly because the resolver only records packages that have a name.
-    fn project_uses_rsc_directives(&self) -> bool {
+    pub(super) fn project_uses_rsc_directives(&self) -> bool {
         super::entries::package_declares_any(self.resolver.root(), "", RSC_BUNDLER_PACKAGES)
             == Some(true)
             || self.resolver.packages().iter().any(|package| {

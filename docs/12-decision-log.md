@@ -1015,6 +1015,77 @@ client-only, or fallow's leak-cone exclusions diverge.
 
 ---
 
+## D-030 — Async arrow actions and inline directives are Server Actions
+
+**Decision:** The all-action `"use server"` predicate mirrors fallow 3.45.0's
+`is_server_action_module`: a leading directive plus every value export
+async-function-shaped. Async function declarations, async arrow functions, and
+async function expressions count; type exports, ambient declarations, and
+overload signatures are allowed because they have no runtime value; a value
+re-export or any other value export keeps the module out of the shape. A local
+`export { local }` or `export default local` resolves from its top-level
+declaration, with only `const` async function expressions classified as
+actions.
+
+An inline `"use server"` body directive is recorded for exported function
+declarations, exported variable declarators, and default-exported functions or
+arrows. Under `serverActionPolicy: "protect"`, with RSC bundler evidence and no
+file-level directive, each inline action export is seeded as an entry.
+Whole-file `"use server"` protection is unchanged: every export of a module with
+the file-level directive is seeded under `protect`.
+
+**Alternatives considered:**
+
+- Only async function declarations (the previous Shrike behavior): misses the
+  common `export const action = async () => {}` form, so the leak cone falsely
+  reports a sanctioned boundary and `protect` leaves a real action dead.
+- Treat any `"use server"` file as all-action regardless of other exports: a
+  top-level constant or value re-export can carry the module's imports into the
+  client bundle, hiding a real leak.
+- Treat an inline directive as a file-level directive: it would stop the leak
+  cone at a module whose other imports still ship, and it would protect
+  unrelated exports.
+- Resolve value re-exports across modules: the predicate cannot classify the
+  target from this module; the conservative `false` keeps the cone walking.
+- Protect inline actions without RSC bundler evidence: outside an RSC bundler
+  the directive has no meaning.
+- Capture only named inline actions, as fallow's exported-only capture does: a
+  default-exported inline action is legal Next.js and would otherwise be
+  reported dead. Shrike records `"default"` as well.
+
+**Why:** Read fallow 3.45.0's
+`crates/extract/src/visitor/visit_impl_server_actions.rs` (module shape),
+`declarations.rs` (inline capture), and
+`crates/core/src/analyze/unused_server_action.rs` (reclassification). On
+`/tmp/opencode/server-action-probe`, fallow's `security` reports six
+client-server leaks (`class`, `default-sync`, `export-star`, `mixed`,
+`reexport`, `sync`) and Shrike reports the same six at line 3. Both exclude the
+async function, async arrow, async function expression, type-plus-action,
+local-alias, default-local, anonymous-default, `let` async arrow, and type-only
+re-export modules. Fallow's `dead-code` classifies the two unreferenced inline
+actions as `unused-server-action` and the ordinary export as `unused-export`;
+Shrike's default `graph` policy reports all three as candidates, and `protect`
+keeps the inline actions live. Next.js's own `server-boundary.js` validation
+requires `"use server"` exports to be async functions.
+
+**Consequences:**
+
+- `FileSummary.server_action_module` and
+  `FileSummary.inline_server_action_exports` record the two predicates;
+  `ANALYSIS_VERSION` is bumped to 66.
+- Graph tests cover an all-arrow module stopping the leak cone, a mixed arrow
+  module still leaking, inline actions under `protect` and `graph`, and the
+  missing-RSC-bundler control.
+- The inline capture is exported-only and declaration-attached, matching
+  fallow. A local `export { action }` alias of an inline action declared
+  elsewhere is not inferred, and the conservative choice keeps the leak cone
+  walking.
+
+**Revisit if:** React or Next.js starts allowing non-async `"use server"`
+exports, or fallow changes its all-action predicate or inline capture.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -1086,6 +1157,8 @@ external app, credential, or participant.
 | D-026 | App Router route conflicts are error diagnostics | accepted |
 | D-027 | Misplaced RSC directives are advisory warnings | accepted |
 | D-028 | Mixed client/server barrels are advisory warnings | accepted |
+| D-029 | Client/server leak cones are advisory warnings | accepted |
+| D-030 | Async arrow actions and inline directives are Server Actions | accepted |
 
 ## Rejected ideas
 

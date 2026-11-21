@@ -248,6 +248,15 @@ pub struct FileSummary {
     pub parse_message: Option<String>,
     pub line_count: u32,
     pub directives: Vec<String>,
+    /// Whether a leading `"use server"` module exports only async functions.
+    /// The bundler replaces such a module with action references at the client
+    /// boundary, so its imports never enter the client bundle.
+    #[serde(default)]
+    pub server_action_module: bool,
+    /// Names of exports whose function body carries an inline `"use server"`
+    /// directive. `"default"` represents a default-exported action.
+    #[serde(default)]
+    pub inline_server_action_exports: Vec<String>,
     /// Directive-looking strings after the prologue. Recorded for the
     /// `misplaced_directive` diagnostic; they are not honored as directives.
     #[serde(default)]

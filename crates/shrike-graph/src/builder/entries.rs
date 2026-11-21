@@ -848,6 +848,7 @@ impl<'a> Builder<'a> {
 
     pub(super) fn detect_entries(&mut self) {
         let summaries = self.summaries.clone();
+        let rsc_directives = self.project_uses_rsc_directives();
         let analyzed: BTreeSet<&str> = summaries
             .iter()
             .map(|summary| summary.path.as_str())
@@ -2184,6 +2185,29 @@ impl<'a> Builder<'a> {
                     add(self, module.clone(), "react", "module", None, "both");
                 }
             }
+            if self.config.server_action_policy == ServerActionPolicy::Protect
+                && rsc_directives
+                && !summary.has_directive("use server")
+                && !summary.inline_server_action_exports.is_empty()
+            {
+                // An inline `"use server"` body directive is a Server Action
+                // even without a file-level directive. The action is invoked
+                // through a serialized reference, so `protect` keeps it live
+                // exactly like an export of a whole `"use server"` module.
+                let exports = self.exports.get(path).cloned().unwrap_or_default();
+                for name in &summary.inline_server_action_exports {
+                    if let Some(key) = exports.get(name) {
+                        add(
+                            self,
+                            key.clone(),
+                            "react",
+                            "inline-server-action",
+                            None,
+                            "server",
+                        );
+                    }
+                }
+            }
             let cosmos_fixture = cosmos_fixture_files.contains(path);
             let cosmos_decorator = cosmos_decorator_files.contains(path);
             if self.config.test_entries && self.config.entry_policy != EntryPolicy::Production {
@@ -3143,37 +3167,104 @@ mod tests {
             server_action_policy: ServerActionPolicy::Protect,
             ..EngineConfig::default()
         };
-        let snapshot = snapshot_with_config(
+        let files = [
+            (
+                "package.json",
+                r#"{"name":"app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/page.tsx",
+                "import { importedAction } from '../src/actions';\n\
+                 import { inlineAction } from '../src/inline';\n\
+                 export default function Page() { return importedAction() + inlineAction(); }\n",
+            ),
+            (
+                "src/actions.ts",
+                "\"use server\";\n\
+                 export async function importedAction() { return 1; }\n\
+                 export async function unimportedAction() { return 2; }\n\
+                 export const arrowAction = async () => 3;\n\
+                 export const value = 4;\n",
+            ),
+            (
+                "src/inline.ts",
+                "export async function inlineAction() { \"use server\"; return 1; }\n\
+                 export const inlineArrow = async () => { \"use server\"; return 2; };\n\
+                 export default async function () { \"use server\"; return 3; }\n\
+                 export const plain = () => 4;\n",
+            ),
+        ];
+        let snapshot = snapshot_with_config(&files, &config);
+        let entries = entry_symbols(&snapshot);
+        for key in [
+            "src/actions.ts#importedAction",
+            "src/actions.ts#unimportedAction",
+            "src/inline.ts#inlineAction",
+            "src/inline.ts#inlineArrow",
+            "src/inline.ts#default",
+        ] {
+            assert!(entries.contains(&key), "{key}: {entries:?}");
+            assert!(
+                snapshot.is_live(key),
+                "{key} must stay live: {:?}",
+                snapshot.live
+            );
+            assert!(
+                !snapshot.is_candidate(key),
+                "{key} must not be a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+        assert!(
+            snapshot.is_candidate("src/inline.ts#plain"),
+            "an ordinary export stays analyzable: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot.is_live("src/actions.ts#value"),
+            "a file-level use server directive protects every export: {:?}",
+            snapshot.live
+        );
+
+        // Inline actions are only protected when the project has RSC bundler
+        // evidence. Without it, the body directive has no special meaning.
+        let no_bundler = snapshot_with_config(
             &[
                 (
-                    "app/page.tsx",
-                    "import { importedAction } from '../src/actions';\n\
-                     export default function Page() { return importedAction(); }\n",
+                    "package.json",
+                    r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
                 ),
                 (
-                    "src/actions.ts",
-                    "\"use server\";\n\
-                     export async function importedAction() { return 1; }\n\
-                     export async function unimportedAction() { return 2; }\n",
+                    "src/inline.ts",
+                    "export async function inlineAction() { \"use server\"; return 1; }\n",
                 ),
             ],
             &config,
         );
-        let entries = entry_symbols(&snapshot);
-        for name in ["importedAction", "unimportedAction"] {
-            let key = format!("src/actions.ts#{name}");
-            assert!(entries.contains(&key.as_str()), "{name}: {entries:?}");
-            assert!(
-                snapshot.is_live(&key),
-                "{name} must stay live: {:?}",
-                snapshot.live
-            );
-            assert!(
-                !snapshot.is_candidate(&key),
-                "{name} must not be a candidate: {:?}",
-                snapshot.candidates
-            );
-        }
+        assert!(
+            no_bundler.is_candidate("src/inline.ts#inlineAction"),
+            "no RSC bundler evidence: {:?}",
+            no_bundler.candidates
+        );
+
+        // Under the default `graph` policy, an inline action is dead unless
+        // application code imports it, matching fallow's unused-action model.
+        let graph = snapshot_with_config(&files, &EngineConfig::default());
+        assert!(
+            graph.is_candidate("src/inline.ts#inlineArrow"),
+            "default graph policy: {:?}",
+            graph.candidates
+        );
+        assert!(
+            graph.is_candidate("src/inline.ts#default"),
+            "an unreferenced default inline action is dead: {:?}",
+            graph.candidates
+        );
+        assert!(
+            graph.is_live("src/inline.ts#inlineAction"),
+            "the imported inline action is live: {:?}",
+            graph.live
+        );
     }
 
     #[test]
@@ -3723,6 +3814,25 @@ mod tests {
                 "app/action-mixed/page.tsx",
                 "\"use client\";\n\nimport { action, value } from \"../../lib/action-mixed\";\nexport default function Page() { return <button onClick={() => action()}>{value}</button>; }\n",
             ),
+            // An async arrow export is action-shaped too.
+            (
+                "lib/action-arrow.ts",
+                "\"use server\";\nimport fs from \"node:fs\";\nexport const action = async () => fs.readFileSync(\"x\", \"utf8\");\n",
+            ),
+            (
+                "app/action-arrow/page.tsx",
+                "\"use client\";\n\nimport { action } from \"../../lib/action-arrow\";\nexport default function Page() { return <button onClick={() => action()}>run</button>; }\n",
+            ),
+            // One non-action export keeps an otherwise all-arrow module in the
+            // client cone.
+            (
+                "lib/action-arrow-mixed.ts",
+                "\"use server\";\nimport fs from \"node:fs\";\nexport const action = async () => fs.readFileSync(\"x\", \"utf8\");\nexport const value = 1;\n",
+            ),
+            (
+                "app/action-arrow-mixed/page.tsx",
+                "\"use client\";\n\nimport { action, value } from \"../../lib/action-arrow-mixed\";\nexport default function Page() { return <button onClick={() => action()}>{value}</button>; }\n",
+            ),
             // Type-only edges are erased and cannot leak.
             (
                 "lib/type-server.ts",
@@ -3786,6 +3896,7 @@ mod tests {
         assert_eq!(
             leaks,
             vec![
+                ("app/action-arrow-mixed/page.tsx".to_string(), 3),
                 ("app/action-mixed/page.tsx".to_string(), 3),
                 ("app/direct/page.tsx".to_string(), 3),
                 ("app/dynamic-no-ssr/page.tsx".to_string(), 4),

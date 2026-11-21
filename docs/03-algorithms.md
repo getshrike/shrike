@@ -338,7 +338,17 @@ analyzable.
 - `"use server"` module exports under `serverActionPolicy: "protect"`. The
   default `graph` policy treats an action like any other export, so an action no
   module references is reported; an import, `action={fn}` binding, or any other
-  reference keeps it live. Build evidence can also keep a referenced action live;
+  reference keeps it live. Build evidence can also keep a referenced action live.
+  The all-action shape mirrors fallow 3.45.0: a leading `"use server"` module is
+  all-action only when every value export is async-function-shaped. Async
+  function declarations, async arrow functions, and async function expressions
+  count; type exports, ambient declarations, and overload signatures do not
+  produce a runtime value and are allowed; a value re-export or any other value
+  export keeps the module out of the all-action shape. A local
+  `export { action }` or `export default action` is resolved from its top-level
+  declaration. An inline `"use server"` body directive on an exported function,
+  arrow, or default export is also an action: under `protect`, with RSC bundler
+  evidence and no file-level directive, the export is seeded as an entry;
 - `"use client"` module exports (client boundary);
 - a `"use client"` module that exports a Next.js server-only, route-config, or
   route-handler name produces an advisory `invalid_client_export` warning, not
@@ -382,13 +392,14 @@ analyzable.
   `fs`/`fs/promises`/`child_process` (bare or `node:`), or a named
   `cookies`/`headers`/`draftMode` API (or namespace) from `next/headers`. An
   all-action `"use server"` module stops the cone because its exports become
-  action references at the boundary; a module with any non-action value export
-  keeps walking. A `next/dynamic(..., { ssr: false })` edge is skipped when the
-  same specifier has no runtime static edge, because the target is
-  intentionally client-only. The rule uses the same seven-bundler gate, emits
-  one warning per client root, anchors on the first import of the shortest
-  path, and names the sink plus the full path. It follows fallow 3.45.0's
-  `client_server_leak` detector;
+  action references at the boundary; async function declarations, async arrows,
+  and async function expressions are all action-shaped. A module with any
+  non-action value export keeps walking. A `next/dynamic(..., { ssr: false })`
+  edge is skipped when the same specifier has no runtime static edge, because
+  the target is intentionally client-only. The rule uses the same seven-bundler
+  gate, emits one warning per client root, anchors on the first import of the
+  shortest path, and names the sink plus the full path. It follows fallow
+  3.45.0's `client_server_leak` detector;
 - metadata exports: `metadata`, `generateMetadata`, `viewport`,
   `generateViewport`, `generateStaticParams`, `generateSitemaps`;
 - dynamic param matching (Next.js 16.4): `unstable_paramMatching` and
