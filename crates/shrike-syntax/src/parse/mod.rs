@@ -185,6 +185,7 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
     let type_refs = type_refs::collect(&program, source);
     summary.type_refs = type_refs.modules;
     summary.type_imports = type_refs.imports;
+    refs::narrow_dynamic_bindings(&mut summary);
     refs::mark_local_exports(&mut summary);
     refs::finalize_refs(&mut summary);
     summary

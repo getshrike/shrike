@@ -3588,6 +3588,51 @@ export default config;
     }
 
     #[test]
+    fn const_namespace_dynamic_import_keeps_only_accessed_exports_live() {
+        let snapshot = snapshot(&[
+            (
+                "app/page.tsx",
+                "import { load } from '../src/loader';\nexport default function Page() { return <div>{load()}</div>; }\n",
+            ),
+            (
+                "src/loader.ts",
+                "export async function load() {\n  const used = await import('./mod');\n  const escaped = await import('./escaped');\n  return used.used + (escaped ? 1 : 0);\n}\nfunction use(value: unknown) { return value ? 1 : 0; }\n",
+            ),
+            (
+                "src/mod.ts",
+                "export const used = 1;\nexport const dead = 2;\n",
+            ),
+            (
+                "src/escaped.ts",
+                "export const any = 1;\nexport const alsoAny = 2;\n",
+            ),
+        ]);
+        assert!(
+            !snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "src/mod.ts#used"),
+            "the member read through the const namespace must stay live: {:?}",
+            snapshot.candidates
+        );
+        assert!(
+            snapshot
+                .candidates
+                .iter()
+                .any(|key| key == "src/mod.ts#dead"),
+            "an export the const namespace does not read must be a candidate: {:?}",
+            snapshot.candidates
+        );
+        for key in ["src/escaped.ts#any", "src/escaped.ts#alsoAny"] {
+            assert!(
+                !snapshot.candidates.iter().any(|candidate| candidate == key),
+                "a namespace used as a value can be used in unknown ways: {key} {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
     fn unknown_dynamic_import_usage_keeps_all_exports_live() {
         let snapshot = snapshot(&[
             (
@@ -3596,7 +3641,7 @@ export default config;
             ),
             (
                 "src/loader.ts",
-                "export async function load() {\n  const mod = await import('./mod');\n  return mod.used;\n}\n",
+                "export async function load() {\n  const mod = await import('./mod');\n  return mod;\n}\n",
             ),
             (
                 "src/mod.ts",

@@ -183,6 +183,13 @@ pub struct DynamicRecord {
     /// in an unknown shape and every export must stay live.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub imported: Option<Vec<String>>,
+    /// Local `const` binding that receives the module namespace, such as
+    /// `const ns = await import("./m")`. The parser narrows it after the whole
+    /// module is visited: a binding used only through static members consumes
+    /// exactly those exports; any bare, computed, exported, or otherwise
+    /// escaping use leaves it `None` and widens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

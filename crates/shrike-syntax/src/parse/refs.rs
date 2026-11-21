@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use oxc_ast::ast::{BindingPattern, BindingPatternKind, ModuleExportName};
 use shrike_core::{LineIndex, Span};
 
@@ -25,6 +27,82 @@ pub(super) fn merge_refs(target: &mut ModuleRefs, source: &RefCollector) {
             .then_with(|| a.computed.cmp(&b.computed))
     });
     target.members.dedup();
+}
+
+/// Narrow `const ns = await import("./m")` namespace bindings after the whole
+/// module has been visited. A binding used only through static member accesses
+/// consumes exactly those exports; a bare use, computed access, or export of
+/// the binding can reach any export and keeps the default widening record.
+///
+/// Name collisions with a shadowing local can only add names, never remove a
+/// real use: the collector records every bare identifier reference and every
+/// static member access in the module without scope filtering.
+pub(super) fn narrow_dynamic_bindings(summary: &mut FileSummary) {
+    let mut bindings: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for (index, record) in summary.dynamic.iter().enumerate() {
+        if let Some(binding) = &record.binding {
+            bindings.entry(binding.clone()).or_default().push(index);
+        }
+    }
+    if bindings.is_empty() {
+        return;
+    }
+
+    let mut escapes: BTreeSet<String> = summary.module_refs.free.iter().cloned().collect();
+    for declaration in &summary.declarations {
+        escapes.extend(declaration.references.free.iter().cloned());
+    }
+    escapes.extend(
+        summary
+            .local_exports
+            .iter()
+            .map(|export| export.local.clone()),
+    );
+
+    let mut members: Vec<(String, Option<String>)> = summary
+        .module_refs
+        .members
+        .iter()
+        .map(|member| (member.object.clone(), member.property.clone()))
+        .collect();
+    for declaration in &summary.declarations {
+        members.extend(
+            declaration
+                .references
+                .members
+                .iter()
+                .map(|member| (member.object.clone(), member.property.clone())),
+        );
+    }
+
+    for (binding, indices) in bindings {
+        if escapes.contains(&binding) {
+            continue;
+        }
+        let mut names = BTreeSet::new();
+        let mut widened = false;
+        for (object, property) in &members {
+            if object != &binding {
+                continue;
+            }
+            match property {
+                Some(property) => {
+                    names.insert(property.clone());
+                }
+                None => {
+                    widened = true;
+                    break;
+                }
+            }
+        }
+        if widened || names.is_empty() {
+            continue;
+        }
+        let names: Vec<String> = names.into_iter().collect();
+        for index in indices {
+            summary.dynamic[index].imported = Some(names.clone());
+        }
+    }
 }
 
 pub(super) fn finalize_refs(summary: &mut FileSummary) {

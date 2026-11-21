@@ -637,7 +637,8 @@ names are statically visible:
 | `import('./m').then((m) => { m.a(); m.b(); })` | `a` and `b` only |
 | `import('./m').then(({ a, b }) => ...)` | `a` and `b` only |
 | `const [{ a }, { b }] = await Promise.all([import('./a'), import('./b')])` | `a` and `b` only; a bare identifier element binds the namespace and widens its module |
-| `const ns = await import('./m')`, a `.then` callback that uses the namespace as a value, rest/spread destructuring, or an empty pattern | every export |
+| `const ns = await import('./m'); ns.a(); ns.b;` | `a` and `b` only |
+| `const ns = await import('./m')` with a bare, computed, exported, or missing use of `ns`; a `let`/`var` binding; a `.then` callback that uses the namespace as a value; rest/spread destructuring; or an empty pattern | every export |
 | a name that does not resolve through the target's re-exports | every export |
 
 A `.then` callback narrows only when it is the first argument and the import is
@@ -647,11 +648,18 @@ the import. Chained callbacks such as
 `import('./m').then((m) => m.a).then((a) => a.b)` receive the first callback's
 result, not the module namespace, so only the first callback contributes names.
 
+A `const ns = await import('./m')` binding narrows to the names read through
+static members anywhere in the module. Only `const` qualifies: `let` and `var`
+can be reassigned, so later member reads do not prove which value is read. A
+bare reference, computed access, export of the binding, or no member read at all
+widens. The post-visit scan is name-based; a shadowing local can add names but
+cannot hide a real bare or computed use, so collisions stay conservative.
+
 **Rule G5:** export narrowing fails closed. Any shape that could use the
-namespace as a value, including identifier-bound namespaces, a `.then` callback
-that reads the namespace through anything other than static member accesses, a
-`Promise.all` rest element, and any unresolved name widens to every export
-instead of guessing.
+namespace as a value, including `let`/`var` namespace bindings, a `.then`
+callback that reads the namespace through anything other than static member
+accesses, a `Promise.all` rest element, and any unresolved name widens to every
+export instead of guessing.
 
 **Rule G1:** an `unknown` edge is never silently ignored. It is reported in the
 proof trace and in `shrike proof`.
