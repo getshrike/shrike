@@ -93,6 +93,22 @@ test("misplaced directives are actionable boundary diagnostics", () => {
   assert.equal(summary.bySeverity.warning, 1);
 });
 
+test("mixed client/server barrels are actionable boundary diagnostics", () => {
+  const summary = summarizeDiagnostics([
+    {
+      code: "mixed_client_server_barrel",
+      severity: "warning",
+      message:
+        'barrel re-exports both a "use client" module (`../components/client`) and a server-only module (`../lib/server`)',
+      file: "src/barrel.ts",
+    },
+  ]);
+  assert.equal(summary.actionable, 1);
+  assert.equal(summary.groups[0].category, "boundary");
+  assert.equal(summary.groups[0].actionable, true);
+  assert.equal(summary.bySeverity.warning, 1);
+});
+
 test("Next.js route conflicts are actionable routing diagnostics", () => {
   const summary = summarizeDiagnostics([
     {

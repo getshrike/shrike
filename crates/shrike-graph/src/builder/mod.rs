@@ -114,6 +114,7 @@ impl<'a> Builder<'a> {
         self.detect_invalid_client_exports();
         self.detect_misplaced_directives();
         self.resolve_imports();
+        self.detect_mixed_client_server_barrels();
         self.build_edges();
         self.detect_entries();
         self.detect_next_route_conflicts();

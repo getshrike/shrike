@@ -363,6 +363,17 @@ analyzable.
   workspace manifest, matching fallow 3.45.0's `RSC_BUNDLER_DEPS`. One warning
   per occurrence, anchored on the statement; `"use strict"` and nested strings
   are ignored;
+- a barrel that directly re-exports both a `"use client"` origin and a
+  server-only origin produces a `mixed_client_server_barrel` warning, not a
+  finding. A server-only origin carries `"use server"`, imports `server-only`,
+  `next/server`, `fs`/`fs/promises`/`child_process` (bare or `node:`), or a
+  named `cookies`/`headers`/`draftMode` API (or namespace) from
+  `next/headers`. Type-only re-exports and type-only imports are erased and do
+  not count. The rule uses the same seven-bundler gate as
+  `misplaced_directive`, names the first client and server origins in source
+  order, and anchors on the earlier re-export. It follows fallow 3.45.0's
+  `mixed_client_server_barrel` detector, with the type-only import exclusion
+  as a deliberate precision improvement;
 - metadata exports: `metadata`, `generateMetadata`, `viewport`,
   `generateViewport`, `generateStaticParams`, `generateSitemaps`;
 - dynamic param matching (Next.js 16.4): `unstable_paramMatching` and
