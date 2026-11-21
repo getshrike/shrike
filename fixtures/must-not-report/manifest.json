@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 295,
+  "count": 296,
   "entries": [
     {
       "id": "page-entry-1",
@@ -5301,6 +5301,47 @@
         "src/components/AuthorCard.tsx#unusedAuthorHelper",
         "src/components/VersionNote.tsx#unusedVersionHelper",
         "src/components/dead.tsx#default"
+      ]
+    },
+    {
+      "id": "gatsby-templates",
+      "category": "gatsby",
+      "files": [
+        "gatsby-config.ts",
+        "gatsby-node.ts",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/templates/blog-post.tsx#__module__",
+          "reason": "createPage registers the template module"
+        },
+        {
+          "symbol": "src/templates/blog-post.tsx#default",
+          "reason": "Gatsby renders the template default export"
+        },
+        {
+          "symbol": "src/templates/blog-post.tsx#query",
+          "reason": "Gatsby runs the page query export"
+        },
+        {
+          "symbol": "src/templates/blog-post.tsx#Head",
+          "reason": "Gatsby invokes the Head export"
+        },
+        {
+          "symbol": "src/components/post-body.tsx#PostBody",
+          "reason": "the page and template import and render PostBody"
+        }
+      ],
+      "mustReport": [
+        "src/components/post-body.tsx#unusedPostBodyHelper",
+        "src/templates/blog-post.tsx#unusedTemplateHelper",
+        "src/templates/dead-template.tsx#default",
+        "src/templates/dead-template.tsx#query",
+        "src/templates/dead-template.tsx#unusedDeadHelper",
+        "src/other/dead.tsx#default"
       ]
     }
   ]
