@@ -1364,6 +1364,74 @@ nested `global-error` as a real boundary.
 
 ---
 
+## D-036 — Next.js exports are scoped to the file type that reads them
+
+**Decision:** Each Next.js convention file protects only the exports Next.js
+reads from that file type, not the union of every framework name. Pages read
+`default`, metadata/viewport, static params, parameter matching, and segment
+config, plus page-only `unstable_dynamicStaleTime`. Layouts and `default` files
+read the same surface without `unstable_dynamicStaleTime`. Route handlers read
+HTTP methods, `generateStaticParams`, and segment config, but no
+metadata/viewport, `default`, or parameter matching. `not-found`, `forbidden`,
+and `unauthorized` read `default` plus metadata/viewport;
+`global-not-found`, `template`, `loading`, `error`, and `global-error` read only
+`default`. Metadata routes read `default`, `generateStaticParams`, and segment
+config, with `generateSitemaps` on sitemap and image metadata on image routes.
+Pages Router files follow the same rule: ordinary pages, API routes, `_app`,
+`_document`, and `_error` each expose a different surface.
+
+**Alternatives considered:**
+
+- Keep the union on every app or pages entry: it credits `metadata` on a route
+  handler, `GET` on a page, `config` on an App Router page, `getStaticProps` on
+  an API route, and `reportWebVitals` on a nested `_app`. Next.js never reads
+  those names there, so dead exports stay hidden.
+- Adopt fallow 3.45.0's per-file sets wholesale: fallow is close, but it omits
+  `generateStaticParams` from route handlers, omits parameter matching from
+  pages and layouts, gives `global-not-found` the fallback metadata surface, and
+  omits `runtime`/`maxDuration` from Pages Router pages, `_app`, and API routes.
+  Its metadata-route macro also credits `generateStaticParams` on root
+  `robots`/`manifest`, where the generated route has no dynamic segment.
+- Adopt knip 5.88.1's entry patterns: knip models entries and the Next.js plugin
+  less precisely, so it cannot express the per-stem export surfaces.
+- Remove legacy names that Next.js 16 no longer reads, including
+  `experimental_ppr`: Shrike documents a 15.x fallback, and Next.js 15.5.4 still
+  lists `experimental_ppr` in `AppSegmentConfigSchemaKeys`.
+
+**Why:** Verified against Next.js 16.4.6 source and real builds. `page`,
+`layout`, `default`, and `route` surfaces come from
+`dist/build/analysis/get-page-static-info.js`, `dist/server/lib/app-dir-module.js`,
+and `dist/build/segment-config/app/app-segments.js`. Error-boundary metadata
+comes from `dist/lib/metadata/metadata.js`, where an HTTP access `errorType`
+selects `not-found`/`forbidden`/`unauthorized`; `global-not-found` renders with
+`errorType` undefined. Metadata-route exports come from
+`dist/build/webpack/loaders/next-metadata-route-loader.js`, which re-exports
+named exports but only reads `default`, `generateSitemaps`, and
+`generateImageMetadata`. Pages Router surfaces come from `PagesSegmentConfigSchemaKeys`,
+`dist/build/utils.js` (`RESERVED_PAGE`), and `dist/lib/is-api-route.js`.
+`unstable_dynamicStaleTime` is page-only in
+`dist/server/app-render/app-render.js` and throws in a layout. The
+`unstable_` spellings are retained for 16.0-16.2, and `experimental_ppr` for
+15.x.
+
+**Consequences:**
+
+- `next_framework_exports` owns the per-stem surface; app and Pages Router
+  entries call it instead of sharing `public_names`. `pages/api.{ts,tsx,js,jsx}`
+  is the `/api` route, and only root `_app`/`_document`/`_error` are special.
+- Graph tests pin each file type's entries and the names that must remain
+  candidates, including route-handler metadata, page `config`, `_app`
+  `getStaticProps`, nested `_app` `reportWebVitals`, and image `alt` on an icon.
+- `ANALYSIS_VERSION` is bumped to 72. The five-repo scans are unchanged because
+  none exports a framework-only name from a file type that does not read it.
+- `onRequestInit` is not a Next.js 16.4.6 instrumentation export and remains a
+  candidate; the docs no longer list it.
+
+**Revisit if:** Next.js unifies the module surfaces, changes metadata-route
+re-exports, or removes the 15.x fallback.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -1442,6 +1510,7 @@ external app, credential, or participant.
 | D-033 | Invalid client exports are route-only build errors | accepted |
 | D-034 | Pages Router build failures are error diagnostics | accepted |
 | D-035 | Root-only Next.js conventions require the app root | accepted |
+| D-036 | Next.js exports are scoped to the file type that reads them | accepted |
 
 ## Rejected ideas
 
