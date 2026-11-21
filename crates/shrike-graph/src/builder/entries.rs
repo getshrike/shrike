@@ -4287,6 +4287,155 @@ mod tests {
     }
 
     #[test]
+    fn next_segment_config_conflicts_are_build_errors() {
+        let routes = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/edge-gsp/page.tsx",
+                "export const runtime = 'edge';\nexport function generateStaticParams() { return []; }\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "app/edge-param/page.tsx",
+                "export const runtime = 'edge';\nexport const unstable_paramMatching = {};\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "app/client-gsp/page.tsx",
+                "\"use client\";\nexport const generateStaticParams = () => [];\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "app/client-instant/page.tsx",
+                "\"use client\";\nexport const instant = true;\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "app/layout-stale/layout.tsx",
+                "export const unstable_dynamicStaleTime = 60;\nexport default function Layout() { return null; }\n",
+            ),
+            (
+                "app/stale-instant/page.tsx",
+                "export const unstable_dynamicStaleTime = 60;\nexport const instant = true;\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "app/route-param/route.ts",
+                "export const unstable_paramMatching = {};\nexport function GET() { return new Response('ok'); }\n",
+            ),
+            (
+                "app/both-param/page.tsx",
+                "export const unstable_paramMatching = {};\nexport const unstable_generateParamMatching = {};\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "app/asserted-runtime/page.tsx",
+                "export const runtime = 'edge' as const;\nexport function generateStaticParams() { return []; }\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "app/type-reexport-gsp/page.tsx",
+                "\"use client\";\nexport type { generateStaticParams } from './types';\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "src/app/src-edge/page.tsx",
+                "export const runtime = 'edge';\nexport function generateStaticParams() { return []; }\nexport default function Page() { return null; }\n",
+            ),
+            // A function named `instant` is not a segment-config value.
+            (
+                "app/function-instant/page.tsx",
+                "\"use client\";\nexport function instant() { return true; }\nexport default function Page() { return null; }\n",
+            ),
+            // A re-exported `runtime` is not read as segment config.
+            (
+                "app/runtime-reexport/page.tsx",
+                "export { runtime } from './runtime';\nexport function generateStaticParams() { return []; }\nexport default function Page() { return null; }\n",
+            ),
+            // Parentheses defeat Next.js's const-value extractor.
+            (
+                "app/paren-runtime/page.tsx",
+                "export const runtime = ('edge');\nexport function generateStaticParams() { return []; }\nexport default function Page() { return null; }\n",
+            ),
+            // A non-Next package with an app-shaped directory is not a Next app.
+            (
+                "packages/plain/package.json",
+                r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            (
+                "packages/plain/app/plain/page.tsx",
+                "export const runtime = 'edge';\nexport function generateStaticParams() { return []; }\nexport default function Page() { return null; }\n",
+            ),
+        ]);
+        let findings: Vec<&str> = routes
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "invalid_route_segment_config")
+            .map(|diagnostic| diagnostic.file.as_deref().unwrap_or(""))
+            .collect();
+        assert_eq!(
+            findings,
+            vec![
+                "app/asserted-runtime/page.tsx",
+                "app/both-param/page.tsx",
+                "app/client-gsp/page.tsx",
+                "app/client-instant/page.tsx",
+                "app/edge-gsp/page.tsx",
+                "app/edge-param/page.tsx",
+                "app/layout-stale/layout.tsx",
+                "app/route-param/route.ts",
+                "app/stale-instant/page.tsx",
+                "app/type-reexport-gsp/page.tsx",
+                "src/app/src-edge/page.tsx",
+            ],
+            "{:?}",
+            routes.diagnostics
+        );
+        assert!(
+            routes
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "invalid_route_segment_config")
+                .all(|diagnostic| diagnostic.severity == shrike_core::Severity::Error),
+            "segment-config conflicts are Next.js build errors: {:?}",
+            routes.diagnostics
+        );
+        let messages: Vec<&str> = routes
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "invalid_route_segment_config")
+            .map(|diagnostic| diagnostic.message.as_str())
+            .collect();
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("generateStaticParams")),
+            "{messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("parameter matching")),
+            "{messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("unstable_dynamicStaleTime")),
+            "{messages:?}"
+        );
+
+        // Without a manifest that declares Next.js, the same exports are inert.
+        let no_manifest = snapshot(&[(
+            "app/page.tsx",
+            "export const runtime = 'edge';\nexport function generateStaticParams() { return []; }\nexport default function Page() { return null; }\n",
+        )]);
+        assert!(
+            no_manifest
+                .diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.code != "invalid_route_segment_config"),
+            "{:?}",
+            no_manifest.diagnostics
+        );
+    }
+
+    #[test]
     fn package_script_modules_are_entries() {
         let snapshot = snapshot(&[
             (

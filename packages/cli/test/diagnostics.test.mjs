@@ -124,6 +124,22 @@ test("mixed client/server barrels are actionable boundary diagnostics", () => {
   assert.equal(summary.bySeverity.warning, 1);
 });
 
+test("invalid route segment configs are actionable routing diagnostics", () => {
+  const summary = summarizeDiagnostics([
+    {
+      code: "invalid_route_segment_config",
+      severity: "error",
+      message:
+        "`app/page.tsx` cannot combine `export const runtime = 'edge'` with `generateStaticParams`; Next.js fails the build",
+      file: "app/page.tsx",
+    },
+  ]);
+  assert.equal(summary.actionable, 1);
+  assert.equal(summary.groups[0].category, "routing");
+  assert.equal(summary.groups[0].actionable, true);
+  assert.equal(summary.bySeverity.error, 1);
+});
+
 test("client/server leaks are actionable boundary diagnostics", () => {
   const summary = summarizeDiagnostics([
     {

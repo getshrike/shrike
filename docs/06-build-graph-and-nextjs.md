@@ -379,7 +379,40 @@ the other RSC boundary rules.
 
 The warning is advisory: it never removes a candidate or suppresses an entry.
 
-### 7.6 Route conflicts
+### 7.6 Invalid route segment configuration
+
+Next.js's `getAppPageStaticInfo` throws for several App Router route-segment
+configurations before the build produces any output. Shrike reports each
+definite combination as an `invalid_route_segment_config` error diagnostic:
+
+- both `unstable_paramMatching` and `unstable_generateParamMatching`;
+- parameter matching in a `route` handler;
+- parameter matching with `export const runtime = 'edge'` or `"use client"`;
+- `generateStaticParams` with `export const runtime = 'edge'` or `"use client"`;
+- `instant`, `prefetch`, or `ensureStatic` in a `"use client"` module;
+- `unstable_dynamicStaleTime` in a layout or next to `instant`.
+
+The parser mirrors Next.js's recognized export shapes instead of matching
+names alone. `generateStaticParams` and the two parameter-matching names count
+as function declarations, as the first declarator of a variable declaration,
+or as export specifiers, including type-only and re-exported specifiers;
+`export * as name` does not count. Segment-config values are read only from
+directly exported `const` declarations whose initializer Next.js can extract:
+string, number, boolean, null, array, object, regular expression, and
+no-substitution template literals, with TypeScript `as` / `satisfies` /
+type-assertion wrappers. Parentheses, `let`/`var`, re-exports, and computed
+initializers are not read. The value must also satisfy the relevant schema
+(`runtime` is exactly `"edge"`, `unstable_dynamicStaleTime` is a non-negative
+integer, `prefetch` and `ensureStatic` are their enum values, and `instant` is
+a boolean or object), so an invalid value is left to Next.js's separate
+invalid-config error.
+
+Each diagnostic is anchored on the offending export or specifier. The rule is
+gated per package on `next`, like the route-conflict checks; a React-only
+workspace package with an app-shaped directory is not analyzed. These are
+build-failure errors, never findings, and never change candidates or entries.
+
+### 7.7 Route conflicts
 
 Two App Router files can make Next.js reject or crash a route without any dead
 code. Shrike reports both as error diagnostics, never as findings:
@@ -402,7 +435,7 @@ app-shaped directory is left alone. This is deliberately more precise than
 fallow 3.45.0's project-wide gate, which flags that package when a sibling
 declares Next.
 
-### 7.7 Misplaced directives
+### 7.8 Misplaced directives
 
 React Server Components bundlers honor `"use client"` and `"use server"` only
 in the leading prologue, before any other statement. A directive-looking
@@ -421,7 +454,7 @@ directives. One warning is emitted per misplaced occurrence. The predicate and
 the two recognized strings match fallow 3.45.0's `misplaced_directive`
 detector.
 
-### 7.8 Mixed client/server barrels
+### 7.9 Mixed client/server barrels
 
 A barrel that re-exports a `"use client"` origin alongside a server-only origin
 is the Next.js App Router footgun: importing either name from the barrel drags
@@ -450,7 +483,7 @@ is a deliberate precision improvement: a module whose only "server" signal is
 `import type { cookies } from "next/headers"` does not put server code in a
 client bundle, while fallow still reports it.
 
-### 7.9 Client/server leak cones
+### 7.10 Client/server leak cones
 
 A `"use client"` module may not reach server-only code through its runtime
 import cone: the client bundle would contain `node:fs`, `next/server`, or a
@@ -461,7 +494,7 @@ import of the shortest path, and is a warning rather than a finding.
 
 The cone follows runtime static imports, re-exports, export-alls, and
 non-worker dynamic imports. Type-only edges are erased and are not followed.
-The sink predicate matches §7.8. An all-action `"use server"` module stops the
+The sink predicate matches §7.9. An all-action `"use server"` module stops the
 cone: its exports become action references at the client boundary, so its
 server imports never enter the client bundle. A `"use server"` module with any
 non-action value export (a top-level constant, a default value, a re-export)

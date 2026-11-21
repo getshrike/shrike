@@ -187,6 +187,134 @@ export { localAmbient };
 }
 
 #[test]
+fn records_next_segment_config_export_shapes() {
+    let parsed = summary(
+        r#"
+export const runtime = "edge";
+export const instant = true;
+export const prefetch = "auto";
+export const ensureStatic = false;
+export const unstable_dynamicStaleTime = 60;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const maxDuration = 10;
+export const preferredRegion = ["iad1"];
+export const fetchCache = "auto";
+export const dynamicParams = false;
+export const ignored = "value";
+export const later = makeRuntime();
+export let mutableRuntime = "edge";
+export const parenthesized = ("edge");
+export const asserted = "edge" as const;
+export const template = `edge`;
+export const config = { runtime: "edge" };
+"#,
+        "src/app/page.tsx",
+    );
+    let values: Vec<(&str, String)> = parsed
+        .exported_const_values
+        .iter()
+        .map(|record| (record.name.as_str(), format!("{:?}", record.value)))
+        .collect();
+    assert_eq!(
+        values,
+        vec![
+            ("runtime", "String(\"edge\")".to_string()),
+            ("instant", "Boolean(true)".to_string()),
+            ("prefetch", "String(\"auto\")".to_string()),
+            ("ensureStatic", "Boolean(false)".to_string()),
+            ("unstable_dynamicStaleTime", "Number(\"60\")".to_string()),
+            ("dynamic", "String(\"force-dynamic\")".to_string()),
+            ("revalidate", "Number(\"0\")".to_string()),
+            ("maxDuration", "Number(\"10\")".to_string()),
+            ("preferredRegion", "Array".to_string()),
+            ("fetchCache", "String(\"auto\")".to_string()),
+            ("dynamicParams", "Boolean(false)".to_string()),
+        ],
+        "only directly exported consts with Next.js-extractable values are recorded"
+    );
+
+    let wrapped = summary(
+        "export const runtime = 'edge' as const;\nexport const prefetch = `auto`;\n",
+        "src/app/page.tsx",
+    );
+    let wrapped_values: Vec<(&str, String)> = wrapped
+        .exported_const_values
+        .iter()
+        .map(|record| (record.name.as_str(), format!("{:?}", record.value)))
+        .collect();
+    assert_eq!(
+        wrapped_values,
+        vec![
+            ("runtime", "String(\"edge\")".to_string()),
+            ("prefetch", "String(\"auto\")".to_string()),
+        ],
+        "TypeScript assertions and no-substitution templates are extracted"
+    );
+
+    let parenthesized = summary("export const runtime = ('edge');\n", "src/app/page.tsx");
+    assert!(
+        parenthesized.exported_const_values.is_empty(),
+        "Next.js does not extract parenthesized initializers"
+    );
+
+    let special = summary(
+        r#"
+export function generateStaticParams() { return []; }
+export const unstable_paramMatching = {};
+export { unstable_generateParamMatching } from "./params";
+export type { generateStaticParams as typedParams } from "./types";
+"#,
+        "src/app/page.tsx",
+    );
+    let names: Vec<&str> = special
+        .next_segment_exports
+        .iter()
+        .map(|record| record.name.as_str())
+        .collect();
+    assert_eq!(
+        names,
+        vec![
+            "generateStaticParams",
+            "unstable_paramMatching",
+            "unstable_generateParamMatching",
+        ],
+        "function declarations, first variable declarators, and export specifiers count"
+    );
+
+    // `export * as` and local aliases are not recognized by Next.js.
+    let ignored = summary(
+        r#"
+export * as generateStaticParams from "./params";
+const { generateStaticParams: destructured } = {};
+export { destructured as generateStaticParams };
+"#,
+        "src/app/page.tsx",
+    );
+    assert!(ignored.next_segment_exports.is_empty());
+
+    // Next.js checks only the first declarator for the special-export flags,
+    // but reads config values from every declarator.
+    let mixed = summary(
+        "export const runtime = 'edge', generateStaticParams = () => [];\n",
+        "src/app/page.tsx",
+    );
+    assert_eq!(mixed.exported_const_values.len(), 1);
+    assert_eq!(mixed.exported_const_values[0].name, "runtime");
+    assert!(mixed.next_segment_exports.is_empty());
+
+    let declared = summary(
+        "export let generateStaticParams = () => [];\n",
+        "src/app/page.tsx",
+    );
+    assert_eq!(declared.next_segment_exports.len(), 1);
+    assert_eq!(
+        declared.next_segment_exports[0].name,
+        "generateStaticParams"
+    );
+}
+
+#[test]
 fn records_directive_strings_after_the_prologue() {
     let source = r#"
 import { thing } from "./thing";
