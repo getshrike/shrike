@@ -5035,6 +5035,30 @@
         "src/outer.ts#used",
         "src/impl.ts#dead"
       ]
+    },
+    {
+      "id": "local-export-alias",
+      "category": "barrel",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/impl.ts#used",
+          "reason": "the page imports the declaration directly"
+        },
+        {
+          "symbol": "src/barrel.ts#dead",
+          "reason": "a dead alias whose target is dead is reported at the declaration, not duplicated"
+        }
+      ],
+      "mustReport": [
+        "src/barrel.ts#used",
+        "src/impl.ts#dead"
+      ]
     }
   ]
 }

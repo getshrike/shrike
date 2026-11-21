@@ -543,6 +543,12 @@ because removing an inner alias would leave an outer alias dangling. When the
 chain ends at a dead declaration, report the declaration instead and suppress
 the aliases, so one dead symbol yields one finding.
 
+The rule also covers local `export { X }` and `export { X as Y }` lists. If `X`
+is a local declaration the alias points at it; if `X` is an imported binding
+the alias points at the resolved import target. This keeps `import { X } from
+"./impl"; export { X };` on the same chain as `export { X } from "./impl";`,
+so a dead re-export of a live import is reported instead of disappearing.
+
 ### 10.4 Proof trace
 
 For each candidate, record:

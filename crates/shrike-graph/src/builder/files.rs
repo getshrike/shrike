@@ -202,15 +202,14 @@ impl<'a> Builder<'a> {
                 }
             }
             for local_export in &summary.local_exports {
-                let key = symbol_key(&summary.path, &local_export.exported);
+                let key = self.add_alias_symbol(
+                    summary,
+                    &local_export.exported,
+                    local_export.span,
+                    local_export.type_only,
+                );
+                export_map.insert(local_export.exported.clone(), key.clone());
                 if let Some(local) = local_map.get(&local_export.local).cloned() {
-                    self.add_alias_symbol(
-                        summary,
-                        &local_export.exported,
-                        local_export.span,
-                        local_export.type_only,
-                    );
-                    export_map.insert(local_export.exported.clone(), key.clone());
                     self.edges.push(edge(
                         &key,
                         &local,

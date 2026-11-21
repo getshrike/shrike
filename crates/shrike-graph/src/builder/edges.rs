@@ -118,6 +118,38 @@ impl<'a> Builder<'a> {
                     }
                 }
             }
+            // `export { X }` can re-export an imported binding instead of a
+            // local declaration. The alias symbol is created with the other
+            // exports; connect it to the resolved import so the chain is
+            // actionable exactly like `export { X } from "./module"`.
+            for local_export in &summary.local_exports {
+                if self
+                    .locals
+                    .get(&summary.path)
+                    .is_some_and(|map| map.contains_key(&local_export.local))
+                {
+                    continue;
+                }
+                let source = symbol_key(&summary.path, &local_export.exported);
+                let target = self
+                    .imports
+                    .get(&summary.path)
+                    .and_then(|map| map.get(&local_export.local))
+                    .cloned()
+                    .and_then(|(target_file, imported)| {
+                        self.resolve_export(&target_file, &imported, &mut BTreeSet::new())
+                    });
+                if let Some(target) = target {
+                    self.edges.push(edge(
+                        &source,
+                        &target,
+                        "re-export",
+                        "certain",
+                        &summary.path,
+                        local_export.span,
+                    ));
+                }
+            }
             if let Some(alls) = self.export_alls.get(&summary.path).cloned() {
                 for source in alls {
                     if let Some(target_file) = self.resolver.resolve(&summary.path, &source).target
