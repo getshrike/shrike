@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 307,
+  "count": 308,
   "entries": [
     {
       "id": "page-entry-1",
@@ -5846,6 +5846,36 @@
         "cypress/support/e2e.ts",
         "src/command-helper.ts",
         "src/spec-helper.ts"
+      ]
+    },
+    {
+      "id": "unreferenced-scripts",
+      "category": "script-entry",
+      "files": [
+        "package.json",
+        "scripts"
+      ],
+      "protected": [
+        {
+          "symbol": "scripts/used-by-package.ts#__module__",
+          "reason": "package.json names the script"
+        },
+        {
+          "symbol": "scripts/used-by-package.ts#usedByPackageScript",
+          "reason": "the package script's module calls the helper"
+        }
+      ],
+      "mustReport": [
+        "scripts/one-off.ts#repairData",
+        "scripts/tool.mjs#toolHelper",
+        "scripts/used-by-package.ts#unusedPackageScriptExport"
+      ],
+      "unusedFiles": [
+        "scripts/one-off.ts",
+        "scripts/tool.mjs"
+      ],
+      "usedFiles": [
+        "scripts/used-by-package.ts"
       ]
     }
   ]

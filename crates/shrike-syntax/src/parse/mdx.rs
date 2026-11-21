@@ -188,7 +188,6 @@ pub(super) fn parse(
     line_index: &LineIndex,
     line_count: u32,
     generated: bool,
-    executable: bool,
 ) -> FileSummary {
     let synthetic = esm_source(source);
     let allocator = oxc_allocator::Allocator::default();
@@ -216,7 +215,6 @@ pub(super) fn parse(
         type_refs: Vec::new(),
         type_imports: Vec::new(),
         ambient_modules: Vec::new(),
-        executable,
         dynamic: Vec::new(),
         unknown: Vec::new(),
         generated,

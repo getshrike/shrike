@@ -51,7 +51,6 @@ pub(crate) fn parse(
         type_refs: Vec::new(),
         type_imports: Vec::new(),
         ambient_modules: Vec::new(),
-        executable: false,
         dynamic: Vec::new(),
         unknown: Vec::new(),
         generated,

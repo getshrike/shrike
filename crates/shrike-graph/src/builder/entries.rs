@@ -1422,9 +1422,6 @@ impl<'a> Builder<'a> {
                 }
                 continue;
             }
-            if summary.executable {
-                add(self, module.clone(), "executable", "tool", None, "both");
-            }
             if test_config_modules.contains(path) {
                 add(
                     self,
@@ -2292,17 +2289,18 @@ impl<'a> Builder<'a> {
                     }
                 }
             }
-            // Standalone examples, benchmarks, and repository scripts are run
-            // directly rather than imported. The module is the root, so its
-            // top-level work stays live; its exports are ordinary helpers and
-            // follow the graph.
+            // Standalone examples and benchmarks are run directly rather than
+            // imported. The module is the root, so its top-level work stays
+            // live; its exports are ordinary helpers and follow the graph.
+            // Files under `scripts/` are not entries by directory alone: a
+            // documented header or shebang is not a reference. They enter only
+            // when package.json names them or another module imports them.
             let local_root = path.starts_with("examples/")
                 || path.starts_with("example/")
                 || path.starts_with("demo/")
                 || path.starts_with("playground/")
                 || path.starts_with("playgrounds/")
-                || path.starts_with("benchmarks/")
-                || path.starts_with("scripts/");
+                || path.starts_with("benchmarks/");
             if self.config.entry_policy != EntryPolicy::Production && local_root {
                 add(self, module.clone(), "local", "standalone", None, "both");
             }
@@ -2774,16 +2772,22 @@ mod tests {
 
     #[test]
     fn standalone_script_exports_follow_the_graph() {
-        let snapshot = snapshot(&[(
-            "scripts/build.ts",
-            "export function usedByScript() { return 1; }\n\
-             export function unusedExport() { return 2; }\n\
-             usedByScript();\n",
-        )]);
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"app","scripts":{"build":"tsx scripts/build.ts"}}"#,
+            ),
+            (
+                "scripts/build.ts",
+                "export function usedByScript() { return 1; }\n\
+                 export function unusedExport() { return 2; }\n\
+                 usedByScript();\n",
+            ),
+        ]);
         let entries = entry_symbols(&snapshot);
         assert!(
             entries.contains(&"scripts/build.ts#__module__"),
-            "{entries:?}"
+            "a package script names the module: {entries:?}"
         );
         assert!(
             snapshot.is_live("scripts/build.ts#usedByScript"),
@@ -2828,11 +2832,15 @@ mod tests {
     }
 
     #[test]
-    fn documented_tool_scripts_are_entries() {
+    fn documented_tool_scripts_are_not_entries_without_a_reference() {
         let snapshot = snapshot(&[
             (
                 "scripts/generate-report.ts",
                 "/**\n * Report generator.\n *\n * Usage: npx tsx scripts/generate-report.ts\n */\nfunction main() {\n  console.log('report');\n}\nmain();\n",
+            ),
+            (
+                "scripts/tool.mjs",
+                "#!/usr/bin/env node\nconsole.log('tool');\n",
             ),
             (
                 "src/library.ts",
@@ -2841,16 +2849,26 @@ mod tests {
         ]);
         let entries = entry_symbols(&snapshot);
         assert!(
-            entries.contains(&"scripts/generate-report.ts#__module__"),
-            "{entries:?}"
+            !entries.contains(&"scripts/generate-report.ts#__module__"),
+            "a documented header is not a reference: {entries:?}"
+        );
+        assert!(
+            !entries.contains(&"scripts/tool.mjs#__module__"),
+            "a shebang is not a reference: {entries:?}"
         );
         assert!(
             snapshot
-                .live
-                .iter()
-                .any(|key| key == "scripts/generate-report.ts#main"),
-            "tool body must stay live: {:?}",
-            snapshot.live
+                .unused_files
+                .contains(&"scripts/generate-report.ts".to_string()),
+            "an unreferenced tool is an unused file: {:?}",
+            snapshot.unused_files
+        );
+        assert!(
+            snapshot
+                .unused_files
+                .contains(&"scripts/tool.mjs".to_string()),
+            "an unreferenced shebang tool is an unused file: {:?}",
+            snapshot.unused_files
         );
         assert!(
             !entries.contains(&"src/library.ts#__module__"),
