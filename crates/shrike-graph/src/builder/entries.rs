@@ -9,6 +9,7 @@ use shrike_syntax::{BindingKind, FileSummary, ParseStatus};
 use super::Builder;
 use crate::cosmos_config;
 use crate::docusaurus_config;
+use crate::gatsby_config;
 use crate::storybook_config;
 use crate::types::EntryRecord;
 use crate::util::route_of;
@@ -734,6 +735,7 @@ impl<'a> Builder<'a> {
         let mut storybook_packages: BTreeSet<String> = BTreeSet::new();
         let mut cosmos_packages: BTreeSet<String> = BTreeSet::new();
         let mut docusaurus_packages: BTreeSet<String> = BTreeSet::new();
+        let mut gatsby_packages: BTreeSet<String> = BTreeSet::new();
         for package in self.resolver.packages() {
             if package_depends_on_any(self.resolver.root(), &package.directory, VITE_ENABLERS) {
                 vite_packages.insert(package.directory.clone());
@@ -754,6 +756,13 @@ impl<'a> Builder<'a> {
                 ],
             ) {
                 docusaurus_packages.insert(package.directory.clone());
+            }
+            if package_depends_on_any(
+                self.resolver.root(),
+                &package.directory,
+                &["gatsby", "gatsby-cli"],
+            ) {
+                gatsby_packages.insert(package.directory.clone());
             }
         }
         let mut expo_layout_packages: BTreeSet<String> = BTreeSet::new();
@@ -1034,6 +1043,88 @@ impl<'a> Builder<'a> {
                 }
             }
         }
+        // Gatsby page templates are loaded by `createPage`, not by directory
+        // convention. Follow the static component values in `gatsby-node.*`.
+        // When a component is opaque, protect the conventional template
+        // directory for that package rather than reporting a live page.
+        let mut gatsby_template_files: BTreeSet<String> = BTreeSet::new();
+        let mut gatsby_dynamic_packages: BTreeSet<String> = BTreeSet::new();
+        for summary in &summaries {
+            if !gatsby_config::is_node_path(&summary.path) {
+                continue;
+            }
+            let Some(package) = self.resolver.package_for(&summary.path) else {
+                continue;
+            };
+            if !gatsby_packages.contains(&package.directory) {
+                continue;
+            }
+            // Gatsby only executes a node file at the package root or in a
+            // local plugin directory, not at an arbitrary nested path such as
+            // `src/gatsby-node.ts`.
+            let relative = summary
+                .path
+                .strip_prefix(package.directory.as_str())
+                .unwrap_or(&summary.path)
+                .trim_start_matches('/');
+            let in_plugin = relative.starts_with("plugins/");
+            let at_root = !relative.contains('/');
+            if !at_root && !in_plugin {
+                continue;
+            }
+            let Ok(source) = fs::read_to_string(self.resolver.root().join(&summary.path)) else {
+                gatsby_dynamic_packages.insert(package.directory.clone());
+                continue;
+            };
+            let scan = gatsby_config::template_references(&summary.path, &source);
+            // A plugin's `gatsby-node` resolves page components from the site
+            // that loads it, not from the plugin directory. Try the node file
+            // first (for plugin-local templates) and the containing Gatsby
+            // package second (for site templates).
+            let site_anchor = if in_plugin {
+                gatsby_packages
+                    .iter()
+                    .filter(|directory| {
+                        directory.is_empty() || summary.path.starts_with(&format!("{directory}/"))
+                    })
+                    .min_by_key(|directory| directory.len())
+                    .map(|directory| {
+                        if directory.is_empty() {
+                            "__gatsby_node__".to_string()
+                        } else {
+                            format!("{directory}/__gatsby_node__")
+                        }
+                    })
+            } else {
+                None
+            };
+            for specifier in scan.specifiers {
+                for importer in std::iter::once(summary.path.as_str()).chain(site_anchor.as_deref())
+                {
+                    let resolved = self.resolver.resolve(importer, &specifier);
+                    if let Some(target) = resolved.target
+                        && analyzed.contains(target.as_str())
+                    {
+                        gatsby_template_files.insert(target);
+                    }
+                }
+            }
+            if scan.dynamic {
+                gatsby_dynamic_packages.insert(package.directory.clone());
+            }
+        }
+        for package_directory in gatsby_dynamic_packages {
+            let prefix = if package_directory.is_empty() {
+                "src/templates/".to_string()
+            } else {
+                format!("{package_directory}/src/templates/")
+            };
+            for path in &analyzed {
+                if path.starts_with(&prefix) {
+                    gatsby_template_files.insert((*path).to_string());
+                }
+            }
+        }
         // React Router route configs name route modules as strings. The router
         // imports them at runtime, so files named outside `<appDirectory>/routes/`
         // are still route modules and must keep their framework exports.
@@ -1273,6 +1364,27 @@ impl<'a> Builder<'a> {
                 add(self, module.clone(), "docusaurus", "page", None, "both");
                 for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
                     add(self, key, "docusaurus", "page-export", None, "both");
+                }
+            }
+            if gatsby_template_files.contains(path) {
+                // Gatsby renders the default component and reads the page
+                // query, Head, and getServerData exports. Other exports in a
+                // live template remain application code.
+                add(
+                    self,
+                    module.clone(),
+                    "gatsby",
+                    "page-template",
+                    None,
+                    "both",
+                );
+                for (name, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                    if matches!(
+                        name.as_str(),
+                        "default" | "query" | "Head" | "getServerData"
+                    ) {
+                        add(self, key, "gatsby", "page-template-export", None, "both");
+                    }
                 }
             }
             let app_entry = (is_app
@@ -4875,5 +4987,190 @@ export default config;
                 snapshot.candidates
             );
         }
+    }
+
+    fn gatsby_app(package_json: &str, node_source: &str) -> GraphSnapshot {
+        discovered_snapshot(&[
+            ("package.json", package_json),
+            (
+                "gatsby-config.ts",
+                "export default { siteMetadata: { title: \"fixture\" }, plugins: [] };\n",
+            ),
+            ("gatsby-node.ts", node_source),
+            (
+                "src/pages/index.tsx",
+                "import { PostBody } from \"../components/post-body\";\nexport default function Home() { return <PostBody title=\"home\" />; }\n",
+            ),
+            (
+                "src/components/post-body.tsx",
+                "export function PostBody({ title }: { title: string }) { return <article>{title}</article>; }\nexport function unusedPostBodyHelper() { return 1; }\n",
+            ),
+            (
+                "src/templates/blog-post.tsx",
+                "import { PostBody } from \"../components/post-body\";\nexport default function BlogPost() { return <PostBody title=\"post\" />; }\nexport const query = `query BlogPost { post { title } }`;\nexport function Head() { return <title>Post</title>; }\nexport function unusedTemplateHelper() { return 2; }\n",
+            ),
+            (
+                "src/templates/dead-template.tsx",
+                "export default function DeadTemplate() { return <div>dead</div>; }\nexport const query = `query Dead { post { title } }`;\nexport function unusedDeadHelper() { return 3; }\n",
+            ),
+            (
+                "src/other/dead.tsx",
+                "export default function DeadComponent() { return <div>dead</div>; }\n",
+            ),
+        ])
+    }
+
+    #[test]
+    fn gatsby_create_page_templates_are_entries() {
+        let snapshot = gatsby_app(
+            r#"{"name":"gatsby-site","private":true,"dependencies":{"gatsby":"^5.14.0","react":"^18.3.1","react-dom":"^18.3.1"}}"#,
+            "import path from \"path\";\n\nexport async function createPages({ actions }: { actions: any }) {\n  actions.createPage({\n    path: \"/blog/hello\",\n    component: path.resolve(\"./src/templates/blog-post.tsx\"),\n    context: { slug: \"hello\" },\n  });\n}\n",
+        );
+        let entries = entry_symbols(&snapshot);
+        assert!(
+            entries.contains(&"src/templates/blog-post.tsx#__module__"),
+            "a template named by createPage is an entry: {entries:?}"
+        );
+        for key in [
+            "src/templates/blog-post.tsx#default",
+            "src/templates/blog-post.tsx#query",
+            "src/templates/blog-post.tsx#Head",
+            "src/components/post-body.tsx#PostBody",
+        ] {
+            assert!(
+                snapshot.is_live(key),
+                "{key} is invoked by Gatsby: {:?}",
+                snapshot.candidates
+            );
+        }
+        for key in [
+            "src/components/post-body.tsx#unusedPostBodyHelper",
+            "src/templates/blog-post.tsx#unusedTemplateHelper",
+            "src/templates/dead-template.tsx#default",
+            "src/templates/dead-template.tsx#query",
+            "src/templates/dead-template.tsx#unusedDeadHelper",
+            "src/other/dead.tsx#default",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "{key} is not registered by createPage and must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+        assert!(
+            snapshot.entries.iter().any(|entry| {
+                entry.symbol == "src/templates/blog-post.tsx#default"
+                    && entry.framework == "gatsby"
+                    && entry.kind == "page-template-export"
+            }),
+            "the template records its framework: {:?}",
+            snapshot.entries
+        );
+    }
+
+    #[test]
+    fn gatsby_dynamic_components_fall_back_to_the_template_directory() {
+        let snapshot = gatsby_app(
+            r#"{"name":"gatsby-dynamic","private":true,"dependencies":{"gatsby":"^5.14.0"}}"#,
+            "export async function createPages({ actions, getTemplate }) {\n  actions.createPage({\n    path: \"/dynamic\",\n    component: getTemplate(),\n  });\n}\n",
+        );
+        for key in [
+            "src/templates/blog-post.tsx#default",
+            "src/templates/blog-post.tsx#query",
+            "src/templates/blog-post.tsx#Head",
+            "src/templates/dead-template.tsx#default",
+            "src/templates/dead-template.tsx#query",
+        ] {
+            assert!(
+                snapshot.is_live(key),
+                "an opaque component protects the conventional directory: {key}: {:?}",
+                snapshot.candidates
+            );
+        }
+        for key in [
+            "src/templates/blog-post.tsx#unusedTemplateHelper",
+            "src/templates/dead-template.tsx#unusedDeadHelper",
+            "src/other/dead.tsx#default",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "{key} is not a Gatsby page API export: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn gatsby_templates_require_the_dependency() {
+        let snapshot = gatsby_app(
+            r#"{"name":"plain-node","private":true,"dependencies":{"react":"^18.3.1"}}"#,
+            "import path from \"path\";\nexport const createPages = ({ actions }: { actions: any }) => {\n  actions.createPage({ path: \"/blog\", component: path.resolve(\"./src/templates/blog-post.tsx\") });\n};\n",
+        );
+        for key in [
+            "src/templates/blog-post.tsx#default",
+            "src/templates/blog-post.tsx#query",
+            "src/templates/blog-post.tsx#Head",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "without gatsby {key} is not framework-invoked: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn gatsby_plugin_templates_resolve_from_the_site_and_the_plugin() {
+        let snapshot = discovered_snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"gatsby-plugin-site","private":true,"dependencies":{"gatsby":"^5.14.0"}}"#,
+            ),
+            (
+                "plugins/local/gatsby-node.js",
+                "const path = require(\"path\");\nexports.createPages = ({ actions }) => {\n  actions.createPage({ path: \"/site\", component: path.resolve(\"./src/templates/site-post.tsx\") });\n  actions.createPage({ path: \"/plugin\", component: path.resolve(__dirname, \"templates/plugin-post.tsx\") });\n};\n",
+            ),
+            (
+                "src/templates/site-post.tsx",
+                "export default function SitePost() { return <div>site</div>; }\n",
+            ),
+            (
+                "plugins/local/templates/plugin-post.tsx",
+                "export default function PluginPost() { return <div>plugin</div>; }\n",
+            ),
+        ]);
+        for key in [
+            "src/templates/site-post.tsx#default",
+            "plugins/local/templates/plugin-post.tsx#default",
+        ] {
+            assert!(
+                snapshot.is_live(key),
+                "{key} is named by the plugin's createPage call: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn gatsby_nested_node_files_are_not_registrations() {
+        let snapshot = discovered_snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"gatsby-nested-node","private":true,"dependencies":{"gatsby":"^5.14.0"}}"#,
+            ),
+            (
+                "src/gatsby-node.ts",
+                "import path from \"path\";\nexport const createPages = ({ actions }: { actions: any }) => {\n  actions.createPage({ path: \"/blog\", component: path.resolve(\"./src/templates/blog-post.tsx\") });\n};\n",
+            ),
+            (
+                "src/templates/blog-post.tsx",
+                "export default function BlogPost() { return <div>post</div>; }\n",
+            ),
+        ]);
+        assert!(
+            snapshot.is_candidate("src/templates/blog-post.tsx#default"),
+            "Gatsby does not execute src/gatsby-node.ts: {:?}",
+            snapshot.candidates
+        );
     }
 }

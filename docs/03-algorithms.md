@@ -411,6 +411,16 @@ configuration in Node.
   imported components remain analyzable. `.md` files are matched only when the
   configured analysis include covers them; the default include starts at
   `.mdx`;
+- Gatsby page templates. When the owning package depends on `gatsby` or
+  `gatsby-cli`, `gatsby-node.*` is parsed statically for
+  `createPage({ component })` registrations. Literal paths, static template
+  literals, `path.resolve`/`path.join`, `require.resolve`, local variable
+  bindings, and relative component imports are resolved. A registered module
+  is an entry, and only Gatsby's page API exports (`default`, `query`, `Head`,
+  `getServerData`) are framework-invoked; other exports in the template stay
+  analyzable. When a component value cannot be proved, every module under
+  `src/templates/` in that package is an entry instead. A nested
+  `src/gatsby-node.ts` is not a Gatsby node file;
 - `next.config`, `postcss.config`, `tailwind.config`, `eslint.config`,
   `tsconfig`;
 - test runner config.
