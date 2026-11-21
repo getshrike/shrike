@@ -378,6 +378,19 @@ analyzable.
   local `const value; export { value }` is resolved from its top-level
   declaration and anchored on the specifier; direct declarations are anchored
   on the declarator or enum. The rule uses the seven-bundler RSC gate;
+- an App Router route file that combines route-segment configuration Next.js
+  rejects at build time produces an `invalid_route_segment_config` error, not a
+  finding. The definite combinations are both parameter-matching exports;
+  parameter matching in a `route` handler, with `runtime = 'edge'`, or with
+  `"use client"`; `generateStaticParams` with `runtime = 'edge'` or
+  `"use client"`; `instant`, `prefetch`, or `ensureStatic` in a `"use client"`
+  module; and `unstable_dynamicStaleTime` in a layout or next to `instant`.
+  The parser mirrors Next.js's export shapes: function declarations, first
+  variable declarators, and export specifiers (including type-only and
+  re-exported specifiers) count for the special names; only directly exported
+  `const` initializers Next.js can extract count for segment-config values.
+  The rule is gated per package on `next` and never changes candidates or
+  entries;
 - a `"use client"` or `"use server"` string after the leading prologue
   produces a `misplaced_directive` warning, not a finding. RSC bundlers only
   honor a directive before any other statement and silently ignore the rest,

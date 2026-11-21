@@ -4,7 +4,8 @@ use shrike_core::glob::glob_match;
 use shrike_core::ids::{module_symbol_key, symbol_key};
 use shrike_core::{Diagnostic, Span};
 use shrike_syntax::{
-    BindingKind, DynamicKind, DynamicSpecifier, FileSummary, ImportRecord, ParseStatus,
+    BindingKind, DynamicKind, DynamicSpecifier, ExportedConstValue, FileSummary, ImportRecord,
+    ParseStatus,
 };
 
 use super::Builder;
@@ -307,6 +308,17 @@ fn route_collision_bucket(route: &AppRoute<'_>) -> (String, String, String) {
         format!("/{}", url_parts.join("/"))
     };
     (route.app_root.clone(), slots.join("/"), url)
+}
+
+/// Whether a statically extracted value satisfies Next.js's
+/// `unstable_dynamicStaleTime` schema: a non-negative integer number.
+fn valid_stale_time(value: &ExportedConstValue) -> bool {
+    let ExportedConstValue::Number(value) = value else {
+        return false;
+    };
+    value
+        .parse::<f64>()
+        .is_ok_and(|number| number.is_finite() && number >= 0.0 && number.fract() == 0.0)
 }
 
 /// A dynamic segment occurrence: the slot it lives in, its parent URL position
@@ -833,6 +845,183 @@ impl<'a> Builder<'a> {
             add(specifier, dynamic.span);
         }
         edges
+    }
+
+    /// Report App Router files whose route-segment configuration Next.js
+    /// rejects at build time.
+    ///
+    /// Next.js's `getAppPageStaticInfo` throws for:
+    /// * both `unstable_paramMatching` and `unstable_generateParamMatching`
+    /// * parameter matching in a `route` handler
+    /// * parameter matching with `export const runtime = 'edge'` or `"use client"`
+    /// * `generateStaticParams` with `export const runtime = 'edge'` or
+    ///   `"use client"`
+    /// * `instant`, `prefetch`, or `ensureStatic` in a `"use client"` module
+    /// * `unstable_dynamicStaleTime` in a layout or next to `instant`
+    ///
+    /// The parser mirrors Next.js's recognized export shapes, so a function
+    /// named `instant` or a re-exported `runtime` is not reported. Only the
+    /// definite value forms Next.js extracts are considered.
+    pub(super) fn detect_next_segment_config_conflicts(&mut self) {
+        let summaries = self.summaries.clone();
+        let page_extensions = self.configured_page_extensions();
+        for summary in &summaries {
+            if summary.parse_status != ParseStatus::Ok {
+                continue;
+            }
+            let package_directory = self
+                .resolver
+                .package_for(&summary.path)
+                .map_or_else(String::new, |package| package.directory.clone());
+            if super::entries::package_declares_next(self.resolver.root(), &package_directory)
+                != Some(true)
+            {
+                continue;
+            }
+            let Some(route) = classify_app_route(
+                &summary.path,
+                &package_directory,
+                page_extensions.get(&package_directory),
+            ) else {
+                continue;
+            };
+            let client = summary.has_directive("use client");
+            let special = |name: &str| {
+                summary
+                    .next_segment_exports
+                    .iter()
+                    .find(|record| record.name == name)
+            };
+            let config = |name: &str| {
+                summary
+                    .exported_const_values
+                    .iter()
+                    .find(|record| record.name == name)
+            };
+            let generate_static_params = special("generateStaticParams");
+            let param_matching = special("unstable_paramMatching");
+            let generate_param_matching = special("unstable_generateParamMatching");
+            let edge = config("runtime").is_some_and(|record| {
+                matches!(&record.value, ExportedConstValue::String(value) if value == "edge")
+            });
+            let dynamic_stale_time = config("unstable_dynamicStaleTime")
+                .filter(|record| valid_stale_time(&record.value));
+            let instant = config("instant").filter(|record| {
+                matches!(
+                    &record.value,
+                    ExportedConstValue::Boolean(_) | ExportedConstValue::Object
+                )
+            });
+            let prefetch = config("prefetch").filter(|record| {
+                matches!(&record.value, ExportedConstValue::String(value)
+                    if matches!(value.as_str(), "auto" | "partial" | "force-disabled"))
+            });
+            let ensure_static = config("ensureStatic").filter(|record| {
+                matches!(&record.value, ExportedConstValue::String(value)
+                    if matches!(value.as_str(), "auto" | "shell" | "prefetch" | "navigation"))
+                    || matches!(&record.value, ExportedConstValue::Boolean(false))
+            });
+
+            let path = &summary.path;
+            let mut findings: Vec<(String, Span)> = Vec::new();
+            if param_matching.is_some() && generate_param_matching.is_some() {
+                findings.push((
+                    format!(
+                        "`{path}` cannot export both `unstable_paramMatching` and `unstable_generateParamMatching`; Next.js fails the build"
+                    ),
+                    param_matching
+                        .or(generate_param_matching)
+                        .expect("both parameter matching exports")
+                        .span,
+                ));
+            }
+            if let Some(record) = param_matching.or(generate_param_matching) {
+                let param_span = record.span;
+                if route.stem == "route" {
+                    findings.push((
+                        format!(
+                            "`{path}` cannot export parameter matching from a route handler; Next.js only supports it in pages and layouts"
+                        ),
+                        param_span,
+                    ));
+                }
+                if edge {
+                    findings.push((
+                        format!(
+                            "`{path}` cannot combine `export const runtime = 'edge'` with parameter matching; Next.js fails the build"
+                        ),
+                        param_span,
+                    ));
+                }
+                if client {
+                    findings.push((
+                        format!(
+                            "`{path}` cannot combine a `\"use client\"` directive with parameter matching; Next.js fails the build"
+                        ),
+                        param_span,
+                    ));
+                }
+            }
+            if let Some(record) = generate_static_params {
+                if edge {
+                    findings.push((
+                        format!(
+                            "`{path}` cannot combine `export const runtime = 'edge'` with `generateStaticParams`; Next.js fails the build"
+                        ),
+                        record.span,
+                    ));
+                }
+                if client {
+                    findings.push((
+                        format!(
+                            "`{path}` cannot combine a `\"use client\"` directive with `generateStaticParams`; Next.js fails the build"
+                        ),
+                        record.span,
+                    ));
+                }
+            }
+            if client {
+                for (name, record) in [
+                    ("instant", instant),
+                    ("prefetch", prefetch),
+                    ("ensureStatic", ensure_static),
+                ] {
+                    if let Some(record) = record {
+                        findings.push((
+                            format!(
+                                "`{name}` is a route segment config and cannot be exported from a `\"use client\"` module; Next.js fails the build"
+                            ),
+                            record.span,
+                        ));
+                    }
+                }
+            }
+            if let Some(record) = dynamic_stale_time {
+                if route.stem == "layout" {
+                    findings.push((
+                        format!(
+                            "`{path}` cannot export `unstable_dynamicStaleTime` from a layout; Next.js only supports it in pages"
+                        ),
+                        record.span,
+                    ));
+                }
+                if instant.is_some() {
+                    findings.push((
+                        format!(
+                            "`{path}` cannot export both `unstable_dynamicStaleTime` and `instant`; Next.js fails the build"
+                        ),
+                        record.span,
+                    ));
+                }
+            }
+            for (message, span) in findings {
+                self.diagnostics.push(
+                    Diagnostic::error("invalid_route_segment_config", message)
+                        .in_file(path)
+                        .at(span),
+                );
+            }
+        }
     }
 
     /// Report App Router files that Next.js cannot route unambiguously.

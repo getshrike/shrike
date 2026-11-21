@@ -11,6 +11,7 @@ pub mod summary;
 pub use parse::{parse_file, parse_source};
 pub use summary::{
     BindingKind, DeclarationKind, DeclarationRecord, DynamicKind, DynamicRecord, DynamicSpecifier,
-    ExportAllRecord, FileSummary, ImportBinding, ImportKind, ImportRecord, LocalExportRecord,
-    MemberAccess, ModuleRefs, ParseStatus, ReExportRecord, UnknownRecord, UnknownScope,
+    ExportAllRecord, ExportedConstValue, ExportedConstValueRecord, FileSummary, ImportBinding,
+    ImportKind, ImportRecord, LocalExportRecord, MemberAccess, ModuleRefs, NextSegmentExportRecord,
+    ParseStatus, ReExportRecord, UnknownRecord, UnknownScope,
 };

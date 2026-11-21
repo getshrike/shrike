@@ -137,6 +137,39 @@ pub struct InvalidServerExportRecord {
     pub span: Span,
 }
 
+/// A top-level export Next.js's app-route static-info analyzer counts when it
+/// validates route segment configuration: `generateStaticParams`,
+/// `unstable_paramMatching`, and `unstable_generateParamMatching`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NextSegmentExportRecord {
+    pub name: String,
+    pub span: Span,
+}
+
+/// A directly exported `const` whose initializer Next.js can statically
+/// extract for route segment configuration. Arrays and objects are recorded as
+/// shapes; the conflict checks do not need their contents.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedConstValueRecord {
+    pub name: String,
+    pub value: ExportedConstValue,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "camelCase")]
+pub enum ExportedConstValue {
+    String(String),
+    Number(String),
+    Boolean(bool),
+    Null,
+    Array,
+    Object,
+    RegExp,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReExportRecord {
@@ -271,6 +304,14 @@ pub struct FileSummary {
     /// functions. Next.js rejects a non-callable action export at build time.
     #[serde(default)]
     pub invalid_server_exports: Vec<InvalidServerExportRecord>,
+    /// Exports Next.js's app-route static-info analyzer recognizes for route
+    /// segment configuration.
+    #[serde(default)]
+    pub next_segment_exports: Vec<NextSegmentExportRecord>,
+    /// Directly exported `const` values that Next.js can extract for route
+    /// segment configuration.
+    #[serde(default)]
+    pub exported_const_values: Vec<ExportedConstValueRecord>,
     /// Directive-looking strings after the prologue. Recorded for the
     /// `misplaced_directive` diagnostic; they are not honored as directives.
     #[serde(default)]

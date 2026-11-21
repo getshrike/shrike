@@ -1149,6 +1149,54 @@ function.
 
 ---
 
+## D-032 — Invalid route segment configuration is an error diagnostic
+
+**Decision:** App Router files that combine route-segment configuration
+Next.js rejects produce an `invalid_route_segment_config` error diagnostic.
+The parser records only the export shapes Next.js's `checkExports` and
+`extractExportedConstValue` recognize, and the graph checks the six definite
+combinations: both parameter-matching exports; parameter matching in a
+`route` handler, with `runtime = 'edge'`, or with `"use client"`;
+`generateStaticParams` with `runtime = 'edge'` or `"use client"`;
+`instant` / `prefetch` / `ensureStatic` in a `"use client"` module; and
+`unstable_dynamicStaleTime` in a layout or next to `instant`.
+
+**Alternatives considered:**
+
+- Match export names without the parser shapes: a function named `instant`, a
+  re-exported `runtime`, or a parenthesized initializer is not read by Next.js
+  and would produce false positives.
+- Treat every extractable value as valid config: Next.js's schema rejects
+  invalid values with a different error, so the rule checks only values that
+  satisfy the relevant schema.
+- Gate project-wide: a React-only workspace package with an app-shaped
+  directory is not a Next app; the per-package gate matches the route-conflict
+  checks.
+- Report warnings: Next.js throws before the build completes, so these are
+  errors, not advisories.
+
+**Why:** Read Next.js 16.4.6
+`dist/build/analysis/get-page-static-info.js` and
+`dist/build/analysis/extract-const-value.js`, and probed
+`getAppPageStaticInfo` with each combination. The runtime throws for all six
+groups; it does not throw for a function named `instant`, a re-exported
+`runtime`, a parenthesized `runtime`, a `let` `runtime`, a segment config in a
+non-page module, or an app-shaped directory in a package without `next`.
+
+**Consequences:**
+
+- `FileSummary.next_segment_exports` and `FileSummary.exported_const_values`
+  record the parser facts; `ANALYSIS_VERSION` is bumped to 68.
+- Parser and graph tests cover the recognized shapes, the conservative skips,
+  the six combinations, anchors, severity, and project gating.
+- The error groups under `routing` in the CLI diagnostic summary and never
+  changes candidates or entries.
+
+**Revisit if:** Next.js changes its segment-config checks, adds new
+`cacheComponents`-gated options, or starts validating values Shrike can model.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -1223,6 +1271,7 @@ external app, credential, or participant.
 | D-029 | Client/server leak cones are advisory warnings | accepted |
 | D-030 | Async arrow actions and inline directives are Server Actions | accepted |
 | D-031 | Definitely non-function `"use server"` exports are warnings | accepted |
+| D-032 | Invalid route segment configuration is an error diagnostic | accepted |
 
 ## Rejected ideas
 

@@ -14,6 +14,7 @@ mod declarations;
 mod html;
 mod mdx;
 mod next_dynamic;
+mod next_segment;
 mod refs;
 mod server_actions;
 mod statements;
@@ -92,6 +93,8 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
                 server_action_module: false,
                 inline_server_action_exports: Vec::new(),
                 invalid_server_exports: Vec::new(),
+                next_segment_exports: Vec::new(),
+                exported_const_values: Vec::new(),
                 misplaced_directives: Vec::new(),
                 imports: Vec::new(),
                 declarations: Vec::new(),
@@ -130,6 +133,8 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
             server_action_module: false,
             inline_server_action_exports: Vec::new(),
             invalid_server_exports: Vec::new(),
+            next_segment_exports: Vec::new(),
+            exported_const_values: Vec::new(),
             misplaced_directives: Vec::new(),
             imports: Vec::new(),
             declarations: Vec::new(),
@@ -166,6 +171,8 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
         server_action_module: false,
         inline_server_action_exports: Vec::new(),
         invalid_server_exports: Vec::new(),
+        next_segment_exports: Vec::new(),
+        exported_const_values: Vec::new(),
         misplaced_directives: Vec::new(),
         imports: Vec::new(),
         declarations: Vec::new(),
@@ -190,6 +197,10 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
     summary.inline_server_action_exports = server_actions::inline_server_action_exports(&program);
     summary.invalid_server_exports =
         server_actions::invalid_server_exports(&program, source, &line_index);
+    summary.next_segment_exports =
+        next_segment::next_segment_exports(&program, source, &line_index);
+    summary.exported_const_values =
+        next_segment::exported_const_values(&program, source, &line_index);
     summary.client_only_dynamic_specifiers =
         next_dynamic::client_only_dynamic_specifiers(&program, &summary.imports);
     next_dynamic::assign_dynamic_spans(&program, source, &line_index, &mut summary);

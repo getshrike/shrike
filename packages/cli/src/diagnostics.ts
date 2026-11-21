@@ -64,7 +64,11 @@ function categoryFor(item: DiagnosticLike): { category: string; actionable: bool
   ) {
     return { category: "boundary", actionable: true };
   }
-  if (item.code === "route_collision" || item.code === "dynamic_segment_name_conflict") {
+  if (
+    item.code === "route_collision" ||
+    item.code === "dynamic_segment_name_conflict" ||
+    item.code === "invalid_route_segment_config"
+  ) {
     return { category: "routing", actionable: true };
   }
   if (item.code === "stale-build" || item.code === "build-failed" || item.code === "low-coverage") {

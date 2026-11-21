@@ -45,6 +45,8 @@ pub(crate) fn parse(
         server_action_module: false,
         inline_server_action_exports: Vec::new(),
         invalid_server_exports: Vec::new(),
+        next_segment_exports: Vec::new(),
+        exported_const_values: Vec::new(),
         misplaced_directives: Vec::new(),
         imports,
         declarations: Vec::new(),

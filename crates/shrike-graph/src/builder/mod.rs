@@ -120,6 +120,7 @@ impl<'a> Builder<'a> {
         self.build_edges();
         self.detect_entries();
         self.detect_next_route_conflicts();
+        self.detect_next_segment_config_conflicts();
         self.finish_edges();
     }
 
