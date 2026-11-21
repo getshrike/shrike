@@ -78,7 +78,7 @@ pub(crate) fn attribute(
                 match kind {
                     "jsx" => "removed-jsx",
                     "re-export" => "removed-re-export",
-                    "dynamic" => "changed-dynamic",
+                    "dynamic" | "worker" => "changed-dynamic",
                     "import" => "removed-import",
                     _ => "removed-call",
                 }

@@ -1,0 +1,5 @@
+{
+  "name": "corpus-then-dynamic-import",
+  "private": true,
+  "type": "module"
+}

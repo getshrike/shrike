@@ -13,6 +13,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 blake3 = { workspace = true }
 ignore = { workspace = true }
+globset = { workspace = true }
+oxc_allocator = { workspace = true }
+oxc_ast = { workspace = true }
+oxc_ast_visit = { workspace = true }
+oxc_parser = { workspace = true }
+oxc_span = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -265,7 +265,10 @@ If exact attribution is impossible (e.g., minified chunk composition), report
 ### 7.1 Server actions
 
 A `"use server"` module export is an entry. Its reachability is from the client
-reference that invokes it.
+reference that invokes it. Every export is seeded under both
+`clientBoundaryPolicy` values: the policy only governs `"use client"` modules,
+because Next.js registers actions in the server-reference manifest whether or
+not application code imports them.
 
 - If the client-reference manifest maps the action to a client module, create a
   `certain` edge.

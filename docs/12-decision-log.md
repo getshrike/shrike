@@ -487,6 +487,35 @@ produce a complete result.
 
 ---
 
+## D-019 — Server actions are always entries
+
+**Decision:** Every export of a module-level `"use server"` file is an entry,
+regardless of `clientBoundaryPolicy`. The policy only controls `"use client"`
+seeding.
+
+**Alternatives considered:**
+
+- Keep server-action exports gated by `protect`.
+- Report unimported actions as unused with a warning, as fallow does.
+
+**Why:** Next.js registers every export of a `"use server"` module in the
+server-reference manifest once the module is reached, whether or not application
+code imports it. Actions are invoked through serialized references, so the
+import graph cannot prove such an export unused.
+
+**Consequences:**
+
+- The default `graph` policy no longer reports server-action exports.
+- `protect` still seeds `"use client"` boundaries and the server-action module.
+- Accounteer: 23 server-action candidates removed; fallow reports the same 23
+  as `unused-server-action` warnings, not deletions.
+
+**Revisit if:** a build manifest proves an action is absent from every client
+reference and no external client can invoke it. Even then, absence is not proof
+of death.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -548,6 +577,7 @@ external app, credential, or participant.
 | D-016 | No dashboard in v1 | accepted |
 | D-017 | SCC-first cascade, deterministic batches | accepted |
 | D-018 | Fail closed on protocol errors | accepted |
+| D-019 | Server actions are always entries | accepted |
 
 ## Rejected ideas
 

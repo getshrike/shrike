@@ -1,5 +1,5 @@
 use super::*;
-use crate::summary::{BindingKind, DynamicSpecifier, UnknownScope};
+use crate::summary::{BindingKind, DynamicKind, DynamicSpecifier, UnknownScope};
 
 fn summary(source: &str, path: &str) -> FileSummary {
     parse_source(path, source)
@@ -99,6 +99,105 @@ const g = globalThis[name];
 }
 
 #[test]
+fn captures_bundler_globs() {
+    let source = r#"
+const pages = import.meta.glob("./pages/*.tsx");
+const mixed = import.meta.glob(["./pages/*.tsx", "!./pages/skip.tsx", "./layouts/**/*.tsx"]);
+const dynamic = import.meta.glob(pattern);
+const icons = require.context("./icons", true, /\.tsx$/);
+const flat = require.context("./flat", false);
+const bracketed = require.context("./[icons]", false);
+const contextDynamic = require.context(directory);
+"#;
+    let parsed = summary(source, "src/main.tsx");
+    assert_eq!(parsed.parse_status, ParseStatus::Ok);
+    let globs: Vec<&DynamicSpecifier> = parsed
+        .dynamic
+        .iter()
+        .map(|record| &record.specifier)
+        .collect();
+    assert_eq!(globs.len(), 7, "{globs:?}");
+    assert!(matches!(
+        globs[0],
+        DynamicSpecifier::Glob { patterns, excludes }
+            if patterns == &vec!["./pages/*.tsx".to_string()] && excludes.is_empty()
+    ));
+    assert!(matches!(
+        globs[1],
+        DynamicSpecifier::Glob { patterns, excludes }
+            if patterns == &vec!["./pages/*.tsx".to_string(), "./layouts/**/*.tsx".to_string()]
+                && excludes == &vec!["./pages/skip.tsx".to_string()]
+    ));
+    assert!(matches!(globs[2], DynamicSpecifier::Unknown));
+    assert!(matches!(
+        globs[3],
+        DynamicSpecifier::Glob { patterns, .. } if patterns == &vec!["./icons/**/*".to_string()]
+    ));
+    assert!(matches!(
+        globs[4],
+        DynamicSpecifier::Glob { patterns, .. } if patterns == &vec!["./flat/*".to_string()]
+    ));
+    assert!(matches!(
+        globs[5],
+        DynamicSpecifier::Glob { patterns, .. }
+            if patterns == &vec!["./[[]icons[]]/*".to_string()]
+    ));
+    assert!(matches!(globs[6], DynamicSpecifier::Unknown));
+    // `require.context` must not also produce a plain `require()` record.
+    assert!(!parsed.dynamic.iter().any(
+        |record| matches!(&record.specifier, DynamicSpecifier::Literal(value) if value == "./icons")
+    ));
+}
+
+#[test]
+fn captures_worker_and_worklet_modules() {
+    let source = r#"
+const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+const shared = new SharedWorker(new URL("./shared.ts", import.meta.url));
+const plain = new Worker("./plain.js");
+navigator.serviceWorker.register(new URL("./service-worker.ts", import.meta.url));
+audioContext.audioWorklet.addModule("./processor.ts");
+CSS.paintWorklet.addModule(new URL("./paint.ts", import.meta.url));
+importScripts("./first.js", "./second.js");
+const dynamicWorker = new Worker(workerUrl);
+"#;
+    let parsed = summary(source, "src/worker-host.ts");
+    assert_eq!(parsed.parse_status, ParseStatus::Ok);
+    let workers: Vec<(DynamicKind, &DynamicSpecifier)> = parsed
+        .dynamic
+        .iter()
+        .filter(|record| record.kind == DynamicKind::Worker)
+        .map(|record| (record.kind, &record.specifier))
+        .collect();
+    let literals: Vec<&str> = workers
+        .iter()
+        .filter_map(|(_, specifier)| match specifier {
+            DynamicSpecifier::Literal(value) => Some(value.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        literals,
+        vec![
+            "./worker.ts",
+            "./shared.ts",
+            "./plain.js",
+            "./service-worker.ts",
+            "./processor.ts",
+            "./paint.ts",
+            "./first.js",
+            "./second.js"
+        ]
+    );
+    assert!(
+        workers
+            .iter()
+            .any(|(_, specifier)| matches!(specifier, DynamicSpecifier::Unknown)),
+        "a computed worker URL must fail closed: {workers:?}"
+    );
+}
+
+#[test]
 fn captures_jsx_namespace_members_and_value_uses() {
     let source = r#"
 import * as UI from "./ui";
@@ -147,7 +246,7 @@ fn parse_errors_block_summary() {
 
 #[test]
 fn unsupported_extension_is_skipped() {
-    let parsed = summary("hello", "README.md");
+    let parsed = summary("hello", "README.txt");
     assert_eq!(parsed.parse_status, ParseStatus::Skipped);
 }
 
@@ -188,6 +287,26 @@ import { NotReal } from "./fake";
     assert_eq!(parsed.imports.len(), 1);
     assert_eq!(parsed.imports[0].source, "../components/widget");
     assert_eq!(parsed.imports[0].bindings[0].local, "Widget");
+}
+
+#[test]
+fn markdown_page_uses_the_mdx_esm_boundary() {
+    let source = r#"# About
+
+import { Widget } from "../components/widget";
+import { helper as localHelper } from "../utils";
+
+<Widget value={localHelper()} />
+"#;
+    let parsed = summary(source, "pages/about.md");
+    assert_eq!(parsed.parse_status, ParseStatus::Ok);
+    assert_eq!(parsed.module_kind, "mdx");
+    assert_eq!(parsed.imports.len(), 2);
+    assert_eq!(parsed.imports[0].source, "../components/widget");
+    assert_eq!(parsed.imports[0].bindings[0].local, "Widget");
+    assert_eq!(parsed.imports[1].bindings[0].imported, "helper");
+    assert_eq!(parsed.imports[1].bindings[0].local, "localHelper");
+    assert!(parsed.diagnostics.is_empty());
 }
 
 #[test]
@@ -256,6 +375,26 @@ const { ...rest } = await import("./rest");
 const namespace = await import("./namespace");
 const promise = import("./promise");
 const thenable = await import("./thenable").then((module) => module.used);
+const [{ first }, second] = await Promise.all([
+  import("./one"),
+  import("./two"),
+]);
+const [{ third }, { fourth }] = await Promise.all([import("./three"), import("./four")]);
+const [fifth, ...remaining] = await Promise.all([import("./five"), import("./six")]);
+const [{ ...all }] = await Promise.all([import("./seven")]);
+const [eighth] = await Promise.all([import("./eight").then((module) => module.used)]);
+const blockThen = import("./block-then").then((module) => {
+  module.alpha();
+  module.beta();
+});
+const destructuredThen = import("./destructured-then").then(({ gamma, delta }) => gamma + delta);
+const functionThen = import("./function-then").then(function (module) {
+  return module.epsilon;
+});
+const objectThen = import("./object-then").then((module) => ({ default: module.zeta }));
+const escapedThen = import("./escaped-then").then((module) => use(module));
+const computedThen = import("./computed-then").then((module) => module[key]);
+const unusedThen = import("./unused-then").then(() => 1);
 "#;
     let parsed = summary(source, "src/dynamic.ts");
     let imported = |specifier: &str| {
@@ -280,7 +419,31 @@ const thenable = await import("./thenable").then((module) => module.used);
     assert_eq!(imported("./rest"), None);
     assert_eq!(imported("./namespace"), None);
     assert_eq!(imported("./promise"), None);
-    assert_eq!(imported("./thenable"), None);
+    assert_eq!(imported("./thenable"), Some(vec!["used".to_string()]));
+    assert_eq!(imported("./one"), Some(vec!["first".to_string()]));
+    assert_eq!(imported("./two"), None);
+    assert_eq!(imported("./three"), Some(vec!["third".to_string()]));
+    assert_eq!(imported("./four"), Some(vec!["fourth".to_string()]));
+    assert_eq!(imported("./five"), None);
+    assert_eq!(imported("./six"), None);
+    assert_eq!(imported("./seven"), None);
+    assert_eq!(imported("./eight"), Some(vec!["used".to_string()]));
+    assert_eq!(
+        imported("./block-then"),
+        Some(vec!["alpha".to_string(), "beta".to_string()])
+    );
+    assert_eq!(
+        imported("./destructured-then"),
+        Some(vec!["delta".to_string(), "gamma".to_string()])
+    );
+    assert_eq!(
+        imported("./function-then"),
+        Some(vec!["epsilon".to_string()])
+    );
+    assert_eq!(imported("./object-then"), Some(vec!["zeta".to_string()]));
+    assert_eq!(imported("./escaped-then"), None);
+    assert_eq!(imported("./computed-then"), None);
+    assert_eq!(imported("./unused-then"), None);
     assert_eq!(
         parsed
             .dynamic
@@ -291,6 +454,17 @@ const thenable = await import("./thenable").then((module) => module.used);
             .count(),
         1,
         "a handled import must not also produce a widening record"
+    );
+    assert_eq!(
+        parsed
+            .dynamic
+            .iter()
+            .filter(|record| {
+                matches!(&record.specifier, DynamicSpecifier::Literal(value) if value == "./one")
+            })
+            .count(),
+        1,
+        "a narrowed Promise.all import must not also widen"
     );
 }
 

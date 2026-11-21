@@ -53,10 +53,11 @@ export interface ShrikeConfig {
   testEntries: boolean;
   includeGenerated: boolean;
   /**
-   * `graph` (default) treats a `"use client"`/`"use server"` directive as a
-   * boundary marker and lets normal reachability decide liveness. `protect`
-   * also seeds every export in those files as an entry (the pre-1.1
-   * fail-closed behavior).
+   * `graph` (default) treats a `"use client"` directive as a boundary marker
+   * and lets normal reachability decide liveness. `protect` also seeds every
+   * export in client-boundary files as an entry (the pre-1.1 fail-closed
+   * behavior). `"use server"` exports are always entries because Next.js
+   * registers them independently of imports.
    */
   clientBoundaryPolicy: ClientBoundaryPolicy;
   /** Dependency names that must never be reported as unused. */
@@ -89,6 +90,7 @@ export const DEFAULT_CONFIG: ShrikeConfig = {
     "**/*.svelte",
     "**/*.vue",
     "**/*.astro",
+    "**/index.html",
   ],
   ignore: [
     "node_modules/**", ".git/**", ".next/**", ".shrike/**", "dist/**", "build/**",

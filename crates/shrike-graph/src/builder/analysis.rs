@@ -126,7 +126,11 @@ impl<'a> Builder<'a> {
 
     /// Exported symbols that are live only because their own file references
     /// them. A cross-file edge proves external use; same-file `re-export`
-    /// aliases propagate that proof to the local symbol they expose.
+    /// aliases propagate that proof to the local symbol they expose. A type
+    /// imported externally also makes the types in its shape externally
+    /// visible, so type-to-type references propagate too. Value references do
+    /// not: a helper used by an externally called function stays internal and
+    /// can be de-exported.
     pub(super) fn internal_only(&self, live: &BTreeSet<String>) -> Vec<String> {
         let mut external: BTreeSet<String> = BTreeSet::new();
         for edge in &self.edges {
@@ -134,15 +138,26 @@ impl<'a> Builder<'a> {
                 external.insert(edge.target.clone());
             }
         }
+        let type_only: BTreeSet<&str> = self
+            .symbols
+            .iter()
+            .filter(|symbol| symbol.type_only)
+            .map(|symbol| symbol.key.as_str())
+            .collect();
         let mut changed = true;
         while changed {
             changed = false;
             for edge in &self.edges {
-                if edge.kind == "re-export"
-                    && file_of(&edge.source) == file_of(&edge.target)
-                    && external.contains(&edge.source)
-                    && external.insert(edge.target.clone())
+                if file_of(&edge.source) != file_of(&edge.target)
+                    || !external.contains(&edge.source)
                 {
+                    continue;
+                }
+                let propagates = edge.kind == "re-export"
+                    || (edge.kind == "reference"
+                        && type_only.contains(edge.source.as_str())
+                        && type_only.contains(edge.target.as_str()));
+                if propagates && external.insert(edge.target.clone()) {
                     changed = true;
                 }
             }

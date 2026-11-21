@@ -57,6 +57,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: cargo build -p shrike-engine
       - run: node scripts/differential.mjs
+      - run: node scripts/differential.mjs --fixture fixtures/differential-glob
 
   fixtures:
     runs-on: ubuntu-latest

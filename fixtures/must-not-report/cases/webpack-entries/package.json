@@ -1,0 +1,8 @@
+{
+  "name": "corpus-webpack-entries",
+  "private": true,
+  "devDependencies": {
+    "webpack": "^5.90.0",
+    "webpack-cli": "^5.1.0"
+  }
+}
