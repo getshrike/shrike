@@ -521,6 +521,30 @@ not commitments; commitments are in the plans.
 
 ---
 
+### 2026-11-21 — misplaced RSC directives
+
+- Read fallow 3.45.0's `misplaced_directive.rs`,
+  `predicates/import.rs`, and the extract visitor. RSC bundlers honor
+  `"use client"` and `"use server"` only in the leading prologue; oxc keeps
+  those in `program.directives` and parses any later string as an ordinary
+  expression statement, which the bundler silently ignores. The rule is
+  project-wide over the root and workspace manifests and gates on `next`,
+  `waku`, `@lazarv/react-server`, `react-server-dom-webpack`,
+  `react-server-dom-vite`, `react-server-dom-parcel`, or
+  `@vitejs/plugin-rsc`.
+- On `/tmp/opencode/misplaced-directive-probe`, fallow reports three
+  findings (`app/late-client.tsx#2`, `app/late-server.ts#2`, and a late
+  directive in a React-only workspace package) and Shrike reports the same
+  three at the same lines. Both exclude a leading directive followed by
+  imports, a nested string, and `"use strict"`. A React-only control reports
+  zero in both tools, and a Waku probe reports the same single finding.
+- Shrike records `FileSummary.misplaced_directives` during parsing and emits
+  one warning per occurrence, anchored on the statement. It is a warning, not
+  a finding: candidates stay unchanged. The warning groups under `boundary`
+  in the CLI summary.
+
+---
+
 ## 9. Change log
 
 | Date | Change | Files |
@@ -582,6 +606,7 @@ not commitments; commitments are in the plans.
 | 2026-11-21 | Stopped treating `scripts/` files as entries by location, documented headers, or shebangs. A script enters the graph only when `package.json` `scripts`/`bin`, an import, or explicit config names it; the `executable` summary field and `looks_executable` heuristic are removed. Knip 5.88.1 and fallow 3.45.0 both report seven requo scripts and two accounteer scripts that Shrike protected. After the change Shrike reports the same nine unused files and their declarations; requo 658 → 729 candidates (+71, 0 removals: 60 in the seven scripts and 11 in the dead `lib/config` subtree exposed by dropping the heuristic), accounteer 161 → 176 (+15, 0 removals). Added the two-sided `unreferenced-scripts` corpus case | `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-syntax/src/parse/mod.rs`, `crates/shrike-syntax/src/parse/mdx.rs`, `crates/shrike-syntax/src/parse/html.rs`, `crates/shrike-syntax/src/summary.rs`, `schemas/graph-snapshot.schema.json`, `fixtures/must-not-report/cases/unreferenced-scripts/`, `fixtures/must-not-report/manifest.json`, `docs/03-algorithms.md`, `docs/12-decision-log.md` |
 | 2026-11-21 | Added the `invalid_client_export` advisory warning for `"use client"` modules that export a Next.js server-only, route-config, or route-handler name. The 22-name set is fallow 3.45.0's `ILLEGAL_CLIENT_EXPORTS`; the gate is project-wide over root and workspace manifests. Direct exports anchor on the declaration, local `export { name }` anchors on the specifier and reports once, and default/type-only/re-exports are excluded. Added `DeclarationRecord.directly_exported` and bumped `ANALYSIS_VERSION` to 61. Probes match fallow exactly on the 22-name set, file/line anchors, the monorepo gate, and a no-Next control | `crates/shrike-graph/src/builder/files.rs`, `crates/shrike-graph/src/builder/mod.rs`, `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-syntax/src/summary.rs`, `crates/shrike-syntax/src/parse/declarations.rs`, `crates/shrike-syntax/src/parse/statements.rs`, `crates/shrike-engine/src/cache.rs`, `packages/cli/src/diagnostics.ts`, `packages/cli/test/diagnostics.test.mjs`, `docs/03-algorithms.md`, `docs/06-build-graph-and-nextjs.md`, `docs/12-decision-log.md` |
 | 2026-11-21 | Added `route_collision` and `dynamic_segment_name_conflict` error diagnostics from fallow 3.45.0's App Router route-tree primitive. Two `page`/`route` leaves at one URL, or sibling dynamic segments with different spellings at one position, are reported per file. Route groups are transparent, parallel slots fork the namespace, and private/intercepting subtrees are excluded. The checks require the owning package to declare `next`; the probe matches fallow's 8 collisions and 3 conflicts when the sibling package declares Next, and deliberately skips a React-only package that fallow flags via its project-wide gate. Bumped `ANALYSIS_VERSION` to 62 and shared the dotted `pageExtensions` parser with entry detection | `crates/shrike-graph/src/builder/files.rs`, `crates/shrike-graph/src/builder/mod.rs`, `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-engine/src/cache.rs`, `packages/cli/src/diagnostics.ts`, `packages/cli/test/diagnostics.test.mjs`, `docs/03-algorithms.md`, `docs/06-build-graph-and-nextjs.md`, `docs/12-decision-log.md` |
+| 2026-11-21 | Added the `misplaced_directive` warning for `"use client"` / `"use server"` strings after the leading prologue. RSC bundlers silently ignore them, so the intended boundary never exists. The project-wide gate is fallow 3.45.0's seven RSC bundler packages; one warning per occurrence, anchored on the statement; `"use strict"` and nested strings are ignored. The parser records `FileSummary.misplaced_directives`, and `ANALYSIS_VERSION` is bumped to 63. Probes match fallow exactly on the three Next findings, a React-only control, and a Waku probe | `crates/shrike-syntax/src/summary.rs`, `crates/shrike-syntax/src/parse/mod.rs`, `crates/shrike-syntax/src/parse/html.rs`, `crates/shrike-syntax/src/parse/mdx.rs`, `crates/shrike-syntax/src/parse/statements.rs`, `crates/shrike-syntax/src/parse/tests.rs`, `crates/shrike-graph/src/builder/files.rs`, `crates/shrike-graph/src/builder/mod.rs`, `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-engine/src/cache.rs`, `packages/cli/src/diagnostics.ts`, `packages/cli/test/diagnostics.test.mjs`, `docs/03-algorithms.md`, `docs/06-build-graph-and-nextjs.md`, `docs/12-decision-log.md` |
 
 ---
 

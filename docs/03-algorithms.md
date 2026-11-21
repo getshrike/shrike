@@ -353,6 +353,16 @@ analyzable.
   anchored on its specifier and reported once. Default, type-only, and
   re-export forms are excluded. The list matches fallow 3.45.0's
   `ILLEGAL_CLIENT_EXPORTS`; knip 5.88.1 does not report the condition;
+- a `"use client"` or `"use server"` string after the leading prologue
+  produces a `misplaced_directive` warning, not a finding. RSC bundlers only
+  honor a directive before any other statement and silently ignore the rest,
+  so the intended boundary never exists. The rule is gated on the project
+  declaring `next`, `waku`, `@lazarv/react-server`,
+  `react-server-dom-webpack`, `react-server-dom-vite`,
+  `react-server-dom-parcel`, or `@vitejs/plugin-rsc` in the root or a
+  workspace manifest, matching fallow 3.45.0's `RSC_BUNDLER_DEPS`. One warning
+  per occurrence, anchored on the statement; `"use strict"` and nested strings
+  are ignored;
 - metadata exports: `metadata`, `generateMetadata`, `viewport`,
   `generateViewport`, `generateStaticParams`, `generateSitemaps`;
 - dynamic param matching (Next.js 16.4): `unstable_paramMatching` and
