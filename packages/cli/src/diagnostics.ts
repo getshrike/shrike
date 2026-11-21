@@ -56,6 +56,7 @@ function categoryFor(item: DiagnosticLike): { category: string; actionable: bool
   }
   if (
     item.code === "client-boundary-leak" ||
+    item.code === "client_server_leak" ||
     item.code === "invalid_client_export" ||
     item.code === "misplaced_directive" ||
     item.code === "mixed_client_server_barrel"

@@ -3675,6 +3675,199 @@ mod tests {
     }
 
     #[test]
+    fn client_server_leaks_follow_the_use_client_cone() {
+        let next_snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            // Direct server-only import in a client module.
+            (
+                "app/direct/page.tsx",
+                "\"use client\";\n\nimport { headers } from \"next/headers\";\nexport default function Direct() { return null; }\n",
+            ),
+            // Transitive static import and a re-export chain.
+            (
+                "lib/transitive.ts",
+                "import fs from \"node:fs\";\nexport function read() { return fs.readFileSync(\"x\", \"utf8\"); }\n",
+            ),
+            (
+                "app/transitive/page.tsx",
+                "\"use client\";\n\nimport { read } from \"../../lib/transitive\";\nexport default function Page() { return <main>{read()}</main>; }\n",
+            ),
+            ("lib/chain.ts", "export { read } from \"./transitive\";\n"),
+            (
+                "app/reexport/page.tsx",
+                "\"use client\";\n\nimport { read } from \"../../lib/chain\";\nexport default function Page() { return <main>{read()}</main>; }\n",
+            ),
+            // A client module that re-exports server-only code directly.
+            (
+                "app/star/page.tsx",
+                "\"use client\";\n\nexport { read } from \"../../lib/transitive\";\n",
+            ),
+            // An all-action Server Action module is the sanctioned boundary.
+            (
+                "lib/action.ts",
+                "\"use server\";\nimport fs from \"node:fs\";\nexport async function action() { return fs.readFileSync(\"x\", \"utf8\"); }\n",
+            ),
+            (
+                "app/action/page.tsx",
+                "\"use client\";\n\nimport { action } from \"../../lib/action\";\nexport default function Page() { return <button onClick={() => action()}>run</button>; }\n",
+            ),
+            // A non-action export keeps the server module in the client cone.
+            (
+                "lib/action-mixed.ts",
+                "\"use server\";\nimport fs from \"node:fs\";\nexport async function action() { return fs.readFileSync(\"x\", \"utf8\"); }\nexport const value = 1;\n",
+            ),
+            (
+                "app/action-mixed/page.tsx",
+                "\"use client\";\n\nimport { action, value } from \"../../lib/action-mixed\";\nexport default function Page() { return <button onClick={() => action()}>{value}</button>; }\n",
+            ),
+            // Type-only edges are erased and cannot leak.
+            (
+                "lib/type-server.ts",
+                "import fs from \"node:fs\";\nexport type ServerType = string;\nexport function read() { return fs.readFileSync(\"x\", \"utf8\"); }\n",
+            ),
+            (
+                "app/type-only/page.tsx",
+                "\"use client\";\n\nimport type { ServerType } from \"../../lib/type-server\";\nexport default function Page() { const value: ServerType = \"ok\"; return <main>{value}</main>; }\n",
+            ),
+            (
+                "app/type-reexport/page.tsx",
+                "\"use client\";\n\nexport type { ServerType } from \"../../lib/type-server\";\n",
+            ),
+            // The sanctioned next/dynamic client-only escape hatch.
+            (
+                "app/dynamic-ssr/page.tsx",
+                "\"use client\";\n\nimport dynamic from \"next/dynamic\";\nconst Chart = dynamic(() => import(\"../../lib/transitive\"), { ssr: false });\nexport default function Page() { return <Chart />; }\n",
+            ),
+            // Without ssr:false the dynamic import is an ordinary client edge.
+            (
+                "app/dynamic-no-ssr/page.tsx",
+                "\"use client\";\n\nimport dynamic from \"next/dynamic\";\nconst Chart = dynamic(() => import(\"../../lib/transitive\"));\nexport default function Page() { return <Chart />; }\n",
+            ),
+            // A static edge of the same specifier is not an escape hatch.
+            (
+                "app/dynamic-static/page.tsx",
+                "\"use client\";\n\nimport { read } from \"../../lib/transitive\";\nimport dynamic from \"next/dynamic\";\nconst Chart = dynamic(() => import(\"../../lib/transitive\"), { ssr: false });\nexport default function Page() { return <main>{read()}<Chart /></main>; }\n",
+            ),
+            // A server component is not a client root.
+            (
+                "app/server-component/page.tsx",
+                "import { read } from \"../../lib/transitive\";\nexport default function Page() { return <main>{read()}</main>; }\n",
+            ),
+            // A namespace next/headers import is conservative; a side-effect
+            // import and a default import are not server APIs.
+            (
+                "app/headers-namespace/page.tsx",
+                "\"use client\";\n\nimport * as headers from \"next/headers\";\nexport default function Page() { return <main>{headers.headers().get(\"host\")}</main>; }\n",
+            ),
+            (
+                "app/headers-side-effect/page.tsx",
+                "\"use client\";\n\nimport \"next/headers\";\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "app/server-only/page.tsx",
+                "\"use client\";\n\nimport \"server-only\";\nexport default function Page() { return null; }\n",
+            ),
+        ]);
+        let mut leaks: Vec<(String, u32)> = next_snapshot
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "client_server_leak")
+            .map(|diagnostic| {
+                (
+                    diagnostic.file.clone().unwrap_or_default(),
+                    diagnostic.span.map_or(0, |span| span.line),
+                )
+            })
+            .collect();
+        leaks.sort();
+        assert_eq!(
+            leaks,
+            vec![
+                ("app/action-mixed/page.tsx".to_string(), 3),
+                ("app/direct/page.tsx".to_string(), 3),
+                ("app/dynamic-no-ssr/page.tsx".to_string(), 4),
+                ("app/dynamic-static/page.tsx".to_string(), 3),
+                ("app/headers-namespace/page.tsx".to_string(), 3),
+                ("app/reexport/page.tsx".to_string(), 3),
+                ("app/server-only/page.tsx".to_string(), 3),
+                ("app/star/page.tsx".to_string(), 3),
+                ("app/transitive/page.tsx".to_string(), 3),
+            ],
+            "{:?}",
+            next_snapshot.diagnostics
+        );
+        let transitive = next_snapshot
+            .diagnostics
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.code == "client_server_leak"
+                    && diagnostic.file.as_deref() == Some("app/transitive/page.tsx")
+            })
+            .expect("transitive leak");
+        assert_eq!(transitive.severity, shrike_core::Severity::Warning);
+        assert!(
+            !transitive.message.contains("lib/chain")
+                && transitive.message.contains("lib/transitive.ts")
+                && transitive.message.contains("node:fs"),
+            "the warning names the sink and path: {}",
+            transitive.message
+        );
+        let dynamic = next_snapshot
+            .diagnostics
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.code == "client_server_leak"
+                    && diagnostic.file.as_deref() == Some("app/dynamic-no-ssr/page.tsx")
+            })
+            .expect("dynamic leak");
+        assert_eq!(dynamic.span.map(|span| span.line), Some(4));
+
+        // Without an RSC bundler the directives carry no special meaning.
+        let react_only = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/client.tsx",
+                "\"use client\";\nimport \"server-only\";\nexport function Widget() { return null; }\n",
+            ),
+        ]);
+        assert!(
+            react_only
+                .diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.code != "client_server_leak"),
+            "no RSC bundler evidence: {:?}",
+            react_only.diagnostics
+        );
+
+        // Any framework-agnostic RSC bundler enables the rule.
+        let waku = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"app","dependencies":{"waku":"^0.21.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "app/client.tsx",
+                "\"use client\";\nimport \"server-only\";\nexport function Widget() { return null; }\n",
+            ),
+        ]);
+        assert_eq!(
+            waku.diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "client_server_leak")
+                .count(),
+            1,
+            "{:?}",
+            waku.diagnostics
+        );
+    }
+
+    #[test]
     fn next_route_collisions_and_dynamic_segment_conflicts_are_reported() {
         let routes = snapshot(&[
             (

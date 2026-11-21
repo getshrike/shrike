@@ -957,6 +957,64 @@ imports at runtime, or fallow removes its type-only false positive.
 
 ---
 
+## D-029 — Client/server leak cones are advisory warnings
+
+**Decision:** A `"use client"` module whose runtime import cone reaches a
+server-only sink produces a `client_server_leak` warning. The cone follows
+runtime static imports, re-exports, export-alls, and non-worker dynamic
+imports; type-only edges are erased. The sink predicate is D-028's:
+`server-only`, `next/server`, `fs`/`fs/promises`/`child_process` (bare or
+`node:`), or a named `cookies`/`headers`/`draftMode` API (or namespace) from
+`next/headers`. An all-action `"use server"` module stops the cone; a module
+with any non-action value export keeps walking. A
+`next/dynamic(..., { ssr: false })` edge is skipped when the same specifier has
+no runtime static edge. The rule is project-wide over the seven RSC bundlers in
+D-027, emits one warning per client root anchored on the first import of the
+shortest path, and never changes candidates, entries, or unused files.
+
+**Alternatives considered:**
+
+- Detect leaks only from build evidence. `client-boundary-leak` already does
+  that, but it requires a successful Next build and only sees modules the
+  bundler emitted. The static cone reports the same failure before the build.
+- Follow type-only edges. They are erased before bundling and cannot put
+  server code in the client bundle.
+- Stop at every `"use server"` module. A module that also exports a top-level
+  constant or default value can ship its imports to the client, so the cone
+  must keep walking.
+- Treat every `next/dynamic` import as client-only. Without `{ ssr: false }`
+  the component still renders on the server, so its imports are ordinary
+  client edges.
+- Treat a bare `import "next/headers"` as a sink. It has no runtime binding and
+  cannot call `cookies`/`headers`/`draftMode`; a namespace or named import can.
+- Report one warning per sink. One warning per client root keeps the output
+  bounded and names the shortest path to the first sink, matching fallow.
+
+**Why:** Read fallow 3.45.0's
+`crates/core/src/analyze/security/mod.rs` (BFS, action-module and
+`ssr: false` exclusions) and `crates/core/src/analyze/server_only.rs`. On
+`/tmp/opencode/client-leak-probe`, fallow reports four server-only findings
+(`app/action-mixed/page.tsx`, `app/direct/page.tsx`,
+`app/dynamic-no-ssr/page.tsx`, `app/transitive/page.tsx`) and Shrike reports
+the same four at the same lines after dynamic imports gained real spans. Both
+exclude the all-action module, the type-only edge, the `ssr: false` escape
+hatch, the static-edge-plus-`ssr:false` case, and the server component. A
+React-only control reports zero in both, and a Waku probe fires in both.
+
+**Consequences:**
+
+- `FileSummary.client_only_dynamic_specifiers` records the specifiers of
+  `next/dynamic(..., { ssr: false })` calls, and dynamic-import records now
+  carry source spans. `ANALYSIS_VERSION` is bumped to 65.
+- The warning groups under `boundary` and is actionable in the CLI diagnostic
+  summary.
+- Corpus candidates are unchanged; the rule is diagnostics-only.
+
+**Revisit if:** Next.js changes when `next/dynamic` with `ssr: false` is
+client-only, or fallow's leak-cone exclusions diverge.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning

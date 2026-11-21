@@ -1,9 +1,12 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use shrike_core::glob::glob_match;
 use shrike_core::ids::{module_symbol_key, symbol_key};
 use shrike_core::{Diagnostic, Span};
-use shrike_syntax::{BindingKind, FileSummary, ImportRecord, ParseStatus};
+use shrike_syntax::{
+    BindingKind, DeclarationKind, DynamicKind, DynamicSpecifier, FileSummary, ImportRecord,
+    ParseStatus,
+};
 
 use super::Builder;
 use crate::types::{FileRecord, SymbolRecord};
@@ -93,25 +96,126 @@ fn summary_is_server_only(summary: &FileSummary) -> bool {
 }
 
 fn import_is_server_only(import: &ImportRecord) -> bool {
+    server_only_import_reason(import).is_some()
+}
+
+/// Whether an import has any binding that survives type erasure. A side-effect
+/// import always runs. An import whose every binding is `type` is erased and
+/// cannot carry server code into the client bundle.
+fn import_has_runtime_binding(import: &ImportRecord) -> bool {
     if import.type_only {
         return false;
     }
+    import.side_effect_only || import.bindings.iter().any(|binding| !binding.type_only)
+}
+
+/// The human-readable reason an import reaches server-only code, or `None`.
+/// A bare `next/headers` side-effect import is deliberately not a sink: only a
+/// namespace or one of the named server APIs is.
+fn server_only_import_reason(import: &ImportRecord) -> Option<String> {
+    if !import_has_runtime_binding(import) {
+        return None;
+    }
     if SERVER_ONLY_PACKAGES.contains(&import.source.as_str()) {
-        return true;
+        return Some(format!("imports `{}`", import.source));
     }
     if import.source != "next/headers" {
-        return false;
+        return None;
     }
-    import.bindings.iter().any(|binding| {
+    import.bindings.iter().find_map(|binding| {
         if binding.type_only {
-            return false;
+            return None;
         }
         match binding.kind {
-            BindingKind::Namespace => true,
-            BindingKind::Named => NEXT_HEADERS_SERVER_NAMES.contains(&binding.imported.as_str()),
-            BindingKind::Default => false,
+            BindingKind::Namespace => Some("imports the `next/headers` namespace".to_string()),
+            BindingKind::Named
+                if NEXT_HEADERS_SERVER_NAMES.contains(&binding.imported.as_str()) =>
+            {
+                Some(format!(
+                    "imports `{}` from `next/headers`",
+                    binding.imported
+                ))
+            }
+            BindingKind::Named | BindingKind::Default => None,
         }
     })
+}
+
+/// The first import in a module that reaches server-only code, with the reason
+/// and the import's source span.
+fn summary_server_only_import_reason(summary: &FileSummary) -> Option<(String, Span)> {
+    summary
+        .imports
+        .iter()
+        .find_map(|import| server_only_import_reason(import).map(|reason| (reason, import.span)))
+}
+
+/// Whether a `"use server"` module contains only Server Action exports.
+///
+/// A module qualifies when every value export is an async function declaration
+/// (or a type-only export) and there are no value re-exports. Such a module is
+/// replaced by action references at the client boundary, so the leak cone stops
+/// there. A non-action export (a top-level const, a default value, or a
+/// re-export) can ship the module's imports to the client, so the cone keeps
+/// walking. This is deliberately conservative for `export const action = async
+/// () => {}`: Shrike does not classify variable initializers as actions yet, so
+/// it keeps such a module in the cone rather than risk hiding a leak.
+fn summary_is_server_action_module(summary: &FileSummary) -> bool {
+    if !summary.has_directive("use server") {
+        return false;
+    }
+    if summary
+        .re_exports
+        .iter()
+        .any(|re_export| !re_export.type_only)
+        || summary
+            .export_alls
+            .iter()
+            .any(|export_all| !export_all.type_only)
+    {
+        return false;
+    }
+    for local_export in &summary.local_exports {
+        if local_export.type_only {
+            continue;
+        }
+        let Some(declaration) = summary
+            .declarations
+            .iter()
+            .find(|declaration| declaration.name == local_export.local)
+        else {
+            return false;
+        };
+        if !declaration_is_action(declaration) {
+            return false;
+        }
+    }
+    summary.declarations.iter().all(|declaration| {
+        !declaration.exported || declaration.type_only || declaration_is_action(declaration)
+    })
+}
+
+fn declaration_is_action(declaration: &shrike_syntax::DeclarationRecord) -> bool {
+    declaration.kind == DeclarationKind::Function && declaration.r#async
+}
+
+/// Whether a module has a runtime static edge to `specifier`. When it does, a
+/// `next/dynamic(..., { ssr: false })` import of the same specifier is not the
+/// only way the target is reached, so skipping the dynamic edge cannot hide a
+/// leak.
+fn summary_has_static_specifier(summary: &FileSummary, specifier: &str) -> bool {
+    summary
+        .imports
+        .iter()
+        .any(|import| import.source == specifier && import_has_runtime_binding(import))
+        || summary
+            .re_exports
+            .iter()
+            .any(|re_export| re_export.source == specifier && !re_export.type_only)
+        || summary
+            .export_alls
+            .iter()
+            .any(|export_all| export_all.source == specifier && !export_all.type_only)
 }
 
 /// App Router convention stems that own a URL. A URL has at most one owner,
@@ -566,6 +670,176 @@ impl<'a> Builder<'a> {
                 .at(anchor),
             );
         }
+    }
+
+    /// Warn when a `"use client"` module transitively imports server-only code.
+    ///
+    /// This is the source-level counterpart to the build-evidence
+    /// `client-boundary-leak` warning: Next.js fails the client build when a
+    /// client component reaches `server-only`, `next/headers`, `next/server`,
+    /// or a Node server runtime. The import cone follows static imports,
+    /// re-exports, and literal dynamic imports. Type-only edges are erased and
+    /// skipped. A `"use server"` module whose exports are all async functions
+    /// is the sanctioned Server Action boundary: the bundler replaces the
+    /// import with an action reference, so the module and its imports never
+    /// enter the client bundle. A `next/dynamic(..., { ssr: false })` edge is
+    /// the sanctioned client-only escape hatch and is skipped when the same
+    /// specifier has no runtime static edge.
+    ///
+    /// One warning is emitted per client root, anchored on the first import of
+    /// the shortest path. This mirrors fallow 3.45.0's `client-server-leak`
+    /// rule with the `server-only-import` category.
+    pub(super) fn detect_client_server_leaks(&mut self) {
+        if !self.project_uses_rsc_directives() {
+            return;
+        }
+        let summaries = self.summaries.clone();
+        let by_path: BTreeMap<String, &FileSummary> = summaries
+            .iter()
+            .map(|summary| (summary.path.clone(), summary))
+            .collect();
+        let sinks: BTreeMap<String, String> = summaries
+            .iter()
+            .filter_map(|summary| {
+                summary_server_only_import_reason(summary)
+                    .map(|(reason, _)| (summary.path.clone(), reason))
+            })
+            .collect();
+        let action_modules: BTreeSet<String> = summaries
+            .iter()
+            .filter(|summary| summary_is_server_action_module(summary))
+            .map(|summary| summary.path.clone())
+            .collect();
+        let mut diagnostics = Vec::new();
+        for client in &summaries {
+            if client.parse_status != ParseStatus::Ok || !client.has_directive("use client") {
+                continue;
+            }
+            if let Some((reason, span)) = summary_server_only_import_reason(client) {
+                diagnostics.push(
+                    Diagnostic::warning(
+                        "client_server_leak",
+                        format!(
+                            "\"use client\" module directly imports server-only code: {reason}"
+                        ),
+                    )
+                    .in_file(&client.path)
+                    .at(span),
+                );
+                continue;
+            }
+            let mut visited: BTreeSet<String> = BTreeSet::new();
+            let mut parent: BTreeMap<String, (String, Span)> = BTreeMap::new();
+            let mut queue: VecDeque<String> = VecDeque::new();
+            visited.insert(client.path.clone());
+            queue.push_back(client.path.clone());
+            let mut found: Option<String> = None;
+            while let Some(current) = queue.pop_front() {
+                let Some(summary) = by_path.get(&current) else {
+                    continue;
+                };
+                for (target, span) in self.leak_edges(summary, &by_path) {
+                    // An all-action Server Action module never enters the
+                    // client bundle; its imports stay on the server.
+                    if action_modules.contains(&target) {
+                        continue;
+                    }
+                    if !visited.insert(target.clone()) {
+                        continue;
+                    }
+                    parent.insert(target.clone(), (current.clone(), span));
+                    if sinks.contains_key(&target) {
+                        found = Some(target);
+                        break;
+                    }
+                    queue.push_back(target);
+                }
+                if found.is_some() {
+                    break;
+                }
+            }
+            let Some(sink) = found else {
+                continue;
+            };
+            let mut chain: Vec<String> = vec![sink.clone()];
+            let mut cursor = sink;
+            while let Some((previous, _)) = parent.get(&cursor) {
+                chain.push(previous.clone());
+                cursor = previous.clone();
+            }
+            chain.reverse();
+            let anchor = chain
+                .get(1)
+                .and_then(|next| parent.get(next))
+                .map(|(_, span)| *span)
+                .filter(|span| span.line > 0);
+            let reason = sinks
+                .get(&chain[chain.len() - 1])
+                .cloned()
+                .unwrap_or_default();
+            let mut diagnostic = Diagnostic::warning(
+                "client_server_leak",
+                format!(
+                    "\"use client\" module transitively imports server-only code ({reason}); import path: {}",
+                    chain.join(" -> ")
+                ),
+            )
+            .in_file(&client.path);
+            if let Some(span) = anchor {
+                diagnostic = diagnostic.at(span);
+            }
+            diagnostics.push(diagnostic);
+        }
+        self.diagnostics.extend(diagnostics);
+    }
+
+    /// The runtime module edges of one summary that the leak cone can follow.
+    fn leak_edges(
+        &self,
+        summary: &FileSummary,
+        by_path: &BTreeMap<String, &FileSummary>,
+    ) -> Vec<(String, Span)> {
+        let mut edges = Vec::new();
+        let mut add = |source: &str, span: Span| {
+            if let Some(target) = self.resolver.resolve(&summary.path, source).target {
+                if by_path.contains_key(&target) {
+                    edges.push((target, span));
+                }
+            }
+        };
+        for import in &summary.imports {
+            if import_has_runtime_binding(import) {
+                add(&import.source, import.span);
+            }
+        }
+        for re_export in &summary.re_exports {
+            if !re_export.type_only {
+                add(&re_export.source, re_export.span);
+            }
+        }
+        for export_all in &summary.export_alls {
+            if !export_all.type_only {
+                add(&export_all.source, export_all.span);
+            }
+        }
+        for dynamic in &summary.dynamic {
+            // A worker runs in its own thread, not in the client component
+            // bundle. A non-literal specifier cannot be bounded; the graph
+            // records it as an unknown instead of guessing.
+            if dynamic.kind == DynamicKind::Worker {
+                continue;
+            }
+            let DynamicSpecifier::Literal(specifier) = &dynamic.specifier else {
+                continue;
+            };
+            if summary.client_only_dynamic_specifiers.contains(specifier)
+                && !summary_has_static_specifier(summary, specifier)
+            {
+                continue;
+            }
+            add(specifier, dynamic.span);
+        }
+        edges
     }
 
     /// Report App Router files that Next.js cannot route unambiguously.

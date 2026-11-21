@@ -109,6 +109,22 @@ test("mixed client/server barrels are actionable boundary diagnostics", () => {
   assert.equal(summary.bySeverity.warning, 1);
 });
 
+test("client/server leaks are actionable boundary diagnostics", () => {
+  const summary = summarizeDiagnostics([
+    {
+      code: "client_server_leak",
+      severity: "warning",
+      message:
+        '"use client" module transitively imports server-only code (imports `node:fs`); import path: app/page.tsx -> lib/read.ts',
+      file: "app/page.tsx",
+    },
+  ]);
+  assert.equal(summary.actionable, 1);
+  assert.equal(summary.groups[0].category, "boundary");
+  assert.equal(summary.groups[0].actionable, true);
+  assert.equal(summary.bySeverity.warning, 1);
+});
+
 test("Next.js route conflicts are actionable routing diagnostics", () => {
   const summary = summarizeDiagnostics([
     {
