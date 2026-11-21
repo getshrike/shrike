@@ -366,6 +366,68 @@ export const helper = 1;
 }
 
 #[test]
+fn narrows_const_namespace_dynamic_imports_from_static_members() {
+    let source = r#"
+const used = await import("./used");
+used.alpha;
+used.beta();
+async function load() {
+  const lazy = await import("./lazy");
+  return lazy.gamma;
+}
+const deep = await import("./deep");
+deep.outer.inner;
+const required = require("./required");
+required.delta;
+const ui = await import("./ui");
+const element = <ui.Button />;
+const escaped = await import("./escaped");
+console.log(escaped);
+const computed = await import("./computed");
+computed[key];
+let reassigned = await import("./reassigned");
+reassigned.epsilon;
+const exported = await import("./exported");
+export { exported };
+const unused = await import("./unused");
+"#;
+    let parsed = summary(source, "src/namespace-dynamic.tsx");
+    let imported = |specifier: &str| {
+        parsed
+            .dynamic
+            .iter()
+            .find(|record| {
+                matches!(&record.specifier, DynamicSpecifier::Literal(value) if value == specifier)
+            })
+            .and_then(|record| record.imported.clone())
+    };
+    assert_eq!(
+        imported("./used"),
+        Some(vec!["alpha".to_string(), "beta".to_string()])
+    );
+    assert_eq!(imported("./lazy"), Some(vec!["gamma".to_string()]));
+    assert_eq!(imported("./deep"), Some(vec!["outer".to_string()]));
+    assert_eq!(imported("./required"), Some(vec!["delta".to_string()]));
+    assert_eq!(imported("./ui"), Some(vec!["Button".to_string()]));
+    assert_eq!(imported("./escaped"), None);
+    assert_eq!(imported("./computed"), None);
+    assert_eq!(imported("./reassigned"), None);
+    assert_eq!(imported("./exported"), None);
+    assert_eq!(imported("./unused"), None);
+    assert_eq!(
+        parsed
+            .dynamic
+            .iter()
+            .filter(|record| {
+                matches!(&record.specifier, DynamicSpecifier::Literal(value) if value == "./used")
+            })
+            .count(),
+        1,
+        "a narrowed namespace binding must not also produce a widening record"
+    );
+}
+
+#[test]
 fn captures_statically_named_dynamic_imports() {
     let source = r#"
 const { getDb, isDbConfigured: isConfigured, default: fallback } = await import("./db");

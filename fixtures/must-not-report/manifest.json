@@ -433,6 +433,45 @@
       ]
     },
     {
+      "id": "const-namespace-dynamic-import",
+      "category": "dynamic-import",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/loader.ts#load",
+          "reason": "the page imports the loader"
+        },
+        {
+          "symbol": "src/mod.ts#used",
+          "reason": "the const namespace reads only the used export"
+        },
+        {
+          "symbol": "src/escaped.ts#any",
+          "reason": "the namespace value escapes to a call, so every export stays live"
+        },
+        {
+          "symbol": "src/escaped.ts#alsoAny",
+          "reason": "the namespace value escapes to a call, so every export stays live"
+        },
+        {
+          "symbol": "src/reassigned.ts#epsilon",
+          "reason": "a let namespace binding can be reassigned, so every export stays live"
+        },
+        {
+          "symbol": "src/reassigned.ts#zeta",
+          "reason": "a let namespace binding can be reassigned, so every export stays live"
+        }
+      ],
+      "mustReport": [
+        "src/mod.ts#dead"
+      ]
+    },
+    {
       "id": "barrel-1",
       "category": "barrel",
       "files": [

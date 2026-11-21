@@ -2,12 +2,14 @@ use oxc_ast::ast::{
     Argument, ArrayExpressionElement, BindingPatternKind, CallExpression, ComputedMemberExpression,
     Expression, FormalParameters, FunctionBody, IdentifierReference, ImportExpression,
     JSXIdentifier, JSXMemberExpression, JSXMemberExpressionObject, MemberExpression, NewExpression,
-    ObjectPattern, PropertyKey, StaticMemberExpression, VariableDeclarator,
+    ObjectPattern, PropertyKey, StaticMemberExpression, VariableDeclaration,
+    VariableDeclarationKind, VariableDeclarator,
 };
 use oxc_ast_visit::Visit;
 use oxc_ast_visit::walk::{
     walk_call_expression, walk_computed_member_expression, walk_import_expression,
-    walk_new_expression, walk_static_member_expression, walk_variable_declarator,
+    walk_new_expression, walk_static_member_expression, walk_variable_declaration,
+    walk_variable_declarator,
 };
 use shrike_core::Span;
 
@@ -28,6 +30,10 @@ pub(super) struct RefCollector {
     /// generic visitors skip these so one import never produces a precise
     /// record and a widening record at the same time.
     handled_dynamic_spans: Vec<oxc_span::Span>,
+    /// True while walking a `const` declaration. Only `const` namespace
+    /// bindings can be narrowed: `let` and `var` may be reassigned after the
+    /// import, so their member uses do not prove which module is read.
+    const_declaration: bool,
 }
 
 impl RefCollector {
@@ -138,23 +144,34 @@ impl<'a> Visit<'a> for RefCollector {
         // as used.
     }
 
+    fn visit_variable_declaration(&mut self, it: &VariableDeclaration<'a>) {
+        let previous = self.const_declaration;
+        self.const_declaration = it.kind == VariableDeclarationKind::Const;
+        walk_variable_declaration(self, it);
+        self.const_declaration = previous;
+    }
+
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
         if let Some(records) = promise_all_dynamic(it) {
-            for (kind, specifier, span, imported) in records {
+            for (kind, specifier, span, imported, binding) in records {
                 self.dynamic.push(DynamicRecord {
                     kind,
                     specifier,
                     span: Span::default(),
                     imported,
+                    binding,
                 });
                 self.handled_dynamic_spans.push(span);
             }
-        } else if let Some((kind, specifier, span, imported)) = declaration_dynamic(it) {
+        } else if let Some((kind, specifier, span, imported, binding)) =
+            declaration_dynamic(it, self.const_declaration)
+        {
             self.dynamic.push(DynamicRecord {
                 kind,
                 specifier,
                 span: Span::default(),
                 imported,
+                binding,
             });
             self.handled_dynamic_spans.push(span);
         }
@@ -168,6 +185,7 @@ impl<'a> Visit<'a> for RefCollector {
                 specifier: dynamic_specifier(&it.source),
                 span: Span::default(),
                 imported: None,
+                binding: None,
             });
         }
         walk_import_expression(self, it);
@@ -184,6 +202,7 @@ impl<'a> Visit<'a> for RefCollector {
                 specifier,
                 span: Span::default(),
                 imported: None,
+                binding: None,
             });
         } else if let Some(specifier) = require_context_specifier(it) {
             self.dynamic.push(DynamicRecord {
@@ -191,6 +210,7 @@ impl<'a> Visit<'a> for RefCollector {
                 specifier,
                 span: Span::default(),
                 imported: None,
+                binding: None,
             });
         } else if let Some(specifiers) = worker_call_specifiers(it) {
             for specifier in specifiers {
@@ -199,6 +219,7 @@ impl<'a> Visit<'a> for RefCollector {
                     specifier,
                     span: Span::default(),
                     imported: None,
+                    binding: None,
                 });
             }
         } else if let Expression::Identifier(callee) = &it.callee {
@@ -209,6 +230,7 @@ impl<'a> Visit<'a> for RefCollector {
                         specifier: argument_specifier(argument),
                         span: Span::default(),
                         imported: None,
+                        binding: None,
                     });
                 }
             }
@@ -224,6 +246,7 @@ impl<'a> Visit<'a> for RefCollector {
                     specifier: worker_specifier(argument),
                     span: Span::default(),
                     imported: None,
+                    binding: None,
                 });
             }
         }
@@ -395,13 +418,21 @@ type DynamicDeclaration = (
     DynamicSpecifier,
     oxc_span::Span,
     Option<Vec<String>>,
+    Option<String>,
 );
 
 /// A dynamic import whose export use is statically visible at the declaration
 /// site, for example `const { getDb } = await import("./db")` or
 /// `const editor = (await import("./editor")).default`. `imported` stays
 /// `None` for any shape that could use the namespace as a value.
-fn declaration_dynamic(declarator: &VariableDeclarator<'_>) -> Option<DynamicDeclaration> {
+///
+/// A `const namespace = await import("./m")` binding is recorded separately:
+/// its uses may appear later in the module, so `binding` names the local that
+/// the post-visit pass narrows from the module's static member accesses.
+fn declaration_dynamic(
+    declarator: &VariableDeclarator<'_>,
+    const_declaration: bool,
+) -> Option<DynamicDeclaration> {
     let base = dynamic_base(declarator.init.as_ref()?)?;
     let imported = match &base.property {
         Some(property) => {
@@ -423,7 +454,21 @@ fn declaration_dynamic(declarator: &VariableDeclarator<'_>) -> Option<DynamicDec
             _ => None,
         },
     };
-    Some((base.kind, base.specifier, base.span, imported))
+    // Only a const binding is safe to narrow: `let`/`var` can be reassigned
+    // after the import, so later member uses do not prove which value is read.
+    let binding = if const_declaration && base.property.is_none() {
+        match &declarator.id.kind {
+            BindingPatternKind::BindingIdentifier(identifier)
+                if base.kind == DynamicKind::Require || base.awaited =>
+            {
+                Some(identifier.name.to_string())
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+    Some((base.kind, base.specifier, base.span, imported, binding))
 }
 
 /// `const [{ getDb }, repository] = await Promise.all([import("./db"),
@@ -481,6 +526,7 @@ fn promise_all_dynamic(declarator: &VariableDeclarator<'_>) -> Option<Vec<Dynami
             dynamic_specifier(&import.source),
             import.span,
             imported,
+            None,
         ));
     }
     if records.is_empty() {
@@ -519,6 +565,7 @@ fn then_dynamic(call: &CallExpression<'_>) -> Option<(DynamicRecord, oxc_span::S
             specifier: dynamic_specifier(&import.source),
             span: Span::default(),
             imported: Some(imported),
+            binding: None,
         },
         import.span,
     ))
