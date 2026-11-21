@@ -1308,6 +1308,14 @@ impl<'a> Builder<'a> {
                 if stem == "page" {
                     public_names.push("unstable_dynamicStaleTime");
                 }
+                // Next.js 16.4 reads dynamic param matching from both page
+                // and layout modules (`collectAppPageSegments`). The generated
+                // route type guards allow the pair on the same stems; route
+                // handlers are excluded.
+                if matches!(stem, "page" | "layout") {
+                    public_names
+                        .extend(["unstable_paramMatching", "unstable_generateParamMatching"]);
+                }
                 // Next.js calls `reportWebVitals` when it is exported from the
                 // Pages Router `_app` file, but it is not imported by code.
                 if stem == "_app" {
@@ -2196,6 +2204,65 @@ mod tests {
             !entries.contains(&"app/page.tsx#unusedPageHelper"),
             "an arbitrary page export must not become public: {entries:?}"
         );
+        for key in [
+            "app/layout.tsx#unusedLayoutHelper",
+            "app/page.tsx#unusedPageHelper",
+        ] {
+            assert!(
+                snapshot.candidates.iter().any(|candidate| candidate == key),
+                "{key} should remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    #[test]
+    fn next_param_matching_exports_are_public_on_pages_and_layouts() {
+        let snapshot = snapshot(&[
+            (
+                "app/layout.tsx",
+                "export const unstable_paramMatching = { id: 'dynamic' };\nexport function unstable_generateParamMatching() { return {}; }\nexport function unusedLayoutHelper() { return 1; }\nexport default function Layout() { return null; }\n",
+            ),
+            (
+                "app/page.tsx",
+                "export const unstable_paramMatching = { id: 'dynamic' };\nexport function unstable_generateParamMatching() { return {}; }\nexport function unusedPageHelper() { return 1; }\nexport default function Page() { return null; }\n",
+            ),
+            (
+                "app/route.ts",
+                "export const unstable_paramMatching = { id: 'dynamic' };\nexport function unstable_generateParamMatching() { return {}; }\nexport function GET() { return new Response('ok'); }\n",
+            ),
+            (
+                "app/loading.tsx",
+                "export const unstable_paramMatching = { id: 'dynamic' };\nexport function unstable_generateParamMatching() { return {}; }\nexport default function Loading() { return null; }\n",
+            ),
+        ]);
+        let entries = entry_symbols(&snapshot);
+        for file in ["app/layout.tsx", "app/page.tsx"] {
+            for name in ["unstable_paramMatching", "unstable_generateParamMatching"] {
+                let key = format!("{file}#{name}");
+                assert!(
+                    entries.contains(&key.as_str()),
+                    "Next.js reads {name} from {file}: {entries:?}"
+                );
+            }
+        }
+        for file in ["app/route.ts", "app/loading.tsx"] {
+            for name in ["unstable_paramMatching", "unstable_generateParamMatching"] {
+                let key = format!("{file}#{name}");
+                assert!(
+                    !entries.contains(&key.as_str()),
+                    "{name} is not a Next.js export on {file}: {entries:?}"
+                );
+                assert!(
+                    snapshot
+                        .candidates
+                        .iter()
+                        .any(|candidate| candidate == &key),
+                    "{key} should remain a candidate: {:?}",
+                    snapshot.candidates
+                );
+            }
+        }
         for key in [
             "app/layout.tsx#unusedLayoutHelper",
             "app/page.tsx#unusedPageHelper",

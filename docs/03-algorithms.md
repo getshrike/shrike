@@ -306,6 +306,10 @@ a symbol is live.
 - `"use client"` module exports (client boundary);
 - metadata exports: `metadata`, `generateMetadata`, `viewport`,
   `generateViewport`, `generateStaticParams`, `generateSitemaps`;
+- dynamic param matching (Next.js 16.4): `unstable_paramMatching` and
+  `unstable_generateParamMatching` on `page` and `layout` modules. Route
+  handlers and other App Router stems do not consume them, so the same names
+  stay analyzable there;
 - segment config: `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`,
   `runtime`, `preferredRegion`, `maxDuration`; Cache Components config
   `ensureStatic` (16.4), `instant`/`prefetch` (16.3) and their
