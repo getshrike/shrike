@@ -115,6 +115,7 @@ impl<'a> Builder<'a> {
         self.resolve_imports();
         self.build_edges();
         self.detect_entries();
+        self.detect_next_route_conflicts();
         self.finish_edges();
     }
 

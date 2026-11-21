@@ -369,7 +369,19 @@ analyzable.
   the framework and remain analyzable;
 - modules referenced only by a relative path in `next.config.*`
   (`images.loaderFile`, `cacheHandler`/`cacheHandlers`, Turbopack loaders and
-  aliases): the module and all its exports are entries.
+  aliases): the module and all its exports are entries;
+- App Router files that Next.js cannot route unambiguously produce error
+  diagnostics, not findings. `route_collision` fires when two `page`/`route`
+  leaves in one app root resolve to the same URL, including a page and a route
+  handler. `dynamic_segment_name_conflict` fires when sibling dynamic segments
+  at one tree position use different spellings (`[id]` vs `[slug]`). Route
+  groups are transparent, parallel `@slot` segments fork the namespace, and
+  private `_folder` and intercepting `(.)`/`(..)`/`(...)` subtrees are excluded.
+  Both checks require the owning package to declare `next`; unlike fallow's
+  project-wide gate, an app-shaped directory in a React-only workspace package
+  is not a Next app root. The route-tree primitive follows fallow 3.45.0's
+  `route_tree.rs`, and the URL/bucket rules match its `route_collision` and
+  `dynamic_segment_name_conflict` detectors.
 
 ### 9.2 Next.js Pages Router
 

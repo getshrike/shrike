@@ -133,7 +133,10 @@ fn dotted_page_extensions(extensions: Option<&BTreeSet<String>>) -> Vec<String> 
 
 /// The route stem of a Next.js file. With `pageExtensions: ["page.tsx"]`,
 /// `page.page.tsx` has the stem `page`, not `page.page`.
-fn next_convention_stem<'a>(file_name: &'a str, extensions: Option<&BTreeSet<String>>) -> &'a str {
+pub(super) fn next_convention_stem<'a>(
+    file_name: &'a str,
+    extensions: Option<&BTreeSet<String>>,
+) -> &'a str {
     for extension in dotted_page_extensions(extensions) {
         if let Some(stem) = file_name.strip_suffix(&format!(".{extension}")) {
             return stem;
@@ -815,17 +818,12 @@ fn resolve_route_target(
 }
 
 impl<'a> Builder<'a> {
-    pub(super) fn detect_entries(&mut self) {
-        let summaries = self.summaries.clone();
-        let analyzed: BTreeSet<&str> = summaries
-            .iter()
-            .map(|summary| summary.path.as_str())
-            .collect();
-        // Next's `pageExtensions` may contain dots (`page.tsx`). Knip reads it
-        // from the config AST; read only the literal values here and scope each
-        // config to its package so a nested app is not widened by the root.
+    /// Next's `pageExtensions` may contain dots (`page.tsx`). Knip reads it
+    /// from the config AST; read only the literal values here and scope each
+    /// config to its package so a nested app is not widened by the root.
+    pub(super) fn configured_page_extensions(&self) -> BTreeMap<String, BTreeSet<String>> {
         let mut page_extensions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for summary in &summaries {
+        for summary in &self.summaries {
             if !next_config::is_config_path(&summary.path) {
                 continue;
             }
@@ -845,6 +843,16 @@ impl<'a> Builder<'a> {
                 .or_default()
                 .extend(extensions);
         }
+        page_extensions
+    }
+
+    pub(super) fn detect_entries(&mut self) {
+        let summaries = self.summaries.clone();
+        let analyzed: BTreeSet<&str> = summaries
+            .iter()
+            .map(|summary| summary.path.as_str())
+            .collect();
+        let page_extensions = self.configured_page_extensions();
         let mut vite_packages: BTreeSet<String> = BTreeSet::new();
         let mut storybook_packages: BTreeSet<String> = BTreeSet::new();
         let mut cosmos_packages: BTreeSet<String> = BTreeSet::new();
@@ -3304,6 +3312,213 @@ mod tests {
                 control.diagnostics
             );
         }
+    }
+
+    #[test]
+    fn next_route_collisions_and_dynamic_segment_conflicts_are_reported() {
+        let routes = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"app","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "packages/plain/package.json",
+                r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            // Route groups are transparent: both pages own /about.
+            (
+                "app/(marketing)/about/page.tsx",
+                "export default function A() { return null; }\n",
+            ),
+            (
+                "app/(shop)/about/page.tsx",
+                "export default function B() { return null; }\n",
+            ),
+            // A page and a route handler share the URL-owner namespace.
+            (
+                "app/api/thing/page.tsx",
+                "export default function C() { return null; }\n",
+            ),
+            (
+                "app/api/thing/route.ts",
+                "export async function GET() { return new Response('ok'); }\n",
+            ),
+            // A grouped root page collides with the root page.
+            (
+                "app/page.tsx",
+                "export default function D() { return null; }\n",
+            ),
+            (
+                "app/(group)/page.tsx",
+                "export default function E() { return null; }\n",
+            ),
+            // Parallel slots fork the URL namespace.
+            (
+                "app/@team/members/page.tsx",
+                "export default function F() { return null; }\n",
+            ),
+            (
+                "app/@analytics/members/page.tsx",
+                "export default function G() { return null; }\n",
+            ),
+            // Different dynamic names at the same position conflict.
+            (
+                "app/shop/[id]/page.tsx",
+                "export default function H() { return null; }\n",
+            ),
+            (
+                "app/shop/[id]/layout.tsx",
+                "export default function Layout() { return null; }\n",
+            ),
+            (
+                "app/shop/[slug]/page.tsx",
+                "export default function I() { return null; }\n",
+            ),
+            // Private and intercepting subtrees are not routable participants.
+            (
+                "app/_private/about/page.tsx",
+                "export default function J() { return null; }\n",
+            ),
+            (
+                "app/(.)photo/[id]/page.tsx",
+                "export default function K() { return null; }\n",
+            ),
+            // A React-only package with an app-shaped directory is not a Next app.
+            (
+                "packages/plain/app/(a)/about/page.tsx",
+                "export default function L() { return null; }\n",
+            ),
+            (
+                "packages/plain/app/(b)/about/page.tsx",
+                "export default function M() { return null; }\n",
+            ),
+        ]);
+        let findings: Vec<(&str, &str)> = routes
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic.code == "route_collision"
+                    || diagnostic.code == "dynamic_segment_name_conflict"
+            })
+            .map(|diagnostic| {
+                (
+                    diagnostic.code.as_str(),
+                    diagnostic.file.as_deref().unwrap_or(""),
+                )
+            })
+            .collect();
+        assert_eq!(
+            findings,
+            vec![
+                ("route_collision", "app/(group)/page.tsx"),
+                ("route_collision", "app/page.tsx"),
+                ("route_collision", "app/(marketing)/about/page.tsx"),
+                ("route_collision", "app/(shop)/about/page.tsx"),
+                ("route_collision", "app/api/thing/page.tsx"),
+                ("route_collision", "app/api/thing/route.ts"),
+                // Every file proving the conflicting position is reported,
+                // including the layout that shares the [id] spelling.
+                ("dynamic_segment_name_conflict", "app/shop/[id]/layout.tsx"),
+                ("dynamic_segment_name_conflict", "app/shop/[id]/page.tsx"),
+                ("dynamic_segment_name_conflict", "app/shop/[slug]/page.tsx"),
+            ],
+            "{:?}",
+            routes.diagnostics
+        );
+        assert!(
+            routes
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| {
+                    diagnostic.code == "route_collision"
+                        || diagnostic.code == "dynamic_segment_name_conflict"
+                })
+                .all(|diagnostic| diagnostic.severity == shrike_core::Severity::Error),
+            "routing conflicts are build/runtime errors: {:?}",
+            routes.diagnostics
+        );
+
+        // Without a manifest that declares Next.js, an app-shaped directory is
+        // not a Next app and produces no routing diagnostics.
+        let no_manifest = snapshot(&[
+            (
+                "apps/web/app/(a)/about/page.tsx",
+                "export default function A() { return null; }\n",
+            ),
+            (
+                "apps/web/app/(b)/about/page.tsx",
+                "export default function B() { return null; }\n",
+            ),
+        ]);
+        assert!(
+            no_manifest.diagnostics.iter().all(|diagnostic| {
+                diagnostic.code != "route_collision"
+                    && diagnostic.code != "dynamic_segment_name_conflict"
+            }),
+            "{:?}",
+            no_manifest.diagnostics
+        );
+    }
+
+    #[test]
+    fn next_route_conflicts_honor_src_app_and_dotted_page_extensions() {
+        let snapshot = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"app","dependencies":{"next":"^16.0.0"}}"#,
+            ),
+            (
+                "next.config.ts",
+                "const config = { pageExtensions: ['page.tsx'] };\nexport default config;\n",
+            ),
+            (
+                "app/docs/page.page.tsx",
+                "export default function A() { return null; }\n",
+            ),
+            (
+                "app/docs/(alt)/page.page.tsx",
+                "export default function B() { return null; }\n",
+            ),
+            (
+                "src/app/shop/[id]/page.page.tsx",
+                "export default function C() { return null; }\n",
+            ),
+            (
+                "src/app/shop/[slug]/page.page.tsx",
+                "export default function D() { return null; }\n",
+            ),
+        ]);
+        let findings: Vec<(&str, &str)> = snapshot
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic.code == "route_collision"
+                    || diagnostic.code == "dynamic_segment_name_conflict"
+            })
+            .map(|diagnostic| {
+                (
+                    diagnostic.code.as_str(),
+                    diagnostic.file.as_deref().unwrap_or(""),
+                )
+            })
+            .collect();
+        assert_eq!(
+            findings,
+            vec![
+                ("route_collision", "app/docs/(alt)/page.page.tsx"),
+                ("route_collision", "app/docs/page.page.tsx"),
+                (
+                    "dynamic_segment_name_conflict",
+                    "src/app/shop/[id]/page.page.tsx"
+                ),
+                (
+                    "dynamic_segment_name_conflict",
+                    "src/app/shop/[slug]/page.page.tsx"
+                ),
+            ],
+            "{:?}",
+            snapshot.diagnostics
+        );
     }
 
     #[test]

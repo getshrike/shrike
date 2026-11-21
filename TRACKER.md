@@ -500,6 +500,27 @@ not commitments; commitments are in the plans.
 
 ---
 
+### 2026-11-21 — Next.js route conflicts
+
+- Read fallow 3.45.0's `route_tree.rs`, `route_collision.rs`, and
+  `dynamic_segment_name_conflict.rs`. The URL is a pure path function: route
+  groups are stripped, parallel `@slot` segments fork the namespace, dynamic
+  segments keep their written spelling, and private/intercepting subtrees are
+  excluded. `route_collision` is a build error; a dynamic name conflict builds
+  successfully but throws when the route is resolved.
+- On `/tmp/opencode/route-conflict-probe` (route groups, page+route, root URL,
+  parallel slots, `[id]` vs `[slug]`, a layout under `[id]`, private and
+  intercepting controls, and a React-only package), fallow reports 8 collisions
+  and 3 dynamic conflicts. Shrike reports the same 8 + 3 when the sibling
+  package declares Next. When it does not, Shrike reports only the root app's
+  6 + 3: a React-only package's `app/` is not a Next app root, so Shrike keeps
+  its per-package Next gate instead of fallow's project-wide one.
+- Both diagnostics are errors and group under `routing` in the CLI summary.
+  They do not change candidates or unused files. The page-extension parser is
+  shared with entry detection so dotted `pageExtensions` work in both.
+
+---
+
 ## 9. Change log
 
 | Date | Change | Files |
@@ -560,6 +581,7 @@ not commitments; commitments are in the plans.
 | 2026-11-21 | Protected Cypress specs and support files as module entries. When the owning package depends on `cypress`, `cypress.config.*` is read statically: e2e specs from `specPattern` (default `cypress/e2e/**/*.cy.{js,jsx,ts,tsx}`), the support module from `supportFile` (default `cypress/support/e2e.{js,jsx,ts,tsx}`), and component patterns only when the config declares `component`. Literal strings only; computed values fall back to Cypress's defaults. On `/tmp/opencode/cypress-probe`, Shrike before reported 6 candidates and 4 unused files; knip 5.88.1 and fallow 3.45.0 both report 1 unused file and 3 unused exports. After the change Shrike reports exactly the same 4 candidates (the 3 exports plus the dead file's symbol) and 1 unused file. Added unit and graph tests plus the two-sided `cypress-tests` corpus case | `crates/shrike-graph/src/cypress_config.rs`, `crates/shrike-graph/src/lib.rs`, `crates/shrike-graph/src/builder/entries.rs`, `fixtures/must-not-report/cases/cypress-tests/`, `fixtures/must-not-report/manifest.json`, `docs/03-algorithms.md`, `docs/12-decision-log.md` |
 | 2026-11-21 | Stopped treating `scripts/` files as entries by location, documented headers, or shebangs. A script enters the graph only when `package.json` `scripts`/`bin`, an import, or explicit config names it; the `executable` summary field and `looks_executable` heuristic are removed. Knip 5.88.1 and fallow 3.45.0 both report seven requo scripts and two accounteer scripts that Shrike protected. After the change Shrike reports the same nine unused files and their declarations; requo 658 → 729 candidates (+71, 0 removals: 60 in the seven scripts and 11 in the dead `lib/config` subtree exposed by dropping the heuristic), accounteer 161 → 176 (+15, 0 removals). Added the two-sided `unreferenced-scripts` corpus case | `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-syntax/src/parse/mod.rs`, `crates/shrike-syntax/src/parse/mdx.rs`, `crates/shrike-syntax/src/parse/html.rs`, `crates/shrike-syntax/src/summary.rs`, `schemas/graph-snapshot.schema.json`, `fixtures/must-not-report/cases/unreferenced-scripts/`, `fixtures/must-not-report/manifest.json`, `docs/03-algorithms.md`, `docs/12-decision-log.md` |
 | 2026-11-21 | Added the `invalid_client_export` advisory warning for `"use client"` modules that export a Next.js server-only, route-config, or route-handler name. The 22-name set is fallow 3.45.0's `ILLEGAL_CLIENT_EXPORTS`; the gate is project-wide over root and workspace manifests. Direct exports anchor on the declaration, local `export { name }` anchors on the specifier and reports once, and default/type-only/re-exports are excluded. Added `DeclarationRecord.directly_exported` and bumped `ANALYSIS_VERSION` to 61. Probes match fallow exactly on the 22-name set, file/line anchors, the monorepo gate, and a no-Next control | `crates/shrike-graph/src/builder/files.rs`, `crates/shrike-graph/src/builder/mod.rs`, `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-syntax/src/summary.rs`, `crates/shrike-syntax/src/parse/declarations.rs`, `crates/shrike-syntax/src/parse/statements.rs`, `crates/shrike-engine/src/cache.rs`, `packages/cli/src/diagnostics.ts`, `packages/cli/test/diagnostics.test.mjs`, `docs/03-algorithms.md`, `docs/06-build-graph-and-nextjs.md`, `docs/12-decision-log.md` |
+| 2026-11-21 | Added `route_collision` and `dynamic_segment_name_conflict` error diagnostics from fallow 3.45.0's App Router route-tree primitive. Two `page`/`route` leaves at one URL, or sibling dynamic segments with different spellings at one position, are reported per file. Route groups are transparent, parallel slots fork the namespace, and private/intercepting subtrees are excluded. The checks require the owning package to declare `next`; the probe matches fallow's 8 collisions and 3 conflicts when the sibling package declares Next, and deliberately skips a React-only package that fallow flags via its project-wide gate. Bumped `ANALYSIS_VERSION` to 62 and shared the dotted `pageExtensions` parser with entry detection | `crates/shrike-graph/src/builder/files.rs`, `crates/shrike-graph/src/builder/mod.rs`, `crates/shrike-graph/src/builder/entries.rs`, `crates/shrike-engine/src/cache.rs`, `packages/cli/src/diagnostics.ts`, `packages/cli/test/diagnostics.test.mjs`, `docs/03-algorithms.md`, `docs/06-build-graph-and-nextjs.md`, `docs/12-decision-log.md` |
 
 ---
 

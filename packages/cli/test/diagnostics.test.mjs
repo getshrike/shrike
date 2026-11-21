@@ -78,6 +78,29 @@ test("invalid client exports are actionable boundary diagnostics", () => {
   assert.equal(summary.groups[0].actionable, true);
 });
 
+test("Next.js route conflicts are actionable routing diagnostics", () => {
+  const summary = summarizeDiagnostics([
+    {
+      code: "route_collision",
+      severity: "error",
+      message: "two or more Next.js routes resolve to `/about`",
+      file: "app/(a)/about/page.tsx",
+    },
+    {
+      code: "dynamic_segment_name_conflict",
+      severity: "error",
+      message: "sibling Next.js dynamic segments at `/shop` use different names",
+      file: "app/shop/[slug]/page.tsx",
+    },
+  ]);
+  assert.equal(summary.actionable, 2);
+  assert.deepEqual(
+    summary.groups.map((group) => group.category),
+    ["routing", "routing"],
+  );
+  assert.equal(summary.bySeverity.error, 2);
+});
+
 test("unknown codes are actionable only when they are not informational", () => {
   const summary = summarizeDiagnostics([
     { code: "mystery", severity: "warning", message: "warning" },
