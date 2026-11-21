@@ -8,6 +8,7 @@ use shrike_syntax::{BindingKind, FileSummary, ParseStatus};
 
 use super::Builder;
 use crate::cosmos_config;
+use crate::docusaurus_config;
 use crate::storybook_config;
 use crate::types::EntryRecord;
 use crate::util::route_of;
@@ -732,6 +733,7 @@ impl<'a> Builder<'a> {
         let mut vite_packages: BTreeSet<String> = BTreeSet::new();
         let mut storybook_packages: BTreeSet<String> = BTreeSet::new();
         let mut cosmos_packages: BTreeSet<String> = BTreeSet::new();
+        let mut docusaurus_packages: BTreeSet<String> = BTreeSet::new();
         for package in self.resolver.packages() {
             if package_depends_on_any(self.resolver.root(), &package.directory, VITE_ENABLERS) {
                 vite_packages.insert(package.directory.clone());
@@ -741,6 +743,17 @@ impl<'a> Builder<'a> {
             }
             if package_depends_on(self.resolver.root(), &package.directory, "react-cosmos") {
                 cosmos_packages.insert(package.directory.clone());
+            }
+            if package_depends_on_any(
+                self.resolver.root(),
+                &package.directory,
+                &[
+                    "@docusaurus/core",
+                    "@docusaurus/preset-classic",
+                    "docusaurus",
+                ],
+            ) {
+                docusaurus_packages.insert(package.directory.clone());
             }
         }
         let mut expo_layout_packages: BTreeSet<String> = BTreeSet::new();
@@ -1007,6 +1020,20 @@ impl<'a> Builder<'a> {
                 }
             }
         }
+        // Docusaurus renders docs, blog, and versioned-doc MDX pages by
+        // convention. The page modules are not imported, so their own imports
+        // need the page entry to stay live.
+        let mut docusaurus_page_files: BTreeSet<String> = BTreeSet::new();
+        for package_directory in &docusaurus_packages {
+            let Some(matcher) = docusaurus_config::matcher(package_directory) else {
+                continue;
+            };
+            for path in &analyzed {
+                if matcher.is_match(path) {
+                    docusaurus_page_files.insert((*path).to_string());
+                }
+            }
+        }
         // React Router route configs name route modules as strings. The router
         // imports them at runtime, so files named outside `<appDirectory>/routes/`
         // are still route modules and must keep their framework exports.
@@ -1238,6 +1265,15 @@ impl<'a> Builder<'a> {
                     None,
                     "both",
                 );
+            }
+            if docusaurus_page_files.contains(path) {
+                // Docusaurus renders every page module and reads the MDX
+                // module surface, so its imports and exports are framework
+                // API rather than dead application code.
+                add(self, module.clone(), "docusaurus", "page", None, "both");
+                for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
+                    add(self, key, "docusaurus", "page-export", None, "both");
+                }
             }
             let app_entry = (is_app
                 && matches!(
@@ -4732,6 +4768,110 @@ export default config;
             assert!(
                 snapshot.is_candidate(key),
                 "{key} is unused and must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+    }
+
+    fn docusaurus_app(package_json: &str) -> GraphSnapshot {
+        discovered_snapshot(&[
+            ("package.json", package_json),
+            (
+                "tsconfig.json",
+                r#"{"compilerOptions":{"baseUrl":".","jsx":"react-jsx","paths":{"@site/*":["./*"]}}}"#,
+            ),
+            (
+                "docs/intro.mdx",
+                "import Callout from \"@site/src/components/Callout\";\n\n# Introduction\n\n<Callout>Read this.</Callout>\n",
+            ),
+            (
+                "blog/hello.mdx",
+                "import AuthorCard from \"@site/src/components/AuthorCard\";\n\n# Hello\n\n<AuthorCard name=\"Mark\" />\n",
+            ),
+            (
+                "versioned_docs/version-1/guide.mdx",
+                "import VersionNote from \"@site/src/components/VersionNote\";\n\n<VersionNote />\n",
+            ),
+            (
+                "src/components/Callout.tsx",
+                "export default function Callout({ children }: { children: React.ReactNode }) { return <aside>{children}</aside>; }\nexport function unusedCalloutHelper() { return 1; }\n",
+            ),
+            (
+                "src/components/AuthorCard.tsx",
+                "export default function AuthorCard({ name }: { name: string }) { return <div>{name}</div>; }\nexport function unusedAuthorHelper() { return 2; }\n",
+            ),
+            (
+                "src/components/VersionNote.tsx",
+                "export default function VersionNote() { return <p>version</p>; }\nexport function unusedVersionHelper() { return 3; }\n",
+            ),
+            (
+                "src/components/dead.tsx",
+                "export default function DeadComponent() { return <div>dead</div>; }\n",
+            ),
+        ])
+    }
+
+    #[test]
+    fn docusaurus_docs_and_blog_pages_are_entries() {
+        let snapshot = docusaurus_app(
+            r#"{"name":"docs-site","private":true,"dependencies":{"@docusaurus/core":"^3.9.0","@docusaurus/preset-classic":"^3.9.0","react":"^19.0.0","react-dom":"^19.0.0"}}"#,
+        );
+        let entries = entry_symbols(&snapshot);
+        for key in [
+            "docs/intro.mdx#__module__",
+            "blog/hello.mdx#__module__",
+            "versioned_docs/version-1/guide.mdx#__module__",
+        ] {
+            assert!(
+                entries.contains(&key),
+                "Docusaurus pages are entries: {entries:?}"
+            );
+        }
+        for key in [
+            "src/components/Callout.tsx#default",
+            "src/components/AuthorCard.tsx#default",
+            "src/components/VersionNote.tsx#default",
+        ] {
+            assert!(
+                snapshot.is_live(key),
+                "the component rendered by a docs page must be live: {key}: {:?}",
+                snapshot.candidates
+            );
+        }
+        for key in [
+            "src/components/Callout.tsx#unusedCalloutHelper",
+            "src/components/AuthorCard.tsx#unusedAuthorHelper",
+            "src/components/VersionNote.tsx#unusedVersionHelper",
+            "src/components/dead.tsx#default",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "{key} is unused and must remain a candidate: {:?}",
+                snapshot.candidates
+            );
+        }
+        assert!(
+            snapshot.entries.iter().any(|entry| {
+                entry.symbol == "docs/intro.mdx#__module__" && entry.framework == "docusaurus"
+            }),
+            "the page records its framework: {:?}",
+            snapshot.entries
+        );
+    }
+
+    #[test]
+    fn docusaurus_pages_require_the_dependency() {
+        let snapshot = docusaurus_app(
+            r#"{"name":"plain-docs","private":true,"dependencies":{"react":"^19.0.0"}}"#,
+        );
+        for key in [
+            "src/components/Callout.tsx#default",
+            "src/components/AuthorCard.tsx#default",
+            "src/components/VersionNote.tsx#default",
+        ] {
+            assert!(
+                snapshot.is_candidate(key),
+                "without @docusaurus/core {key} is not framework-invoked: {:?}",
                 snapshot.candidates
             );
         }

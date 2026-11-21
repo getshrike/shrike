@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 294,
+  "count": 295,
   "entries": [
     {
       "id": "page-entry-1",
@@ -5257,6 +5257,50 @@
         "src/cosmos.decorator.js#unusedDecoratorHelper",
         "src/Frame.tsx#unusedFrameHelper",
         "src/dead.tsx#DeadThing"
+      ]
+    },
+    {
+      "id": "docusaurus-docs",
+      "category": "docusaurus",
+      "files": [
+        "blog",
+        "docs",
+        "package.json",
+        "src",
+        "tsconfig.json",
+        "versioned_docs"
+      ],
+      "protected": [
+        {
+          "symbol": "docs/intro.mdx#__module__",
+          "reason": "Docusaurus renders every docs MDX page"
+        },
+        {
+          "symbol": "blog/hello.mdx#__module__",
+          "reason": "Docusaurus renders every blog MDX page"
+        },
+        {
+          "symbol": "versioned_docs/version-1/guide.mdx#__module__",
+          "reason": "Docusaurus renders versioned docs pages"
+        },
+        {
+          "symbol": "src/components/Callout.tsx#default",
+          "reason": "the docs page imports and renders Callout"
+        },
+        {
+          "symbol": "src/components/AuthorCard.tsx#default",
+          "reason": "the blog page imports and renders AuthorCard"
+        },
+        {
+          "symbol": "src/components/VersionNote.tsx#default",
+          "reason": "the versioned docs page imports and renders VersionNote"
+        }
+      ],
+      "mustReport": [
+        "src/components/Callout.tsx#unusedCalloutHelper",
+        "src/components/AuthorCard.tsx#unusedAuthorHelper",
+        "src/components/VersionNote.tsx#unusedVersionHelper",
+        "src/components/dead.tsx#default"
       ]
     }
   ]
