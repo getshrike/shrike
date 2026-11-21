@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 304,
+  "count": 307,
   "entries": [
     {
       "id": "page-entry-1",
@@ -5799,6 +5799,53 @@
         "app/page.tsx",
         "src/transitively-dead.ts",
         "src/used.ts"
+      ]
+    },
+    {
+      "id": "cypress-tests",
+      "category": "test-entry",
+      "files": [
+        "cypress",
+        "cypress.config.ts",
+        "package.json",
+        "src"
+      ],
+      "protected": [
+        {
+          "symbol": "cypress/e2e/admin.cy.ts#__module__",
+          "reason": "Cypress discovers and executes the spec"
+        },
+        {
+          "symbol": "cypress/e2e/home.cy.ts#__module__",
+          "reason": "Cypress discovers and executes the spec"
+        },
+        {
+          "symbol": "cypress/support/e2e.ts#__module__",
+          "reason": "Cypress loads the default support file before specs"
+        },
+        {
+          "symbol": "src/command-helper.ts#commandHelper",
+          "reason": "the support file imports the command helper"
+        },
+        {
+          "symbol": "src/spec-helper.ts#specHelper",
+          "reason": "both specs import the helper"
+        }
+      ],
+      "mustReport": [
+        "src/command-helper.ts#unusedCommandHelper",
+        "src/dead.ts#dead",
+        "src/spec-helper.ts#unusedSpecHelper"
+      ],
+      "unusedFiles": [
+        "src/dead.ts"
+      ],
+      "usedFiles": [
+        "cypress/e2e/admin.cy.ts",
+        "cypress/e2e/home.cy.ts",
+        "cypress/support/e2e.ts",
+        "src/command-helper.ts",
+        "src/spec-helper.ts"
       ]
     }
   ]

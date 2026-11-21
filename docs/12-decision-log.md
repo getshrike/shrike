@@ -656,6 +656,67 @@ barrels as unused files.
 
 ---
 
+## D-023 — Cypress specs and support files are module entries
+
+**Decision:** When the owning package depends on `cypress`, the literal values
+in `cypress.config.*` name the files Cypress executes: e2e specs from
+`e2e.specPattern` (default `cypress/e2e/**/*.cy.{js,jsx,ts,tsx}`) minus
+`e2e.excludeSpecPattern`, and the support module from `e2e.supportFile`
+(default `cypress/support/e2e.{js,jsx,ts,tsx}`). Component patterns apply only
+when the config declares a `component` object. Each matched spec and support
+file is a module entry, so its imports stay live while its unimported named
+exports remain candidates. Computed config values fall back to Cypress's
+documented defaults rather than guessing at executable code.
+
+**Alternatives considered:**
+
+- Protect everything under `cypress/`. Knip 5.88.1 and fallow 3.45.0 both
+  report unused exports in Cypress helpers and unimported files in the same
+  tree, so a directory-wide entry would hide real findings.
+- Seed every export of a spec or support file. Cypress executes the module and
+  calls its hooks; it does not consume arbitrary named exports, matching D-021's
+  test-runner rule.
+- Trust computed patterns or execute the config. The config is executable
+  JavaScript; evaluating it is a security and determinism boundary, and a wrong
+  guess can protect genuinely dead files. Literal strings cover the documented
+  configuration surface and fall back safely.
+- Apply the component default unconditionally. `**/*.cy.*` is broad enough to
+  match unrelated files in an e2e-only project, so component patterns require an
+  explicit `component` object.
+- Gate only on the config file existing. A stray or copied `cypress.config.*` in
+  a package that does not use Cypress would hide dead files; the dependency gate
+  keeps the convention scoped to actual Cypress projects.
+
+**Why:** On `/tmp/opencode/cypress-probe`, Shrike before the change reported 6
+candidates (`components/widget.tsx#unusedWidgetHelper`,
+`lib/command-helper.ts#commandHelper`,
+`lib/command-helper.ts#unusedCommandHelper`, `lib/dead.ts#dead`,
+`lib/spec-helper.ts#specHelper`, `lib/spec-helper.ts#unusedSpecHelper`) and 4
+unused files (`cypress/e2e/admin.cy.ts`, `cypress/e2e/home.cy.ts`,
+`cypress/support/e2e.ts`, `lib/dead.ts`). Knip 5.88.1 and fallow 3.45.0 both
+report exactly 1 unused file (`lib/dead.ts`) and 3 unused exports
+(`unusedWidgetHelper`, `unusedCommandHelper`, `unusedSpecHelper`). After the
+change Shrike reports the same 4 candidates (the 3 unused exports plus
+`lib/dead.ts#dead`) and the same single unused file.
+
+**Consequences:**
+
+- Specs and support modules carry framework `cypress` and kinds `spec` /
+  `support`; a custom pattern that also matches the generic `.spec.` convention
+  is entered once, as a Cypress spec.
+- The config reader is package-gated and literal-only; a missing or unreadable
+  manifest leaves the convention off.
+- The two-sided `cypress-tests` corpus case pins the discovered specs, the
+  default support module, and their imported helpers as live, while unused
+  helper exports and an unrelated dead file remain reportable.
+- `cypress.config.*` remains an ordinary config file rather than a module entry.
+
+**Revisit if:** a Cypress project loads specs through a dynamic pattern that no
+literal config value describes, or a competitor starts protecting the whole
+`cypress/` tree.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -720,6 +781,8 @@ external app, credential, or participant.
 | D-019 | Server actions are always entries | superseded by D-020 |
 | D-020 | Server actions follow the graph by default | accepted |
 | D-021 | Test and script modules are entries; their exports follow the graph | accepted |
+| D-022 | Unused-file findings require no entry, no import, and a dead module | accepted |
+| D-023 | Cypress specs and support files are module entries | accepted |
 
 ## Rejected ideas
 

@@ -4,6 +4,7 @@
 
 mod builder;
 mod cosmos_config;
+mod cypress_config;
 mod discovery;
 mod docusaurus_config;
 mod gatsby_config;
