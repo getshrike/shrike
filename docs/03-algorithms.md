@@ -314,7 +314,11 @@ a symbol is live.
 - image-route metadata: `size`, `contentType`, `alt`, `generateImageMetadata`
   (scoped to image-route stems, never global);
 - `proxy.ts` (Next.js 16) and `middleware.ts` (15) exports;
-- `instrumentation.ts` and `instrumentation-client.ts` `register`;
+- `instrumentation.ts` and `instrumentation-client.ts` at the package root or
+  `src/`, with `register`, `onRequestError`, `onRequestInit`, and
+  `onRouterTransitionStart` as the framework API. Other exports in those files
+  stay analyzable, and a nested module that merely shares the name
+  `instrumentation` is not a convention;
 - `mdx-components.tsx` `useMDXComponents` and the MDX ESM boundary;
 - `"use server"` module exports (async functions), independent of
   `clientBoundaryPolicy`;

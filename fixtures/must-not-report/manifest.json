@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 298,
+  "count": 299,
   "entries": [
     {
       "id": "page-entry-1",
@@ -5503,6 +5503,63 @@
         "src/screens/Home.native.tsx#unusedNativeHomeHelper",
         "src/orphan.ios.tsx#Orphan",
         "src/dead.ts#DeadThing"
+      ]
+    },
+    {
+      "id": "next-instrumentation",
+      "category": "next-instrumentation",
+      "files": [
+        "app",
+        "instrumentation-client.ts",
+        "instrumentation.ts",
+        "lib",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "instrumentation.ts#__module__",
+          "reason": "Next.js loads the root instrumentation module"
+        },
+        {
+          "symbol": "instrumentation.ts#register",
+          "reason": "Next.js calls the instrumentation register export"
+        },
+        {
+          "symbol": "instrumentation.ts#onRequestError",
+          "reason": "Next.js calls the instrumentation onRequestError export"
+        },
+        {
+          "symbol": "instrumentation-client.ts#__module__",
+          "reason": "Next.js loads the root client instrumentation module"
+        },
+        {
+          "symbol": "instrumentation-client.ts#onRouterTransitionStart",
+          "reason": "Next.js calls the client instrumentation transition export"
+        },
+        {
+          "symbol": "app/page.tsx#__module__",
+          "reason": "the App Router page is an entry"
+        },
+        {
+          "symbol": "app/page.tsx#default",
+          "reason": "Next.js renders the page default export"
+        },
+        {
+          "symbol": "lib/setup.ts#setup",
+          "reason": "instrumentation register imports and calls setup"
+        },
+        {
+          "symbol": "src/widget.tsx#Widget",
+          "reason": "the page imports and renders Widget"
+        }
+      ],
+      "mustReport": [
+        "instrumentation.ts#unusedInstrumentationHelper",
+        "instrumentation-client.ts#unusedClientHelper",
+        "src/widget.tsx#unusedWidgetHelper",
+        "lib/instrumentation.ts#unrelatedInstrumentation"
       ]
     }
   ]
