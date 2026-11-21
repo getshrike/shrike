@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 297,
+  "count": 298,
   "entries": [
     {
       "id": "page-entry-1",
@@ -5403,6 +5403,106 @@
         ".ladle/shell.tsx#unusedShellHelper",
         "src/components/button.tsx#unusedButtonHelper",
         "src/dead.tsx#DeadComponent"
+      ]
+    },
+    {
+      "id": "metro-platforms",
+      "category": "metro",
+      "files": [
+        "index.js",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "index.js#__module__",
+          "reason": "the package main module is an entry"
+        },
+        {
+          "symbol": "index.js#default",
+          "reason": "the package entry export is public"
+        },
+        {
+          "symbol": "src/App.tsx#App",
+          "reason": "the package entry imports and exports App"
+        },
+        {
+          "symbol": "src/components/Button.tsx#__module__",
+          "reason": "a neutral import resolves the base platform module"
+        },
+        {
+          "symbol": "src/components/Button.tsx#Button",
+          "reason": "the base module exports the imported Button"
+        },
+        {
+          "symbol": "src/components/Button.ios.tsx#__module__",
+          "reason": "Metro loads the iOS variant for a neutral import"
+        },
+        {
+          "symbol": "src/components/Button.ios.tsx#Button",
+          "reason": "the iOS variant exports the imported Button"
+        },
+        {
+          "symbol": "src/components/Button.android.tsx#__module__",
+          "reason": "Metro loads the Android variant for a neutral import"
+        },
+        {
+          "symbol": "src/components/Button.android.tsx#Button",
+          "reason": "the Android variant exports the imported Button"
+        },
+        {
+          "symbol": "src/components/Card/index.ios.tsx#__module__",
+          "reason": "Metro loads the iOS directory-index variant when no base index exists"
+        },
+        {
+          "symbol": "src/components/Card/index.ios.tsx#Card",
+          "reason": "the iOS index variant exports the imported Card"
+        },
+        {
+          "symbol": "src/components/Card/index.android.tsx#__module__",
+          "reason": "Metro loads the Android directory-index variant when no base index exists"
+        },
+        {
+          "symbol": "src/components/Card/index.android.tsx#Card",
+          "reason": "the Android index variant exports the imported Card"
+        },
+        {
+          "symbol": "src/components/Icon.ios.tsx#__module__",
+          "reason": "Metro loads the iOS variant for a neutral import"
+        },
+        {
+          "symbol": "src/components/Icon.ios.tsx#Icon",
+          "reason": "the iOS variant exports the imported Icon"
+        },
+        {
+          "symbol": "src/components/Icon.android.tsx#__module__",
+          "reason": "Metro loads the Android variant for a neutral import"
+        },
+        {
+          "symbol": "src/components/Icon.android.tsx#Icon",
+          "reason": "the Android variant exports the imported Icon"
+        },
+        {
+          "symbol": "src/screens/Home.native.tsx#__module__",
+          "reason": "Metro loads the .native variant for a neutral import"
+        },
+        {
+          "symbol": "src/screens/Home.native.tsx#HomeScreen",
+          "reason": "the native variant exports the imported HomeScreen"
+        }
+      ],
+      "mustReport": [
+        "src/components/Button.tsx#unusedButtonHelper",
+        "src/components/Button.ios.tsx#unusedIosButtonHelper",
+        "src/components/Button.android.tsx#unusedAndroidButtonHelper",
+        "src/components/Card/index.ios.tsx#unusedIosCardHelper",
+        "src/components/Card/index.android.tsx#unusedAndroidCardHelper",
+        "src/components/Icon.ios.tsx#unusedIosIconHelper",
+        "src/components/Icon.android.tsx#unusedAndroidIconHelper",
+        "src/screens/Home.native.tsx#unusedNativeHomeHelper",
+        "src/orphan.ios.tsx#Orphan",
+        "src/dead.ts#DeadThing"
       ]
     }
   ]

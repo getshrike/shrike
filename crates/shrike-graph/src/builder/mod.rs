@@ -32,8 +32,8 @@ pub(crate) struct Builder<'a> {
     locals: BTreeMap<String, BTreeMap<String, String>>,
     // file -> local import alias -> (target file, imported name)
     imports: BTreeMap<String, BTreeMap<String, (String, String)>>,
-    // file -> namespace local alias -> target file
-    namespaces: BTreeMap<String, BTreeMap<String, String>>,
+    // file -> namespace local alias -> target files
+    namespaces: BTreeMap<String, BTreeMap<String, Vec<String>>>,
     export_alls: BTreeMap<String, Vec<String>>,
     package_of: BTreeMap<String, String>,
     public_files: BTreeSet<String>,

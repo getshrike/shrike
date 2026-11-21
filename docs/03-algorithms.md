@@ -233,6 +233,20 @@ Resolve, in order:
 
 Resolution is cached by `(importer, specifier, resolverConfigHash)`.
 
+**Metro platform resolution.** When the owning package depends on `metro`,
+`@react-native/metro-config`, or `react-native`, a neutral import probes each
+platform variant before falling back to the base module, in Metro's order:
+`ios`, `android`, `windows`, `web`, `native`, `macos`, `default`. A suffix is
+inserted before the source extension (`Button.tsx` → `Button.ios.tsx`,
+`Home` → `Home.native.tsx`). An extensionless import also probes each
+platform's directory index (`Card/index.ios.tsx`) when no base index exists.
+Every variant that exists is treated as a target
+of the same specifier, so an imported named export stays live in each platform
+file. Variants are not blanket entries: a platform file that no neutral import
+reaches, such as `orphan.ios.tsx`, remains a deletion candidate, and unused
+helpers in a reached variant remain analyzable. The gate is per package, so a
+monorepo can contain both Metro and non-Metro packages.
+
 **Rule C1:** a resolved module must be inside the include set or a declared
 external. An external package is not traversed; its exports are assumed live if
 imported.

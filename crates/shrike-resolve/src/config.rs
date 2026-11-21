@@ -341,6 +341,7 @@ pub(crate) fn load_workspaces(
             public_sources.extend(export_source_files(&directory, &target, files));
         }
         let script_files = package_script_files(&directory, &value, files);
+        let metro = package_uses_metro(&value);
         // A nested example may reuse the root package's name. Keep the
         // shallowest declaration so self-references resolve to the real
         // package, not the example that consumes it.
@@ -357,10 +358,30 @@ pub(crate) fn load_workspaces(
                 public_api,
                 public_sources,
                 script_files,
+                metro,
             },
         );
     }
     packages
+}
+
+/// Metro resolves platform-suffixed modules. React Native projects get it
+/// through the framework or a dedicated config package, and Metro itself can
+/// be installed directly.
+fn package_uses_metro(value: &serde_json::Value) -> bool {
+    [
+        "dependencies",
+        "devDependencies",
+        "peerDependencies",
+        "optionalDependencies",
+    ]
+    .iter()
+    .filter_map(|section| value.get(section).and_then(|deps| deps.as_object()))
+    .any(|dependencies| {
+        ["metro", "@react-native/metro-config", "react-native"]
+            .iter()
+            .any(|name| dependencies.contains_key(*name))
+    })
 }
 
 pub(crate) fn join_package_path(directory: &str, target: &str) -> String {
