@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 296,
+  "count": 297,
   "entries": [
     {
       "id": "page-entry-1",
@@ -5342,6 +5342,67 @@
         "src/templates/dead-template.tsx#query",
         "src/templates/dead-template.tsx#unusedDeadHelper",
         "src/other/dead.tsx#default"
+      ]
+    },
+    {
+      "id": "ladle-stories",
+      "category": "ladle",
+      "files": [
+        ".ladle",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": ".ladle/config.mjs#__module__",
+          "reason": "Ladle executes its configuration file"
+        },
+        {
+          "symbol": ".ladle/components.tsx#__module__",
+          "reason": "Ladle imports the components file as its provider entry"
+        },
+        {
+          "symbol": ".ladle/components.tsx#Provider",
+          "reason": "Ladle renders the Provider export"
+        },
+        {
+          "symbol": ".ladle/components.tsx#unusedComponentsHelper",
+          "reason": "Ladle imports every export of the components file"
+        },
+        {
+          "symbol": ".ladle/shell.tsx#LadleShell",
+          "reason": "the Ladle components entry imports and renders LadleShell"
+        },
+        {
+          "symbol": "src/button.stories.tsx#__module__",
+          "reason": "Ladle discovers stories from its default story glob"
+        },
+        {
+          "symbol": "src/button.stories.tsx#Primary",
+          "reason": "Ladle imports every story export"
+        },
+        {
+          "symbol": "src/button.stories.tsx#unusedStoryHelper",
+          "reason": "every export of a story module is part of Ladle's story surface"
+        },
+        {
+          "symbol": "src/widget.demo.tsx#__module__",
+          "reason": "the Ladle config adds the custom demo story glob"
+        },
+        {
+          "symbol": "src/widget.demo.tsx#DemoWidget",
+          "reason": "Ladle imports every export of a custom-glob story"
+        },
+        {
+          "symbol": "src/widget.demo.tsx#unusedDemoHelper",
+          "reason": "every export of a custom-glob story is part of Ladle's story surface"
+        }
+      ],
+      "mustReport": [
+        ".ladle/shell.tsx#unusedShellHelper",
+        "src/components/button.tsx#unusedButtonHelper",
+        "src/dead.tsx#DeadComponent"
       ]
     }
   ]

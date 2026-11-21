@@ -7,6 +7,7 @@ mod cosmos_config;
 mod discovery;
 mod docusaurus_config;
 mod gatsby_config;
+mod ladle_config;
 mod next_config;
 mod storybook_config;
 mod types;
