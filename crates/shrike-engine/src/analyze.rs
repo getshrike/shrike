@@ -16,7 +16,10 @@ pub(crate) fn analyze_payload(
     let started = std::time::Instant::now();
     payload.config.validate().map_err(ShrikeError::Config)?;
     let root = Path::new(&payload.root);
-    let files = shrike_graph::discover_files(root, &payload.config);
+    let shrike_graph::Discovery {
+        files,
+        cache_inputs,
+    } = shrike_graph::discover(root, &payload.config);
     let resolver = shrike_resolve::Resolver::new(root, &files, &payload.config);
     let discovered = started.elapsed();
     let cache_dir = payload
@@ -70,6 +73,34 @@ pub(crate) fn analyze_payload(
         if let Some(source) = source {
             sources.insert(path, source);
         }
+    }
+    // Framework config that is not analyzed still changes entry detection.
+    // Hash it into the cache key so a config edit cannot reuse a stale
+    // snapshot. These files are never added to `files` or parsed.
+    for path in &cache_inputs {
+        if entries.contains_key(path) {
+            continue;
+        }
+        let full = root.join(path);
+        let Ok(metadata) = fs::metadata(&full) else {
+            continue;
+        };
+        let Ok(bytes) = fs::read(&full) else {
+            continue;
+        };
+        let mtime_ns = metadata
+            .modified()
+            .ok()
+            .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+            .map_or(0, |value| value.as_nanos());
+        entries.insert(
+            path.clone(),
+            ManifestEntry {
+                size: metadata.len(),
+                mtime_ns,
+                hash: hash_bytes(&bytes),
+            },
+        );
     }
     let scanned = started.elapsed();
     let cache_key = snapshot_cache_key(&payload.config, &resolver.resolver_hash, &entries);

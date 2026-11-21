@@ -3,6 +3,7 @@
 //! witnesses, SCCs, and candidate proofs.
 
 mod builder;
+mod cosmos_config;
 mod discovery;
 mod next_config;
 mod storybook_config;
@@ -11,7 +12,7 @@ mod util;
 mod webpack_config;
 
 pub use crate::builder::{build_snapshot, build_snapshot_with_resolver};
-pub use crate::discovery::{analyze_paths, discover_files, input_hash};
+pub use crate::discovery::{Discovery, analyze_paths, discover, discover_files, input_hash};
 pub use crate::types::{
     EdgeRecord, EntryRecord, FileRecord, GraphSnapshot, ModuleRecord, ProofRecord, SymbolRecord,
     UnknownRecord, WitnessRecord,

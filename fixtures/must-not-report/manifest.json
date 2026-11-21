@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 292,
+  "count": 294,
   "entries": [
     {
       "id": "page-entry-1",
@@ -5161,6 +5161,102 @@
         "app/loading.tsx#unstable_generateParamMatching",
         "components/param-view.tsx#unusedParamHelper",
         "components/dead.tsx#DeadComponent"
+      ]
+    },
+    {
+      "id": "react-cosmos-fixtures",
+      "category": "react-cosmos",
+      "files": [
+        "components",
+        "decorators",
+        "cosmos.config.json",
+        "dead.tsx",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Button.fixture.tsx#default",
+          "reason": "React Cosmos imports every fixture module export"
+        },
+        {
+          "symbol": "components/Button.fixture.tsx#CardFixture",
+          "reason": "React Cosmos imports every fixture module export"
+        },
+        {
+          "symbol": "components/__fixtures__/Nested.tsx#default",
+          "reason": "files in the default __fixtures__ directory are fixtures"
+        },
+        {
+          "symbol": "components/Button.tsx#Button",
+          "reason": "the fixture imports and renders Button"
+        },
+        {
+          "symbol": "components/Card.tsx#Card",
+          "reason": "the fixtures import and render Card"
+        },
+        {
+          "symbol": "components/NestedThing.tsx#NestedThing",
+          "reason": "the nested fixture imports and renders NestedThing"
+        },
+        {
+          "symbol": "decorators/cosmos.decorator.tsx#default",
+          "reason": "Cosmos invokes the decorator default export"
+        }
+      ],
+      "mustReport": [
+        "components/Button.tsx#unusedButtonHelper",
+        "components/Card.tsx#unusedCardHelper",
+        "components/NestedThing.tsx#unusedNestedHelper",
+        "decorators/cosmos.decorator.tsx#unusedDecoratorHelper",
+        "dead.tsx#DeadThing"
+      ]
+    },
+    {
+      "id": "react-cosmos-custom-config",
+      "category": "react-cosmos",
+      "files": [
+        "cosmos.config.json",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/Widget.example.tsx#default",
+          "reason": "the configured suffix makes this a fixture"
+        },
+        {
+          "symbol": "src/Widget.example.tsx#AnotherFixture",
+          "reason": "React Cosmos imports every fixture module export"
+        },
+        {
+          "symbol": "src/examples/Showcase.tsx#Showcase",
+          "reason": "files in the configured fixturesDir are fixtures"
+        },
+        {
+          "symbol": "src/Widget.tsx#Widget",
+          "reason": "the fixtures import and render Widget"
+        },
+        {
+          "symbol": "src/cosmos.decorator.js#default",
+          "reason": "Cosmos invokes the decorator default export"
+        },
+        {
+          "symbol": "src/Frame.tsx#Frame",
+          "reason": "the decorator default renders Frame"
+        }
+      ],
+      "mustReport": [
+        "src/Widget.fixture.tsx#default",
+        "src/Legacy.tsx#Legacy",
+        "src/Legacy.tsx#unusedLegacyHelper",
+        "src/Widget.tsx#unusedWidgetHelper",
+        "src/examples/Thing.skip.tsx#Skipped",
+        "src/IgnoredThing.tsx#IgnoredThing",
+        "src/cosmos.decorator.js#unusedDecoratorHelper",
+        "src/Frame.tsx#unusedFrameHelper",
+        "src/dead.tsx#DeadThing"
       ]
     }
   ]

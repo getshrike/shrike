@@ -49,6 +49,15 @@ pub fn analyze_paths(root: &Path, config: &EngineConfig, paths: &[String]) -> Gr
     build_snapshot(root, summaries, config)
 }
 
+/// The discovered source set plus non-source files whose contents change entry
+/// classification. Cache keys must include the latter even though they are not
+/// parsed as modules.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Discovery {
+    pub files: Vec<String>,
+    pub cache_inputs: Vec<String>,
+}
+
 /// Walk the configured include set. Deterministic order, ignores honoured.
 ///
 /// `.gitignore` is authoritative for generated output. A repository may put
@@ -56,7 +65,7 @@ pub fn analyze_paths(root: &Path, config: &EngineConfig, paths: &[String]) -> Gr
 /// so the walker reads the repository's own ignore rules instead of guessing
 /// every possible output name. Untracked source files that are not ignored are
 /// still scanned.
-pub fn discover_files(root: &Path, config: &EngineConfig) -> Vec<String> {
+pub fn discover(root: &Path, config: &EngineConfig) -> Discovery {
     const OUTPUT_DIRECTORIES: &[&str] = &[
         "node_modules",
         ".git",
@@ -96,6 +105,7 @@ pub fn discover_files(root: &Path, config: &EngineConfig) -> Vec<String> {
         !OUTPUT_DIRECTORIES.contains(&name)
     });
     let mut files = Vec::new();
+    let mut cache_inputs = Vec::new();
     let mut next_configs = Vec::new();
     let mut markdown = Vec::new();
     for entry in builder.build().flatten() {
@@ -114,6 +124,12 @@ pub fn discover_files(root: &Path, config: &EngineConfig) -> Vec<String> {
         }
         if next_config::is_config_path(&relative) {
             next_configs.push(relative.clone());
+        }
+        // Cosmos config is JSON and is not parsed as a module, but it decides
+        // which fixture files are entries. Its content must participate in the
+        // snapshot cache key even though it is not in the analysis set.
+        if relative == "cosmos.config.json" || relative.ends_with("/cosmos.config.json") {
+            cache_inputs.push(relative.clone());
         }
         let markdown_file = relative.ends_with(".md") || relative.ends_with(".mdx");
         if markdown_file {
@@ -150,7 +166,18 @@ pub fn discover_files(root: &Path, config: &EngineConfig) -> Vec<String> {
     }
     files.sort();
     files.dedup();
-    files
+    cache_inputs.sort();
+    cache_inputs.dedup();
+    Discovery {
+        files,
+        cache_inputs,
+    }
+}
+
+/// The analysis source set without the cache-input side channel.
+#[must_use]
+pub fn discover_files(root: &Path, config: &EngineConfig) -> Vec<String> {
+    discover(root, config).files
 }
 
 /// Whether `path` is a Next.js route under the config directory `prefix` for
@@ -384,6 +411,39 @@ mod tests {
                 ".storybook/preview.tsx",
             ],
             "Storybook directories are executable project files; other hidden directories stay excluded"
+        );
+    }
+
+    #[test]
+    fn cosmos_configuration_is_a_cache_input_not_a_source_file() {
+        let directory = tempdir().expect("tempdir");
+        let root = directory.path();
+        write(
+            root,
+            "cosmos.config.json",
+            r#"{"fixturesDir":"__fixtures__","fixtureFileSuffix":"fixture"}"#,
+        );
+        write(
+            root,
+            "apps/web/cosmos.config.json",
+            r#"{"fixturesDir":"src/examples"}"#,
+        );
+        write(root, "src/Button.fixture.tsx", "export default 1;\n");
+        write(
+            root,
+            "apps/web/src/examples/Card.tsx",
+            "export const Card = 1;\n",
+        );
+        let discovery = discover(root, &EngineConfig::default());
+        assert_eq!(
+            discovery.files,
+            vec!["apps/web/src/examples/Card.tsx", "src/Button.fixture.tsx"],
+            "Cosmos config is not parsed as a source module"
+        );
+        assert_eq!(
+            discovery.cache_inputs,
+            vec!["apps/web/cosmos.config.json", "cosmos.config.json"],
+            "config content must participate in the snapshot cache key"
         );
     }
 }
