@@ -31,7 +31,7 @@ function fakeShrike(directory, exitCode = 0) {
     `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
-fs.appendFileSync(process.env.FAKE_SHRIKE_LOG, JSON.stringify(args) + "\\n");
+fs.appendFileSync(process.env.FAKE_SHRIKE_LOG, JSON.stringify({ args, author: process.env.GIT_AUTHOR_NAME ?? null, email: process.env.GIT_AUTHOR_EMAIL ?? null }) + "\\n");
 if (args[0] === "delta") console.log(JSON.stringify({ newlyDead: [{ symbol: "lib/x.ts#x", file: "lib/x.ts", estimatedLines: 2 }], newlyDeadFiles: [] }));
 if (args[0] === "prune") console.log(JSON.stringify({ outcome: "verified", receipts: ["rcpt_test"] }));
 process.exit(${exitCode});
@@ -231,6 +231,7 @@ test("prune on the base repository records the outcome and receipts", () => {
   const directory = scratch("prune");
   try {
     fakeShrike(directory);
+    mkdirSync(join(directory, "home"), { recursive: true });
     const event = join(directory, "event.json");
     writeFileSync(event, JSON.stringify({
       pull_request: { head: { repo: { full_name: "owner/app" } } },
@@ -240,11 +241,17 @@ test("prune on the base repository records the outcome and receipts", () => {
       INPUT_MODE: "prune",
       GITHUB_EVENT_NAME: "pull_request",
       GITHUB_EVENT_PATH: event,
+      HOME: join(directory, "home"),
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_SYSTEM: "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1",
     });
     assert.equal(result.status, 0, result.stderr);
     assert.match(output, /outcome=verified/);
     assert.match(output, /receipts=1/);
     assert.match(log, /"prune"/);
+    assert.match(log, /"author":"github-actions\[bot\]"/);
+    assert.match(log, /"email":"41898282\+github-actions\[bot\]@users\.noreply\.github\.com"/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

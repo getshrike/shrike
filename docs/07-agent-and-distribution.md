@@ -207,7 +207,9 @@ artifact.
 
 Outputs: `count`, `delta-path` (delta mode); `outcome`, `receipts` (prune mode).
 The Action is a thin wrapper over the CLI; it does not re-implement analysis.
-`mode: prune` refuses a fork pull request and returns exit 2.
+`mode: prune` refuses a fork pull request and returns exit 2. When the runner
+has no git identity, prune commits as `github-actions[bot]`; a configured
+identity is left unchanged.
 
 ### 4.2 Permissions
 

@@ -128,6 +128,18 @@ function runDelta(root, base, maxItems, failOn) {
 
 // src/prune.ts
 var import_node_child_process3 = require("node:child_process");
+var BOT_IDENTITY = {
+  GIT_AUTHOR_NAME: "github-actions[bot]",
+  GIT_AUTHOR_EMAIL: "41898282+github-actions[bot]@users.noreply.github.com",
+  GIT_COMMITTER_NAME: "github-actions[bot]",
+  GIT_COMMITTER_EMAIL: "41898282+github-actions[bot]@users.noreply.github.com"
+};
+function commitEnv(root) {
+  const author = (0, import_node_child_process3.spawnSync)("git", ["var", "GIT_AUTHOR_IDENT"], { cwd: root, encoding: "utf8" });
+  const committer = (0, import_node_child_process3.spawnSync)("git", ["var", "GIT_COMMITTER_IDENT"], { cwd: root, encoding: "utf8" });
+  if (author.status === 0 && committer.status === 0) return { ...process.env };
+  return { ...process.env, ...BOT_IDENTITY };
+}
 function runPrune(root, base) {
   if (isForkPullRequest()) {
     process.stderr.write("shrike: refusing prune on a fork pull request (write token is not trusted)\n");
@@ -136,7 +148,8 @@ function runPrune(root, base) {
   const cli = resolveCli(root);
   const result = (0, import_node_child_process3.spawnSync)(cli.command, [...cli.args, "prune", "--base", base, "--json", "--pr"], {
     cwd: root,
-    encoding: "utf8"
+    encoding: "utf8",
+    env: commitEnv(root)
   });
   const stdout = result.stdout ?? "";
   const stderr = result.stderr ?? "";
