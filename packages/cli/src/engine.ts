@@ -3,6 +3,7 @@ import { accessSync, constants } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EngineUnavailableError } from "./errors.ts";
+import { logTiming } from "./timing.ts";
 
 export interface EngineRequest {
   protocolVersion: "1.0";
@@ -59,21 +60,32 @@ export function findEngine(): string {
 
 let counter = 0;
 
-/** Send one JSONL request and return the result. */
-export async function requestEngine<T = unknown>(
-  command: string,
-  payload: unknown,
-): Promise<T> {
+interface EngineRun {
+  id: string;
+  stdout: Buffer;
+  stderr: string;
+  exitCode: number | null;
+}
+
+/**
+ * Spawn the engine, send one request, and collect its output. This is shared by
+ * the parsed and raw response paths so timeout and protocol handling cannot
+ * drift between them.
+ */
+async function runEngine(command: string, payload: unknown): Promise<EngineRun> {
+  const started = performance.now();
   const binary = findEngine();
   const id = `host_${process.pid}_${++counter}`;
   const request: EngineRequest = { protocolVersion: "1.0", id, command, payload };
   const child = spawn(binary, [], { stdio: ["pipe", "pipe", "pipe"] });
-  let stdout = "";
-  let stderr = "";
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk: string) => { stdout += chunk; });
-  child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+  // Scan responses reach tens of megabytes. Concatenating decoded chunks
+  // rebuilds the string on every write and leaves a trail of intermediates for
+  // the GC; collecting buffers and decoding once is linear and keeps UTF-8
+  // sequences intact across chunk boundaries.
+  const stdoutChunks: Buffer[] = [];
+  const stderrChunks: Buffer[] = [];
+  child.stdout.on("data", (chunk: Buffer) => { stdoutChunks.push(chunk); });
+  child.stderr.on("data", (chunk: Buffer) => { stderrChunks.push(chunk); });
   child.stdin.write(`${JSON.stringify(request)}\n`);
   child.stdin.end();
   const configured = Number(process.env.SHRIKE_ENGINE_TIMEOUT_MS ?? 60_000);
@@ -91,18 +103,41 @@ export async function requestEngine<T = unknown>(
   if (timedOut) {
     throw new EngineUnavailableError(`engine timed out after ${timeoutMs}ms`);
   }
-  const line = stdout.split("\n").find((value) => value.trim().length > 0);
-  if (!line) {
-    throw new EngineUnavailableError(
-      `engine produced no response (exit ${String(exitCode)})${stderr ? `: ${stderr.trim()}` : ""}`,
-    );
+  logTiming(`engine_${command}_roundtrip`, started);
+  const stdout = Buffer.concat(stdoutChunks);
+  const stderr = Buffer.concat(stderrChunks).toString("utf8");
+  return { id, stdout, stderr, exitCode };
+}
+
+/** Extract the single non-empty response line and validate its envelope. */
+function responseLine(run: EngineRun): Buffer {
+  let start = 0;
+  while (start < run.stdout.length) {
+    const newline = run.stdout.indexOf(0x0a, start);
+    const end = newline === -1 ? run.stdout.length : newline;
+    if (end > start) return run.stdout.subarray(start, end);
+    start = end + 1;
   }
+  throw new EngineUnavailableError(
+    `engine produced no response (exit ${String(run.exitCode)})${run.stderr ? `: ${run.stderr.trim()}` : ""}`,
+  );
+}
+
+/**
+ * Parse a response line and return its result. Scan callers that need the raw
+ * JSON use `requestEngineRaw` and only fall back to this when the response does
+ * not carry the compact dependency projection.
+ */
+export function parseEngineLine<T = unknown>(line: string | Buffer, id: string): T {
+  const parseStarted = performance.now();
+  const text = typeof line === "string" ? line : line.toString("utf8");
   let response: EngineResponse;
   try {
-    response = JSON.parse(line) as EngineResponse;
+    response = JSON.parse(text) as EngineResponse;
   } catch {
-    throw new EngineUnavailableError(`engine returned invalid JSON: ${line.slice(0, 200)}`);
+    throw new EngineUnavailableError(`engine returned invalid JSON: ${text.slice(0, 200)}`);
   }
+  logTiming("engine_response_parse", parseStarted);
   if (typeof response !== "object" || response === null) {
     throw new EngineUnavailableError("engine response was not an object");
   }
@@ -133,4 +168,35 @@ export async function requestEngine<T = unknown>(
     throw new EngineUnavailableError(`${error.code}: ${error.message}`);
   }
   throw new EngineUnavailableError("engine response did not contain a boolean ok field");
+}
+
+/** Send one JSONL request and return the parsed result. */
+export async function requestEngine<T = unknown>(
+  command: string,
+  payload: unknown,
+): Promise<T> {
+  const run = await runEngine(command, payload);
+  return parseEngineLine<T>(responseLine(run), run.id);
+}
+
+export interface RawEngineResponse {
+  /** The first non-empty response line, still JSON-encoded. */
+  line: Buffer;
+  /** Request id; pass it to `parseEngineLine` for a full decode. */
+  id: string;
+}
+
+/**
+ * Send one JSONL request and return the response line without decoding it.
+ *
+ * Large scan responses are tens of megabytes. The CLI only needs a small
+ * dependency projection plus the already-serialized result, so decoding the
+ * whole envelope would allocate the snapshot twice for no benefit.
+ */
+export async function requestEngineRaw(
+  command: string,
+  payload: unknown,
+): Promise<RawEngineResponse> {
+  const run = await runEngine(command, payload);
+  return { line: responseLine(run), id: run.id };
 }

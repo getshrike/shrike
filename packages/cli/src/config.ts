@@ -4,7 +4,6 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { baseEnvironment } from "@shrike/verifier";
 import { ConfigError } from "./errors.ts";
 
 export interface CheckConfig {
@@ -210,7 +209,8 @@ function executableConfigCandidates(path: string): ConfigCandidate[] {
   return candidates;
 }
 
-function loadExecutableConfig(path: string, root: string): Partial<ShrikeConfig> {
+async function loadExecutableConfig(path: string, root: string): Promise<Partial<ShrikeConfig>> {
+  const { baseEnvironment } = await import("@shrike/verifier");
   const directory = mkdtempSync(join(tmpdir(), "shrike-config-"));
   const output = join(directory, "config.json");
   const timeout = Number(process.env.SHRIKE_CONFIG_TIMEOUT_MS ?? 5_000);
@@ -295,7 +295,7 @@ export async function loadConfig(root: string): Promise<ShrikeConfig> {
       );
     }
   }
-  return mergeConfig(loadExecutableConfig(path, root));
+  return mergeConfig(await loadExecutableConfig(path, root));
 }
 
 /** The payload shape accepted by the Rust engine's analyze/scan commands. */

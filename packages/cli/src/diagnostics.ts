@@ -68,9 +68,23 @@ function categoryFor(item: DiagnosticLike): { category: string; actionable: bool
     item.code === "route_collision" ||
     item.code === "dynamic_segment_name_conflict" ||
     item.code === "invalid_route_segment_config" ||
-    item.code === "invalid_pages_router_export"
+    item.code === "invalid_pages_router_export" ||
+    item.code === "pages_router_route_conflict"
   ) {
     return { category: "routing", actionable: true };
+  }
+  if (item.code === "unused_component_prop" || item.code === "absent_component_prop") {
+    return { category: "react", actionable: true };
+  }
+  if (item.code === "unused_page_data_key") {
+    return { category: "next", actionable: true };
+  }
+  if (
+    item.code === "unused_enum_member" ||
+    item.code === "unused_class_member" ||
+    item.code === "unused_namespace_member"
+  ) {
+    return { category: "types", actionable: true };
   }
   if (item.code === "stale-build" || item.code === "build-failed" || item.code === "low-coverage") {
     return { category: "build-evidence", actionable: true };
