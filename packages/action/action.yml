@@ -28,4 +28,4 @@ outputs:
     description: "Number of receipts written"
 runs:
   using: "node24"
-  main: "src/main.ts"
+  main: "dist/main.cjs"

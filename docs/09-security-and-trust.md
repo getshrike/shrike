@@ -176,12 +176,15 @@ It does not cover the timestamp, the PR URL, or the human summary.
 
 ### 5.3 Signing
 
-Signing is a later feature (Q-005). When added:
+Receipt signing is a later feature (Q-005). When added:
 
 - Sigstore keyless signing by default;
 - the signature is stored beside the receipt;
 - verification is optional and documented;
 - unsigned receipts remain valid for local use.
+
+This is separate from release-artifact signing, which is implemented in the
+release workflow and covered in §6.
 
 ### 5.4 Tampering
 
@@ -194,13 +197,26 @@ check. A re-run produces a new receipt; it does not overwrite the old one.
 
 - Rust dependencies are pinned and audited with `cargo audit`.
 - Node dependencies are pinned with a lockfile and audited with `pnpm audit`.
-- Release binaries are built in CI, signed, and checksummed.
-- npm publishing uses provenance (`--provenance`).
-- The launcher verifies the engine binary checksum before spawning it.
+- The release workflow builds the engine for Linux x64/arm64, macOS x64/arm64,
+  and Windows x64, then stages each binary into its `getshrike-*` platform
+  package with a SHA-256 sidecar.
+- GitHub build-provenance attestations are created for the CLI tarball, every
+  platform tarball, and every standalone engine.
+- `SHA256SUMS` covers the release artifacts and is signed keylessly with
+  Sigstore/cosign using the workflow's GitHub OIDC identity. The signature
+  bundle is uploaded with the release.
+- npm publishing uses `--provenance` and publishes the exact tarballs that were
+  attested in the same workflow.
+- The launcher verifies the packaged engine binary against its sidecar before
+  every spawn and fails closed on a missing, malformed, or mismatched checksum.
 - No `postinstall` download of an unverified binary.
 - GitHub Actions are pinned by commit SHA, not a floating tag.
-- The release workflow has the minimum permissions and uses environments for
-  publishing secrets.
+- The release workflow has the minimum permissions and uses the `npm`
+  environment for publishing secrets and approval.
+
+The workflow is implemented and actionlint-clean. Its first real run is a
+release gate; until it runs, the signed artifacts do not yet exist in a public
+release.
 
 ---
 
@@ -284,9 +300,10 @@ reproducible local test or code review; release-only items are called out.
   `packages/receipts/test/render.test.mjs`.
 - [x] Fork PRs cannot run prune with write permissions.
   `packages/action/test/action.test.mjs` (`prune refuses a fork pull request`).
-- [ ] The launcher verifies the engine checksum. This is a release gate: it
-  depends on the signed platform packages in 6.7/5.10, which are blocked on
-  release infrastructure.
+- [x] The launcher verifies the engine checksum. Packaged binaries require a
+  valid `.sha256` sidecar and fail closed on a missing or mismatched digest.
+  Evidence: `packages/cli/test/engine.test.mjs` and `scripts/test-install.mjs`
+  (checksum mismatch and missing platform package both exit 4).
 - [x] Dependencies are audited locally and in CI.
   `pnpm audit --prod` reports no known vulnerabilities; `cargo audit` reports
   0 vulnerabilities across 108 dependencies and 1,550 advisories. The CI
@@ -306,7 +323,7 @@ reproducible local test or code review; release-only items are called out.
 
 | Q-044 | Is the config child process sandboxed beyond a timeout? | PLAN-0: no. It has a timeout and a safe environment, but it is not a network or filesystem sandbox; documented residual. |
 | Q-045 | Which secrets may a check declare? | PLAN-3: only values passed explicitly in `CheckSpec.env`; ambient `*_TOKEN`, `*_SECRET`, and `*_KEY` variables are not inherited. |
-| Q-046 | Is the engine binary reproducible? | PLAN-6: not yet proven. Deterministic output is tested; reproducible release builds and signing are release gates under 6.7. |
+| Q-046 | Is the engine binary reproducible? | PLAN-6: not yet proven. Deterministic output is tested; release artifacts are checksummed, attested, and keylessly signed, but byte-for-byte reproducible builds remain a 6.7 follow-up. |
 
 ---
 
@@ -330,8 +347,9 @@ review against the threat model above, not a third-party audit.
 - A malicious repository can run arbitrary code through its own declared checks.
   The controls are explicit consent, worktree isolation, safe environment, and
   no write token on forks; this is not a sandbox.
-- Release artifacts are not yet signed, checksummed, or provenance-attested.
-  That is 6.7, blocked on release infrastructure. The launcher checksum
-  verification is therefore a release gate, not a 1.0 local-code claim.
+- Release artifacts are signed, checksummed, and provenance-attested by the
+  release workflow, but the workflow has not produced a public release yet; the
+  first run is 6.10/6.11 and is blocked on npm credentials. The launcher
+  checksum verification is implemented and tested locally.
 - No external security review has been performed. The local review and tests are
-  the evidence available at this stage.
+  the evidence available at this stage; the independent audit is 6.7.

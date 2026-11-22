@@ -15,7 +15,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const action = join(root, "packages", "action", "src", "main.ts");
+const bundled = join(root, "packages", "action", "dist", "main.cjs");
+const action = existsSync(bundled) ? bundled : join(root, "packages", "action", "src", "main.ts");
 
 function scratch(name) {
   return mkdtempSync(join(tmpdir(), `shrike-action-${name}-`));

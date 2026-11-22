@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 
+import { resolveCli } from "./cli.ts";
 import { isForkPullRequest, writeOutput, writeSummary } from "./inputs.ts";
 
 export function runPrune(root: string, base: string): number {
@@ -7,7 +8,8 @@ export function runPrune(root: string, base: string): number {
     process.stderr.write("shrike: refusing prune on a fork pull request (write token is not trusted)\n");
     return 2;
   }
-  const result = spawnSync("shrike", ["prune", "--base", base, "--json", "--pr"], {
+  const cli = resolveCli(root);
+  const result = spawnSync(cli.command, [...cli.args, "prune", "--base", base, "--json", "--pr"], {
     cwd: root,
     encoding: "utf8",
   });

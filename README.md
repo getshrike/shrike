@@ -14,9 +14,11 @@ This repository contains the **design and working implementation** of Shrike
 1.0. The Rust engine, TypeScript host, CLI, verifier, receipts, hooks, GitHub
 Action, and MCP server are implemented. Phase 4 (Next.js build-graph evidence)
 includes JSONL streaming, route and byte attribution, server/client verdicts,
-build-edge feedback, and the fallback matrix. External launch items (design
-partners, npm publish, signed releases) are tracked as blocked in
-[`TRACKER.md`](TRACKER.md).
+build-edge feedback, and the fallback matrix. The npm package layout, native
+platform packages, checksums, attestations, and keyless release signing are
+implemented and locally gated. The first registry publish and the external
+launch items (design partners, independent audit) remain blocked on credentials
+and participants; see [`TRACKER.md`](TRACKER.md).
 
 ---
 
@@ -70,7 +72,9 @@ The wedge is not "we find dead code." It is:
 | Fixtures and corpus | 14 delta, 6 verification, 250 must-not-report entries |
 | Verified deletion | Implemented — `node scripts/e2e-prune.mjs` |
 | Build-graph evidence | Implemented — JSONL joins, routes, bytes, verdicts, fallbacks, build-edge feedback; 11 build-graph fixtures |
-| External launch | Blocked on partners and credentials — see [`TRACKER.md`](TRACKER.md) |
+| npm packaging | Implemented — `getshrike` tarball, five platform packages, checksum verification, clean-machine install test |
+| Release automation | Implemented — five-target build, SHA-256 sidecars, GitHub attestations, keyless Sigstore signing, npm provenance; first publish blocked on npm credentials |
+| External launch | Blocked on partners, an independent audit, and registry credentials — see [`TRACKER.md`](TRACKER.md) |
 
 The full status, decisions, metrics, and evidence log live in
 [`TRACKER.md`](TRACKER.md).
@@ -112,8 +116,9 @@ The full status, decisions, metrics, and evidence log live in
 ├── fixtures/                 # delta, verification, build, receipt, and corpus fixtures
 ├── benchmarks/               # deterministic 1k/10k benchmark generator and harness
 ├── crates/                   # Rust workspace: core, protocol, syntax, resolve, graph, delta, plan, evidence, receipt, engine
-├── packages/                 # TypeScript host: cli, verifier, receipts, agent, action, testkit
-└── scripts/                  # repository automation and contract gates
+├── packages/                 # TypeScript host: cli, verifier, receipts, agent, action, testkit, platform packages
+├── scripts/                  # repository automation and contract gates
+└── CHANGELOG.md              # release notes and the 1.0.0 change set
 ```
 
 The `crates/`, `packages/`, `fixtures/`, `benchmarks/`, and `scripts/` directories
@@ -122,6 +127,19 @@ contain working code and are exercised by `.github/workflows/ci.yml`.
 ---
 
 ## Quick start
+
+```bash
+# Install the published CLI (after the 1.0.0 registry release)
+npm install -D getshrike
+npx getshrike scan
+
+# Both bin names point at the same launcher
+npx shrike version --json
+```
+
+The npm package installs one optional platform package for the host and resolves
+the native engine from it. The first registry publish is still pending npm
+credentials; until then, build from source:
 
 ```bash
 # Build the Rust engine and install the workspace
@@ -240,12 +258,16 @@ These are targets, not results. Actuals are recorded in
 
 ---
 
-## Working name
+## Name and package
 
-`shrike` is the working name and the CLI binary. The npm package name and scope
-are still subject to registry availability; the local tarball gate is green.
-See [`PLAN-5`](plans/PLAN-5-distribution-and-launch.md). The Rust crates use the
-`shrike-` prefix.
+The product and CLI command are `shrike`. The unscoped npm package is
+`getshrike`, with the alias `getshrike` on the same launcher; the platform
+packages are `getshrike-linux-x64`, `getshrike-linux-arm64`,
+`getshrike-darwin-x64`, `getshrike-darwin-arm64`, and `getshrike-win32-x64`.
+The unscoped `shrike` name was already taken at `0.5.2`, so `getshrike` keeps
+the install path unscoped and the command unchanged. `getshrike.dev` is the
+project domain. The Rust crates use the `shrike-` prefix. The naming decision is
+recorded in [`docs/12-decision-log.md`](docs/12-decision-log.md) (D-053).
 
 ## License
 

@@ -16,16 +16,20 @@ function run(): number {
   const mode = input("mode", "delta");
   const maxItems = Number(input("max-items", "0"));
   const failOn = input("fail-on", "never");
-  if (mode === "prune") return runPrune(root, base);
-  if (mode !== "delta") {
+  if (mode !== "delta" && mode !== "prune") {
     process.stderr.write(`shrike: unknown mode ${mode}; expected delta or prune\n`);
     return 2;
   }
-  if (failOn !== "newly-dead" && failOn !== "never") {
+  if (mode === "delta" && failOn !== "newly-dead" && failOn !== "never") {
     process.stderr.write(`shrike: unknown fail-on ${failOn}; expected newly-dead or never\n`);
     return 2;
   }
-  return runDelta(root, base, maxItems, failOn);
+  try {
+    return mode === "prune" ? runPrune(root, base) : runDelta(root, base, maxItems, failOn);
+  } catch (error) {
+    process.stderr.write(`shrike: ${error instanceof Error ? error.message : String(error)}\n`);
+    return 4;
+  }
 }
 
 process.exit(run());

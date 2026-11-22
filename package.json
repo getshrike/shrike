@@ -10,7 +10,10 @@
   "scripts": {
     "build": "pnpm run build:engine && pnpm run build:ts",
     "build:engine": "cargo build --release -p shrike-engine",
-    "build:ts": "tsc -p packages/receipts/tsconfig.build.json && tsc -p packages/verifier/tsconfig.build.json && tsc -p packages/agent/tsconfig.build.json && tsc -p packages/testkit/tsconfig.build.json && tsc -p packages/cli/tsconfig.build.json",
+    "build:ts": "pnpm run build:types && pnpm run build:cli && pnpm run build:action",
+    "build:types": "tsc -p packages/receipts/tsconfig.build.json && tsc -p packages/verifier/tsconfig.build.json && tsc -p packages/agent/tsconfig.build.json && tsc -p packages/testkit/tsconfig.build.json",
+    "build:cli": "node scripts/build-cli.mjs",
+    "build:action": "node scripts/build-action.mjs",
     "typecheck": "tsc -b packages/cli packages/verifier packages/receipts packages/agent packages/testkit",
     "lint": "node scripts/lint.mjs",
     "test": "node scripts/test.mjs",
@@ -24,12 +27,17 @@
     "check:links": "node scripts/check-links.mjs",
     "check:docs": "node scripts/check-docs.mjs",
     "check:schemas": "node scripts/validate-schemas.mjs",
+    "check:package": "node scripts/check-package.mjs",
+    "test:install": "node scripts/test-install.mjs",
+    "version:set": "node scripts/set-version.mjs",
+    "release:notes": "node scripts/release-notes.mjs",
     "corpus": "node scripts/corpus-runner.mjs",
     "fixtures:delta": "node scripts/delta-fixtures.mjs",
     "fixtures:verify": "node scripts/verify-fixtures.mjs",
     "bench": "node benchmarks/harness.mjs"
   },
   "devDependencies": {
+    "esbuild": "^0.25.0",
     "typescript": "^5.9.3"
   }
 }

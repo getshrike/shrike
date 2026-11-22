@@ -1,0 +1,30 @@
+{
+  "name": "getshrike-darwin-x64",
+  "version": "1.0.0",
+  "description": "Native Shrike engine for macOS x64.",
+  "license": "MIT",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getshrike/shrike.git",
+    "directory": "packages/platform/darwin-x64"
+  },
+  "homepage": "https://getshrike.dev",
+  "bugs": {
+    "url": "https://github.com/getshrike/shrike/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

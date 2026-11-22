@@ -2,12 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,6 +33,28 @@ function run(cwd, args, env = {}) {
 
 function scratch(name) {
   return mkdtempSync(join(tmpdir(), `shrike-contract-${name}-`));
+}
+
+/**
+ * Copy the CLI source into an isolated tree.
+ *
+ * The repository workspace links `getshrike-linux-x64` into
+ * `packages/cli/node_modules`, so a source-tree run can always resolve a
+ * platform package. A published install has no such link. The isolated copy
+ * keeps the private `@shrike/*` links but deliberately omits the platform
+ * package, which is the shape the missing-engine test needs.
+ */
+function isolatedCli(directory) {
+  const copy = join(directory, "cli-copy");
+  mkdirSync(copy, { recursive: true });
+  cpSync(join(root, "packages", "cli", "src"), join(copy, "src"), { recursive: true });
+  cpSync(join(root, "packages", "cli", "package.json"), join(copy, "package.json"));
+  const scope = join(copy, "node_modules", "@shrike");
+  mkdirSync(scope, { recursive: true });
+  for (const name of ["agent", "receipts", "testkit", "verifier"]) {
+    symlinkSync(join(root, "packages", name), join(scope, name), "dir");
+  }
+  return join(copy, "src", "main.ts");
 }
 
 function write(cwd, path, content) {
@@ -259,7 +283,8 @@ test("a missing engine fails closed with exit 4", () => {
   try {
     const emptyPath = join(directory, "empty-bin");
     mkdirSync(emptyPath, { recursive: true });
-    const result = spawnSync(process.execPath, [cli, "scan", "--json"], {
+    const isolated = isolatedCli(directory);
+    const result = spawnSync(process.execPath, [isolated, "scan", "--json"], {
       cwd: directory,
       encoding: "utf8",
       env: { ...process.env, PATH: emptyPath, SHRIKE_ENGINE: join(directory, "absent-engine") },

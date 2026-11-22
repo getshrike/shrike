@@ -1,0 +1,30 @@
+{
+  "name": "getshrike-linux-x64",
+  "version": "1.0.0",
+  "description": "Native Shrike engine for Linux x64.",
+  "license": "MIT",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getshrike/shrike.git",
+    "directory": "packages/platform/linux-x64"
+  },
+  "homepage": "https://getshrike.dev",
+  "bugs": {
+    "url": "https://github.com/getshrike/shrike/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

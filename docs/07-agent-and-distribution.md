@@ -2,7 +2,7 @@
 
 > **Parent:** [MASTER_PROMPT.md](../MASTER_PROMPT.md) · **Tracker:** [TRACKER.md](../TRACKER.md)
 > **Status:** canonical · Authored 2026-11-20
-> **Implementation status (2026-11-20):** Claude Code, Cursor, and OpenCode hooks, the GitHub Action, the PR/receipt renderers, the four-tool read-only MCP server, and a read-only [design-partner kit](../design-partner/README.md) are implemented. The hook runs fast-tier checks against a reused baseline inside its budget; the Action supports `fail-on: newly-dead` and replaces/removes its delta artifact. npm publishing, signed releases, landing tests, and design-partner trials are blocked on credentials or participants. Local packaging checks verify the tarball contents; the publish dry run itself needs registry access.
+> **Implementation status (2026-11-23):** Claude Code, Cursor, and OpenCode hooks, the GitHub Action, the PR/receipt renderers, the four-tool read-only MCP server, the read-only [design-partner kit](../design-partner/README.md), and the npm release path are implemented. The hook runs fast-tier checks against a reused baseline inside its budget; the Action supports `fail-on: newly-dead`, resolves a project-local `getshrike` install, replaces/removes its delta artifact, and runs from a committed bundle. The `getshrike` tarball, five native platform packages, SHA-256 sidecars, GitHub attestations, keyless Sigstore signing, and npm provenance are implemented and locally gated. The first registry publish, a real test-repository Action run, landing tests, and design-partner trials are blocked on credentials or participants.
 
 ---
 
@@ -312,27 +312,36 @@ Exit codes are defined in [05-verified-deletion.md](05-verified-deletion.md) §5
 
 ```bash
 # npm (recommended)
-npm install -D shrike
-npx shrike scan
+npm install -D getshrike
+npx getshrike scan
+npx shrike scan        # alias for the same launcher
 
-# one-off
-npx shrike scan
-
-# standalone binary
-curl -fsSL https://shrike.dev/install.sh | sh
+# standalone binary from a GitHub release
+curl -fsSL https://getshrike.dev/install.sh | sh
 ```
 
-- The npm package ships a launcher and optional platform packages containing the
-  native engine.
+- The unscoped npm package is `getshrike`; the command remains `shrike`, and
+  the package also exposes a `getshrike` bin alias.
+- The package ships a small launcher and five optional platform packages
+  containing the native engine: `getshrike-linux-x64`,
+  `getshrike-linux-arm64`, `getshrike-darwin-x64`,
+  `getshrike-darwin-arm64`, and `getshrike-win32-x64`.
 - The launcher resolves `SHRIKE_ENGINE`, a repository `target/{release,debug}`
-  build, `PATH`, and the platform package, in that order; the packaged path
-  verifies a `.sha256` sidecar when one is present.
-- A missing platform package fails closed with a clear message and a link to the
-  standalone binary.
+  build, the installed platform package, then `PATH`. A packaged binary must
+  match its `.sha256` sidecar before it runs; a missing or mismatched sidecar
+  fails closed with exit 4. Repository builds and `SHRIKE_ENGINE` overrides
+  verify a sidecar only when one is present.
+- A missing platform package fails closed with a clear message that names the
+  expected package and the install command.
 - No postinstall script downloads an unverified binary.
-- Local dry-run: `npm pack --dry-run` in `packages/cli` must list the launcher,
-  README, license, and platform package metadata, and must not list source,
-  tests, or fixtures. The registry publish itself is a release gate.
+- `node scripts/check-package.mjs` packs the real tarballs with `pnpm pack` and
+  checks the manifest, file list, bundle boundary, platform metadata, and
+  `pnpm publish --dry-run`. `node scripts/test-install.mjs` installs the packed
+  tarballs into an empty project, runs both bins, runs a real scan, and asserts
+  the checksum-mismatch and missing-platform failure modes.
+- `scripts/stage-platform.mjs` copies a native binary into its platform package
+  with a SHA-256 sidecar, README, and license. The release workflow runs it for
+  each target and publishes from the exact attested tarballs.
 
 ---
 
@@ -376,10 +385,19 @@ These are measured in design-partner trials, not inferred from downloads.
 - [ ] The Action opens a draft PR on a test repository (release gate: needs an
       external test repository).
 - [x] The Action refuses `prune` on a fork.
+- [x] The Action resolves a project-local `getshrike` install, honors
+      `SHRIKE_CLI`, and falls back to `shrike` on `PATH`.
 - [x] The MCP server exposes exactly four read-only tools.
 - [x] The MCP server refuses paths outside the working directory.
 - [x] The design-partner kit runs read-only delta and plan, explains the trust
       boundary, and removes with one command.
-- [ ] The agent brief is capped and strips instruction-like comments.
-- [ ] The CLI exits 4, not 0, when the engine is missing.
-- [ ] `--json` output validates against the schemas.
+- [x] The agent brief is capped and strips instruction-like comments.
+- [x] The CLI exits 4, not 0, when the engine is missing.
+- [x] `--json` output validates against the schemas.
+- [x] The packed `getshrike` and platform tarballs install into an empty project
+      and both bins run a real scan.
+- [x] The launcher fails closed on a checksum mismatch or a missing platform
+      package.
+- [ ] The release workflow completes on a `v1.0.0` tag and publishes the five
+      platform packages plus `getshrike` with provenance (release gate: npm
+      credentials and environment approval).

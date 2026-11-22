@@ -1,74 +1,209 @@
 #!/usr/bin/env node
 /**
- * Local npm packaging gate.
+ * Packaging gate for the npm release.
  *
- * Verifies the CLI tarball contains the launcher, compiled host, README, and
- * license, and no source, tests, or fixtures. Registry publishing and signed
- * platform binaries remain release gates.
+ * Packs the real tarball with pnpm (which rewrites `workspace:*`), then checks
+ * the manifest, the file list, the bundle boundary, and a staged platform
+ * package. `--platform <name>` checks one native package instead of the CLI.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 
-const root = resolve(new URL("..", import.meta.url).pathname);
-const cli = join(root, "packages", "cli");
-const dist = join(cli, "dist", "main.js");
-
-if (!existsSync(dist)) {
-  console.error("FAIL package: packages/cli/dist/main.js is missing; run `pnpm run build:ts`");
-  process.exit(1);
-}
-
-const packed = spawnSync("npm", ["pack", "--dry-run", "--json"], {
-  cwd: cli,
-  encoding: "utf8",
-  maxBuffer: 32 * 1024 * 1024,
-});
-if (packed.status !== 0) {
-  console.error(`FAIL package: npm pack --dry-run exited ${packed.status}`);
-  console.error(packed.stderr.trim());
-  process.exit(1);
-}
-
-let result;
-try {
-  result = JSON.parse(packed.stdout)[0];
-} catch {
-  console.error("FAIL package: npm pack did not return JSON");
-  process.exit(1);
-}
-
-const paths = new Set((result.files ?? []).map((file) => file.path));
-const required = [
-  "bin/shrike.mjs",
-  "dist/main.js",
-  "dist/index.js",
-  "README.md",
-  "LICENSE",
-  "package.json",
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const PLATFORM_PACKAGES = [
+  "getshrike-linux-x64",
+  "getshrike-linux-arm64",
+  "getshrike-darwin-x64",
+  "getshrike-darwin-arm64",
+  "getshrike-win32-x64",
 ];
-const forbidden = [...paths].filter(
-  (path) =>
-    path.startsWith("src/") ||
-    path.startsWith("test/") ||
-    path.startsWith("fixtures/") ||
-    (path.endsWith(".ts") && !path.endsWith(".d.ts")),
-);
-const missing = required.filter((path) => !paths.has(path));
+const CLI_BUNDLES = new Set(["dist/main.js", "dist/index.js", "dist/config.js"]);
 
-const manifest = JSON.parse(readFileSync(join(cli, "package.json"), "utf8"));
-if (manifest.bin?.shrike !== "./bin/shrike.mjs") {
-  console.error("FAIL package: package.json bin does not point at bin/shrike.mjs");
+const { values } = parseArgs({ options: { platform: { type: "string" } } });
+
+function fail(message) {
+  console.error(`FAIL package: ${message}`);
   process.exit(1);
 }
 
-if (missing.length > 0 || forbidden.length > 0) {
-  if (missing.length > 0) console.error(`FAIL package: missing ${missing.join(", ")}`);
-  if (forbidden.length > 0) console.error(`FAIL package: forbidden files ${forbidden.join(", ")}`);
-  process.exit(1);
+function run(command, args, cwd) {
+  const result = spawnSync(command, args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (result.error) fail(`${command} could not run: ${result.error.message}`);
+  if (result.status !== 0) {
+    fail(`${command} ${args.join(" ")} exited ${result.status}\n${(result.stderr ?? "").trim()}`);
+  }
+  return result.stdout ?? "";
 }
 
-console.log(
-  `OK: shrike@${result.version} tarball ${result.filename} (${paths.size} files, ${result.size} bytes); ` +
-    "launcher, dist, README, and license present; no source/tests/fixtures",
-);
+function pack(directory) {
+  const destination = mkdtempSync(join(tmpdir(), "shrike-pack-"));
+  run("pnpm", ["pack", "--pack-destination", destination], directory);
+  const tarballs = readdirSync(destination).filter((name) => name.endsWith(".tgz"));
+  if (tarballs.length !== 1) fail(`expected one tarball in ${destination}, found ${tarballs.length}`);
+  return { tarball: join(destination, tarballs[0]), cleanup: () => rmSync(destination, { recursive: true, force: true }) };
+}
+
+function tarList(tarball) {
+  return run("tar", ["-tzf", tarball], root)
+    .split("\n")
+    .filter(Boolean)
+    .map((path) => path.replace(/^package\//, ""));
+}
+
+function tarRead(tarball, path) {
+  return run("tar", ["-xOzf", tarball, `package/${path}`], root);
+}
+
+function checkCommonFiles(paths, manifest) {
+  const forbidden = [...paths].filter(
+    (path) =>
+      path.startsWith("src/") ||
+      path.startsWith("test/") ||
+      path.startsWith("fixtures/") ||
+      path.startsWith("node_modules/") ||
+      (path.endsWith(".ts") && !path.endsWith(".d.ts")),
+  );
+  if (forbidden.length > 0) fail(`forbidden files: ${forbidden.join(", ")}`);
+  if (JSON.stringify(manifest).includes("workspace:")) {
+    fail("manifest still contains a workspace: protocol");
+  }
+}
+
+function checkPlatform(name) {
+  const expectedName = `getshrike-${name}`;
+  const directory = join(root, "packages", "platform", name);
+  const manifestPath = join(directory, "package.json");
+  if (!existsSync(manifestPath)) fail(`platform manifest not found: ${manifestPath}`);
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  if (manifest.name !== expectedName) {
+    fail(`${manifestPath} has name ${manifest.name}, expected ${expectedName}`);
+  }
+  const binaryName = manifest.os?.[0] === "win32" ? "shrike-engine.exe" : "shrike-engine";
+  const binary = join(directory, "bin", binaryName);
+  const sidecar = `${binary}.sha256`;
+  if (!existsSync(binary)) fail(`${name} is not staged: ${binary} is missing`);
+  if (!existsSync(sidecar)) fail(`${name} is not staged: ${sidecar} is missing`);
+  const expected = readFileSync(sidecar, "utf8").trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  if (!/^[0-9a-f]{64}$/.test(expected)) fail(`${name} has a malformed checksum sidecar`);
+  const actual = createHash("sha256").update(readFileSync(binary)).digest("hex");
+  if (actual !== expected) fail(`${name} checksum mismatch: expected ${expected}, got ${actual}`);
+
+  const packed = pack(directory);
+  try {
+    const paths = new Set(tarList(packed.tarball));
+    const packedManifest = JSON.parse(tarRead(packed.tarball, "package.json"));
+    const required = [
+      `bin/${binaryName}`,
+      `bin/${binaryName}.sha256`,
+      "README.md",
+      "LICENSE",
+      "package.json",
+    ];
+    const missing = required.filter((path) => !paths.has(path));
+    if (missing.length > 0) fail(`${expectedName} tarball is missing ${missing.join(", ")}`);
+    if (packedManifest.name !== expectedName) {
+      fail(`${expectedName} tarball has name ${packedManifest.name}`);
+    }
+    if (packedManifest.version !== manifest.version) {
+      fail(`${expectedName} tarball version ${packedManifest.version} does not match ${manifest.version}`);
+    }
+    if (packedManifest.os?.[0] !== manifest.os?.[0] || packedManifest.cpu?.[0] !== manifest.cpu?.[0]) {
+      fail(`${expectedName} tarball os/cpu does not match the source manifest`);
+    }
+    checkCommonFiles(paths, packedManifest);
+    console.log(
+      `OK: ${expectedName}@${packedManifest.version} tarball (${paths.size} files, ` +
+        `sha256 ${expected.slice(0, 12)}...); binary, sidecar, README, and license present`,
+    );
+  } finally {
+    packed.cleanup();
+  }
+}
+
+if (values.platform) {
+  checkPlatform(values.platform);
+  process.exit(0);
+}
+
+const cli = join(root, "packages", "cli");
+for (const path of ["dist/main.js", "dist/index.js", "dist/config.js", "dist/index.d.ts", "dist/config.d.ts"]) {
+  if (!existsSync(join(cli, path))) {
+    fail(`packages/cli/${path} is missing; run \`pnpm run build:ts\``);
+  }
+}
+
+const packed = pack(cli);
+try {
+  const paths = new Set(tarList(packed.tarball));
+  const manifest = JSON.parse(tarRead(packed.tarball, "package.json"));
+  const required = [
+    "bin/shrike.mjs",
+    "dist/main.js",
+    "dist/index.js",
+    "dist/config.js",
+    "dist/index.d.ts",
+    "dist/config.d.ts",
+    "README.md",
+    "LICENSE",
+    "package.json",
+  ];
+  const missing = required.filter((path) => !paths.has(path));
+  if (missing.length > 0) fail(`tarball is missing ${missing.join(", ")}`);
+
+  if (manifest.name !== "getshrike") fail(`package name is ${manifest.name}, expected getshrike`);
+  if (manifest.bin?.shrike !== "./bin/shrike.mjs" || manifest.bin?.getshrike !== "./bin/shrike.mjs") {
+    fail("package.json must expose both shrike and getshrike bins at ./bin/shrike.mjs");
+  }
+  if (manifest.dependencies && Object.keys(manifest.dependencies).length > 0) {
+    fail(`published package must not have runtime dependencies: ${Object.keys(manifest.dependencies).join(", ")}`);
+  }
+  const optional = manifest.optionalDependencies ?? {};
+  const missingPlatforms = PLATFORM_PACKAGES.filter((name) => optional[name] !== manifest.version);
+  if (missingPlatforms.length > 0) {
+    fail(
+      `optionalDependencies must pin ${PLATFORM_PACKAGES.join(", ")} to ${manifest.version}; ` +
+        `missing or mismatched: ${missingPlatforms.join(", ")}`,
+    );
+  }
+  if (manifest.engines?.node !== ">=22") fail(`engines.node is ${manifest.engines?.node}, expected >=22`);
+  if (manifest.publishConfig?.provenance !== true) fail("publishConfig.provenance must be true");
+
+  const unbundled = [...paths].filter(
+    (path) => path.startsWith("dist/") && path.endsWith(".js") && !CLI_BUNDLES.has(path),
+  );
+  if (unbundled.length > 0) fail(`unbundled JavaScript in dist: ${unbundled.join(", ")}`);
+
+  const main = tarRead(packed.tarball, "dist/main.js");
+  if (/(?:from\s*["']@shrike\/|import\(\s*["']@shrike\/|require\(\s*["']@shrike\/)/.test(main)) {
+    fail("dist/main.js still imports a private @shrike package");
+  }
+  if (!main.includes("getshrike-linux-x64")) fail("dist/main.js does not contain the platform package resolver");
+  for (const declaration of ["dist/index.d.ts", "dist/config.d.ts"]) {
+    const text = tarRead(packed.tarball, declaration);
+    if (/@shrike\//.test(text)) fail(`${declaration} references a private @shrike package`);
+  }
+
+  checkCommonFiles(paths, manifest);
+
+  const dryRun = spawnSync("pnpm", ["publish", "--dry-run", "--no-git-checks"], {
+    cwd: cli,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (dryRun.status !== 0) {
+    fail(`pnpm publish --dry-run exited ${dryRun.status}\n${(dryRun.stderr ?? "").trim()}`);
+  }
+
+  console.log(
+    `OK: getshrike@${manifest.version} tarball (${paths.size} files); launcher, bundles, types, README, ` +
+      `license, and five platform optional dependencies present; no source/tests/fixtures; ` +
+      "pnpm publish --dry-run succeeded",
+  );
+} finally {
+  packed.cleanup();
+}
