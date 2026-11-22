@@ -50,7 +50,7 @@ const manifest = {
     "getshrike-linux-arm64": values.version,
     "getshrike-darwin-x64": values.version,
     "getshrike-darwin-arm64": values.version,
-    "getshrike-win32-x64": values.version,
+    "getshrike-windows-x64": values.version,
   },
   artifacts,
 };

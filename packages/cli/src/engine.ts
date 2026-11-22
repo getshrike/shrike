@@ -41,7 +41,7 @@ const PLATFORM_PACKAGES: Record<string, string> = {
   "linux-arm64": "getshrike-linux-arm64",
   "darwin-x64": "getshrike-darwin-x64",
   "darwin-arm64": "getshrike-darwin-arm64",
-  "win32-x64": "getshrike-win32-x64",
+  "win32-x64": "getshrike-windows-x64",
 };
 
 function errorMessage(error: unknown): string {

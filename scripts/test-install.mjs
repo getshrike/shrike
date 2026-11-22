@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const platform = `${process.platform}-${process.arch}`;
 const SUPPORTED = new Set(["linux-x64", "linux-arm64", "darwin-x64", "darwin-arm64", "win32-x64"]);
+const PACKAGE_NAMES = { "win32-x64": "getshrike-windows-x64" };
 if (!SUPPORTED.has(platform)) {
   console.log(`SKIP install test: unsupported host platform ${platform}`);
   process.exit(0);
@@ -31,6 +32,7 @@ if (!SUPPORTED.has(platform)) {
 
 const cli = join(root, "packages", "cli");
 const platformDir = join(root, "packages", "platform", platform);
+const packageName = PACKAGE_NAMES[platform] ?? `getshrike-${platform}`;
 const engineName = process.platform === "win32" ? "shrike-engine.exe" : "shrike-engine";
 const version = JSON.parse(readFileSync(join(cli, "package.json"), "utf8")).version;
 
@@ -148,14 +150,14 @@ try {
     fail("scan did not return JSON", scan.stdout);
   }
 
-  const sidecar = join(temp, "node_modules", `getshrike-${platform}`, "bin", `${engineName}.sha256`);
+  const sidecar = join(temp, "node_modules", packageName, "bin", `${engineName}.sha256`);
   const originalSidecar = readFileSync(sidecar, "utf8");
   writeFileSync(sidecar, `${"0".repeat(64)}  ${engineName}\n`);
   const mismatch = expectFailure("checksum mismatch", ["scan", "--json"]);
   if (!/checksum mismatch/.test(mismatch)) fail("checksum mismatch did not name the failure", mismatch);
   writeFileSync(sidecar, originalSidecar);
 
-  const platformInstall = join(temp, "node_modules", `getshrike-${platform}`);
+  const platformInstall = join(temp, "node_modules", packageName);
   renameSync(platformInstall, `${platformInstall}.bak`);
   const missing = expectFailure("missing platform package", ["scan", "--json"]);
   if (!/was not found|not installed/.test(missing)) fail("missing platform package did not explain the failure", missing);

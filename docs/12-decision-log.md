@@ -2343,7 +2343,8 @@ workload the suite does not cover.
 **Decision:** Publish the CLI as the unscoped npm package `getshrike`, expose
 both `shrike` and `getshrike` bins from the same launcher, and publish five
 unscoped platform packages: `getshrike-linux-x64`, `getshrike-linux-arm64`,
-`getshrike-darwin-x64`, `getshrike-darwin-arm64`, and `getshrike-win32-x64`.
+`getshrike-darwin-x64`, `getshrike-darwin-arm64`, and
+`getshrike-windows-x64`.
 The product name and CLI command remain `shrike`. The GitHub organization and
 repository are `getshrike/shrike`, and `getshrike.dev` is the project domain.
 
@@ -2379,6 +2380,12 @@ keeps the command unchanged, and leaves the native package names predictable.
   from `marrrkkk/shrike` needs the organization to exist first, and GitHub.com
   only creates organizations in the web UI.
 - The unrelated `shrike` npm package must never be used or depended on.
+
+**Registry note (2026-11-23):** npm's spam filter rejected
+`getshrike-win32-x64` with HTTP 403 on two publish attempts, while the other
+four platform names published normally. The Windows package is therefore
+`getshrike-windows-x64`; the platform key and the manifest's `os` field remain
+`win32`, and the CLI maps `win32-x64` to the published name.
 
 **Revisit if:** npm ownership changes, the `getshrike` name is challenged, or a
 future distribution channel makes the package name less important than the

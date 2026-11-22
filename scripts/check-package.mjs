@@ -20,8 +20,9 @@ const PLATFORM_PACKAGES = [
   "getshrike-linux-arm64",
   "getshrike-darwin-x64",
   "getshrike-darwin-arm64",
-  "getshrike-win32-x64",
+  "getshrike-windows-x64",
 ];
+const PLATFORM_NAMES = { "win32-x64": "getshrike-windows-x64" };
 const CLI_BUNDLES = new Set(["dist/main.js", "dist/index.js", "dist/config.js"]);
 
 const { values } = parseArgs({ options: { platform: { type: "string" } } });
@@ -75,7 +76,7 @@ function checkCommonFiles(paths, manifest) {
 }
 
 function checkPlatform(name) {
-  const expectedName = `getshrike-${name}`;
+  const expectedName = PLATFORM_NAMES[name] ?? `getshrike-${name}`;
   const directory = join(root, "packages", "platform", name);
   const manifestPath = join(directory, "package.json");
   if (!existsSync(manifestPath)) fail(`platform manifest not found: ${manifestPath}`);

@@ -224,7 +224,7 @@ importers:
       getshrike-linux-x64:
         specifier: workspace:*
         version: link:../platform/linux-x64
-      getshrike-win32-x64:
+      getshrike-windows-x64:
         specifier: workspace:*
         version: link:../platform/win32-x64
 

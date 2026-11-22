@@ -325,7 +325,7 @@ curl -fsSL https://getshrike.dev/install.sh | sh
 - The package ships a small launcher and five optional platform packages
   containing the native engine: `getshrike-linux-x64`,
   `getshrike-linux-arm64`, `getshrike-darwin-x64`,
-  `getshrike-darwin-arm64`, and `getshrike-win32-x64`.
+  `getshrike-darwin-arm64`, and `getshrike-windows-x64`.
 - The launcher resolves `SHRIKE_ENGINE`, a repository `target/{release,debug}`
   build, the installed platform package, then `PATH`. A packaged binary must
   match its `.sha256` sidecar before it runs; a missing or mismatched sidecar

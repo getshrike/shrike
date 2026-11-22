@@ -263,7 +263,7 @@ These are targets, not results. Actuals are recorded in
 The product and CLI command are `shrike`. The unscoped npm package is
 `getshrike`, with the alias `getshrike` on the same launcher; the platform
 packages are `getshrike-linux-x64`, `getshrike-linux-arm64`,
-`getshrike-darwin-x64`, `getshrike-darwin-arm64`, and `getshrike-win32-x64`.
+`getshrike-darwin-x64`, `getshrike-darwin-arm64`, and `getshrike-windows-x64`.
 The unscoped `shrike` name was already taken at `0.5.2`, so `getshrike` keeps
 the install path unscoped and the command unchanged. `getshrike.dev` is the
 project domain. The Rust crates use the `shrike-` prefix. The naming decision is
