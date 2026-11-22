@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
+use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use shrike_core::glob::is_included;
 use shrike_core::{EngineConfig, content_hash};
 use shrike_syntax::{FileSummary, parse_source};
@@ -58,6 +59,112 @@ pub struct Discovery {
     pub cache_inputs: Vec<String>,
 }
 
+/// Precompiled include/ignore matcher for the repository walk.
+///
+/// `is_included` is a small allocation-heavy glob matcher. The walk calls it
+/// for every file, so compiling the configured patterns once is the difference
+/// between a few thousand dynamic-programming allocations and one globset.
+/// Patterns that globset cannot compile fall back to the reference matcher so
+/// config errors keep their previous behavior.
+struct PathFilter<'a> {
+    include: Option<GlobSet>,
+    ignore: GlobSet,
+    include_empty: bool,
+    fallback: bool,
+    include_patterns: &'a [String],
+    ignore_patterns: &'a [String],
+}
+
+/// Whether the reference matcher and globset agree on this pattern.
+///
+/// globset adds alternates (`{a,b}`), character classes (`[ab]`), and
+/// backslash escapes. The reference matcher treats all of those literally, so
+/// patterns using them must keep going through the reference implementation.
+/// Empty path segments are collapsed because the reference matcher filters
+/// them out.
+fn normalize_glob(pattern: &str) -> Option<String> {
+    let pattern = pattern.trim();
+    let pattern = pattern.strip_prefix("./").unwrap_or(pattern);
+    let pattern = pattern.strip_suffix('/').unwrap_or(pattern);
+    // globset's `?` matches one byte; the reference matcher matches one
+    // character. Keep non-ASCII patterns on the reference path.
+    if !pattern.is_ascii()
+        || pattern
+            .chars()
+            .any(|ch| matches!(ch, '[' | ']' | '{' | '}' | '\\'))
+    {
+        return None;
+    }
+    let segments: Vec<&str> = pattern.split('/').filter(|s| !s.is_empty()).collect();
+    Some(segments.join("/"))
+}
+
+impl<'a> PathFilter<'a> {
+    fn new(include: &'a [String], ignore: &'a [String]) -> Self {
+        let compile = |patterns: &[String]| -> Option<GlobSet> {
+            let mut builder = GlobSetBuilder::new();
+            for pattern in patterns {
+                let normalized = normalize_glob(pattern)?;
+                builder.add(
+                    GlobBuilder::new(&normalized)
+                        .literal_separator(true)
+                        .build()
+                        .ok()?,
+                );
+                // The reference matcher treats a trailing `/**` as zero or
+                // more segments, so `src/**` matches `src`. globset requires
+                // the separator; add the zero-segment form explicitly.
+                if let Some(prefix) = normalized.strip_suffix("/**") {
+                    if !prefix.is_empty() {
+                        builder.add(
+                            GlobBuilder::new(prefix)
+                                .literal_separator(true)
+                                .build()
+                                .ok()?,
+                        );
+                    }
+                }
+            }
+            builder.build().ok()
+        };
+        let include_set = compile(include);
+        let ignore_set = compile(ignore);
+        let fallback = include_set.is_none() || ignore_set.is_none();
+        Self {
+            include: include_set,
+            ignore: ignore_set.unwrap_or_else(GlobSet::empty),
+            include_empty: include.is_empty(),
+            fallback,
+            include_patterns: include,
+            ignore_patterns: ignore,
+        }
+    }
+
+    fn ignored(&self, path: &str) -> bool {
+        if self.fallback || !path.is_ascii() {
+            return self
+                .ignore_patterns
+                .iter()
+                .any(|pattern| shrike_core::glob::glob_match(pattern, path));
+        }
+        self.ignore.is_match(path)
+    }
+
+    fn included(&self, path: &str) -> bool {
+        if self.fallback || !path.is_ascii() {
+            return is_included(path, self.include_patterns, self.ignore_patterns);
+        }
+        if self.ignored(path) {
+            return false;
+        }
+        self.include_empty
+            || self
+                .include
+                .as_ref()
+                .is_some_and(|patterns| patterns.is_match(path))
+    }
+}
+
 /// Walk the configured include set. Deterministic order, ignores honoured.
 ///
 /// `.gitignore` is authoritative for generated output. A repository may put
@@ -109,6 +216,7 @@ pub fn discover(root: &Path, config: &EngineConfig) -> Discovery {
     let mut cache_inputs = Vec::new();
     let mut next_configs = Vec::new();
     let mut markdown = Vec::new();
+    let filter = PathFilter::new(&config.include, &config.ignore);
     for entry in builder.build().flatten() {
         let Ok(relative) = entry.path().strip_prefix(root) else {
             continue;
@@ -120,7 +228,7 @@ pub fn discover(root: &Path, config: &EngineConfig) -> Discovery {
         if !entry.file_type().is_some_and(|kind| kind.is_file()) {
             continue;
         }
-        if !is_included(&relative, &[], &config.ignore) {
+        if filter.ignored(&relative) {
             continue;
         }
         if next_config::is_config_path(&relative) {
@@ -143,7 +251,7 @@ pub fn discover(root: &Path, config: &EngineConfig) -> Discovery {
         if markdown_file {
             markdown.push(relative.clone());
         }
-        if is_included(&relative, &config.include, &config.ignore) {
+        if filter.included(&relative) {
             files.push(relative);
         }
     }
@@ -243,6 +351,63 @@ mod tests {
             fs::create_dir_all(parent).expect("create parent");
         }
         fs::write(full, content).expect("write fixture");
+    }
+
+    #[test]
+    fn path_filter_matches_reference_matcher() {
+        let paths = [
+            "a.ts",
+            "src/a.ts",
+            "src/nested/deep/a.tsx",
+            "src/generated/a.ts",
+            "apps/web/src/a.ts",
+            "node_modules/pkg/index.js",
+            "src/.hidden/a.ts",
+            "src/a b.ts",
+            "src/ü.ts",
+            "src/a//b.ts",
+            "src",
+            "",
+        ];
+        let cases: &[(&[&str], &[&str])] = &[
+            (&[], &[]),
+            (&["src/**"], &[]),
+            (&["**/*.ts"], &[]),
+            (&["*.ts"], &[]),
+            (&["src/?.ts"], &[]),
+            (&["src/*"], &["src/generated/**"]),
+            (&[], &["node_modules/**", "**/generated/**"]),
+            (&["src/**", "apps/**"], &["**/generated/**"]),
+            (&["src/**"], &["src/"]),
+            (&["src/**/a.ts"], &[]),
+            (&["**/a.ts"], &[]),
+            (&["**"], &[]),
+            (&["**/src/**"], &[]),
+            (&["./src/**"], &[]),
+            (&["/src/**"], &[]),
+            (&["src/{a,b}.ts"], &[]),
+            (&["src/[ab].ts"], &[]),
+            (&["src/a\\*.ts"], &[]),
+        ];
+        for (include, ignore) in cases {
+            let include: Vec<String> = include.iter().map(|s| (*s).to_string()).collect();
+            let ignore: Vec<String> = ignore.iter().map(|s| (*s).to_string()).collect();
+            let filter = PathFilter::new(&include, &ignore);
+            for path in paths {
+                assert_eq!(
+                    filter.ignored(path),
+                    ignore
+                        .iter()
+                        .any(|pattern| shrike_core::glob::glob_match(pattern, path)),
+                    "ignored mismatch: include={include:?} ignore={ignore:?} path={path:?}"
+                );
+                assert_eq!(
+                    filter.included(path),
+                    is_included(path, &include, &ignore),
+                    "included mismatch: include={include:?} ignore={ignore:?} path={path:?}"
+                );
+            }
+        }
     }
 
     #[test]

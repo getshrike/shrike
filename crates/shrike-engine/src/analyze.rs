@@ -6,12 +6,28 @@ use std::time::UNIX_EPOCH;
 use rayon::prelude::*;
 use shrike_core::{SNAPSHOT_SCHEMA_VERSION, ShrikeError, ShrikeResult, hash_bytes};
 
-use crate::cache::{load_manifest, snapshot_cache_key, write_cache, write_manifest};
+use crate::cache::{load_manifest, snapshot_cache_key, write_cache_bytes, write_manifest};
 use crate::payloads::{AnalyzePayload, CacheManifest, ManifestEntry};
 
-pub(crate) fn analyze_payload(
-    payload: &AnalyzePayload,
-) -> ShrikeResult<shrike_graph::GraphSnapshot> {
+/// A built snapshot plus its canonical JSON. The JSON is produced once and
+/// reused for the cache file and the protocol response; serializing a
+/// repository-sized snapshot is expensive enough to matter on every scan.
+pub(crate) struct Analyzed {
+    pub(crate) snapshot: shrike_graph::GraphSnapshot,
+    pub(crate) snapshot_json: String,
+}
+
+impl Analyzed {
+    fn new(snapshot: shrike_graph::GraphSnapshot) -> Self {
+        let snapshot_json = shrike_graph::snapshot_json(&snapshot);
+        Self {
+            snapshot,
+            snapshot_json,
+        }
+    }
+}
+
+pub(crate) fn analyze_payload(payload: &AnalyzePayload) -> ShrikeResult<Analyzed> {
     let timing = std::env::var_os("SHRIKE_TIMING").is_some();
     let started = std::time::Instant::now();
     payload.config.validate().map_err(ShrikeError::Config)?;
@@ -108,7 +124,9 @@ pub(crate) fn analyze_payload(
         .join("snapshots")
         .join(format!("{}.json", cache_key.trim_start_matches("blake3:")));
     if let Ok(bytes) = fs::read(&cache_path) {
+        let cache_read = started.elapsed();
         if let Ok(snapshot) = serde_json::from_slice::<shrike_graph::GraphSnapshot>(&bytes) {
+            let cache_parsed = started.elapsed();
             if snapshot.schema_version == SNAPSHOT_SCHEMA_VERSION {
                 let _ = write_manifest(
                     &manifest_path,
@@ -119,13 +137,22 @@ pub(crate) fn analyze_payload(
                 );
                 if timing {
                     eprintln!(
-                        "shrike timing: discover={}ms scan={}ms cache=hit total={}ms",
+                        "shrike timing: discover={}ms scan={}ms cache_read={}ms cache_parse={}ms cache=hit total={}ms",
                         discovered.as_millis(),
                         (scanned - discovered).as_millis(),
+                        (cache_read - discovered).as_millis(),
+                        (cache_parsed - cache_read).as_millis(),
                         started.elapsed().as_millis()
                     );
                 }
-                return Ok(snapshot);
+                // The cache file is canonical snapshot JSON. Reuse it for the
+                // response instead of re-serializing the snapshot.
+                let snapshot_json = String::from_utf8(bytes)
+                    .map_err(|error| ShrikeError::Protocol(error.to_string()))?;
+                return Ok(Analyzed {
+                    snapshot,
+                    snapshot_json,
+                });
             }
         }
     }
@@ -148,8 +175,9 @@ pub(crate) fn analyze_payload(
     let parsed = started.elapsed();
     let snapshot = shrike_graph::build_snapshot_with_resolver(summaries, &payload.config, resolver);
     let built = started.elapsed();
+    let analyzed = Analyzed::new(snapshot);
     // Cache is an optimization. A read-only checkout still analyzes.
-    let _ = write_cache(&cache_path, &snapshot);
+    let _ = write_cache_bytes(&cache_path, analyzed.snapshot_json.as_bytes());
     let _ = write_manifest(
         &manifest_path,
         &CacheManifest {
@@ -169,5 +197,5 @@ pub(crate) fn analyze_payload(
             started.elapsed().as_millis()
         );
     }
-    Ok(snapshot)
+    Ok(analyzed)
 }

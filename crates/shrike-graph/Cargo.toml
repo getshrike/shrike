@@ -13,6 +13,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 blake3 = { workspace = true }
 ignore = { workspace = true }
+rayon = { workspace = true }
 globset = { workspace = true }
 oxc_allocator = { workspace = true }
 oxc_ast = { workspace = true }

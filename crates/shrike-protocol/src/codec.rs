@@ -1,3 +1,6 @@
+use serde::Serialize;
+use shrike_core::PROTOCOL_VERSION;
+
 use crate::types::{ProtocolError, Request, Response};
 
 /// Encode one response as a single line, including the trailing newline.
@@ -8,6 +11,36 @@ use crate::types::{ProtocolError, Request, Response};
 #[must_use]
 pub fn encode_line(response: &Response) -> String {
     let mut line = serde_json::to_string(response).expect("protocol response is serializable");
+    line.push('\n');
+    line
+}
+
+/// Encode a success response without materializing the result as a
+/// `serde_json::Value`. The envelope is byte-for-byte the same shape as
+/// [`encode_line`] on an equivalent [`Response`].
+///
+/// # Panics
+/// Panics only if a `Serialize` implementation is broken.
+#[must_use]
+pub fn encode_success_line<T: Serialize>(id: &str, result: &T) -> String {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Success<'a, T: Serialize> {
+        protocol_version: &'static str,
+        id: &'a str,
+        ok: bool,
+        result: &'a T,
+        error: Option<&'a ProtocolError>,
+    }
+
+    let mut line = serde_json::to_string(&Success {
+        protocol_version: PROTOCOL_VERSION,
+        id,
+        ok: true,
+        result,
+        error: None,
+    })
+    .expect("protocol response is serializable");
     line.push('\n');
     line
 }

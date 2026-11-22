@@ -9,14 +9,21 @@ use shrike_core::{Diagnostic, LineIndex, content_hash};
 
 use crate::summary::{FileSummary, ModuleRefs, ParseStatus};
 
+mod assertion_uses;
+mod classes;
 mod collector;
+mod component_loader;
+mod component_props;
 mod declarations;
+mod enums;
 mod html;
 mod mdx;
+mod namespaces;
 mod next_dynamic;
 mod next_segment;
 mod pages_router;
 mod refs;
+mod returned_imports;
 mod server_actions;
 mod statements;
 mod type_refs;
@@ -99,7 +106,19 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
                 default_export_local: None,
                 default_export_has_get_initial_props: false,
                 pages_config_runtime: None,
+                unused_page_data_keys: Vec::new(),
                 misplaced_directives: Vec::new(),
+                component_props: Vec::new(),
+                component_contracts: Vec::new(),
+                jsx_uses: Vec::new(),
+                jsx_namespace_uses: Vec::new(),
+                component_value_uses: Vec::new(),
+                enums: Vec::new(),
+                classes: Vec::new(),
+                class_bindings: Vec::new(),
+                class_value_escapes: Vec::new(),
+                namespaces: Vec::new(),
+                namespace_member_uses: Vec::new(),
                 imports: Vec::new(),
                 declarations: Vec::new(),
                 local_exports: Vec::new(),
@@ -142,7 +161,19 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
             default_export_local: None,
             default_export_has_get_initial_props: false,
             pages_config_runtime: None,
+            unused_page_data_keys: Vec::new(),
             misplaced_directives: Vec::new(),
+            component_props: Vec::new(),
+            component_contracts: Vec::new(),
+            jsx_uses: Vec::new(),
+            jsx_namespace_uses: Vec::new(),
+            component_value_uses: Vec::new(),
+            enums: Vec::new(),
+            classes: Vec::new(),
+            class_bindings: Vec::new(),
+            class_value_escapes: Vec::new(),
+            namespaces: Vec::new(),
+            namespace_member_uses: Vec::new(),
             imports: Vec::new(),
             declarations: Vec::new(),
             local_exports: Vec::new(),
@@ -183,7 +214,19 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
         default_export_local: None,
         default_export_has_get_initial_props: false,
         pages_config_runtime: None,
+        unused_page_data_keys: Vec::new(),
         misplaced_directives: Vec::new(),
+        component_props: Vec::new(),
+        component_contracts: Vec::new(),
+        jsx_uses: Vec::new(),
+        jsx_namespace_uses: Vec::new(),
+        component_value_uses: Vec::new(),
+        enums: Vec::new(),
+        classes: Vec::new(),
+        class_bindings: Vec::new(),
+        class_value_escapes: Vec::new(),
+        namespaces: Vec::new(),
+        namespace_member_uses: Vec::new(),
         imports: Vec::new(),
         declarations: Vec::new(),
         local_exports: Vec::new(),
@@ -216,16 +259,45 @@ pub fn parse_source(path: &str, source: &str) -> FileSummary {
     summary.default_export_has_get_initial_props =
         pages_router.default_export_has_get_initial_props;
     summary.pages_config_runtime = pages_router.pages_config_runtime;
+    summary.unused_page_data_keys = pages_router.unused_page_data_keys;
     summary.client_only_dynamic_specifiers =
         next_dynamic::client_only_dynamic_specifiers(&program, &summary.imports);
     next_dynamic::assign_dynamic_spans(&program, source, &line_index, &mut summary);
+    component_loader::narrow_component_loader_imports(&program, &mut summary);
+    returned_imports::narrow_returned_dynamic_imports(&program, source, &line_index, &mut summary);
 
     let type_refs = type_refs::collect(&program, source);
     summary.type_refs = type_refs.modules;
     summary.type_imports = type_refs.imports;
     refs::narrow_dynamic_bindings(&mut summary);
+    assertion_uses::narrow_assertion_bindings(&program, &mut summary);
     refs::mark_local_exports(&mut summary);
     refs::finalize_refs(&mut summary);
+    summary.component_props = component_props::collect(&program, source, &line_index, &summary);
+    summary.component_contracts =
+        component_props::collect_contracts(&program, source, &line_index, &summary);
+    let (jsx_uses, jsx_namespace_uses, component_value_uses) =
+        component_props::collect_jsx_uses(&program, source, &line_index);
+    summary.jsx_uses = jsx_uses;
+    summary.jsx_namespace_uses = jsx_namespace_uses;
+    summary.component_value_uses = component_value_uses;
+    summary.enums = enums::collect(&program, source, &line_index);
+    let namespaces = namespaces::collect(&program, source, &line_index);
+    summary.namespaces = namespaces.records;
+    summary.namespace_member_uses = namespaces.member_uses;
+    let classes = classes::collect(&program, source, &line_index, &summary);
+    summary.classes = classes.classes;
+    summary.class_bindings = classes.bindings;
+    summary.class_value_escapes = classes.value_escapes;
+    summary.module_refs.members.extend(classes.member_accesses);
+    summary.module_refs.members.sort_by(|a, b| {
+        a.object
+            .cmp(&b.object)
+            .then_with(|| a.property.cmp(&b.property))
+            .then_with(|| a.computed.cmp(&b.computed))
+            .then_with(|| a.instance.cmp(&b.instance))
+    });
+    summary.module_refs.members.dedup();
     summary
 }
 
