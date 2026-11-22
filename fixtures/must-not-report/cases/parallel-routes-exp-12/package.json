@@ -1,0 +1,8 @@
+{
+  "name": "corpus-parallel-routes-exp-12",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "next": "^16.0.0"
+  }
+}

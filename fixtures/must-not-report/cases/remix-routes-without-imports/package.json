@@ -1,0 +1,10 @@
+{
+  "name": "corpus-remix-routes-without-imports",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@remix-run/node": "^2.15.0",
+    "@remix-run/react": "^2.15.0",
+    "react": "^18.3.0"
+  }
+}

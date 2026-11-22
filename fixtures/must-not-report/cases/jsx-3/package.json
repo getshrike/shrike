@@ -1,0 +1,8 @@
+{
+  "name": "corpus-jsx-3",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "next": "^16.0.0"
+  }
+}

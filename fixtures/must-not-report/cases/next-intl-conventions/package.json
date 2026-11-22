@@ -1,0 +1,9 @@
+{
+  "name": "corpus-next-intl-conventions",
+  "private": true,
+  "dependencies": {
+    "next": "^16.4.0",
+    "next-intl": "^4.0.0",
+    "react": "^19.0.0"
+  }
+}

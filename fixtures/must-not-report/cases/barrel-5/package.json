@@ -1,0 +1,8 @@
+{
+  "name": "corpus-barrel-5",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "next": "^16.0.0"
+  }
+}

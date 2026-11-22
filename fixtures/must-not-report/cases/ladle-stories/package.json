@@ -1,0 +1,9 @@
+{
+  "name": "ladle-stories",
+  "private": true,
+  "dependencies": {
+    "@ladle/react": "^4.1.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0",
+  "id": "dynamic",
+  "dirty": false,
+  "config": {},
+  "expected": {
+    "newlyDead": [
+      "lib/feature.ts#feature"
+    ],
+    "newlyDeadFiles": [
+      "lib/feature.ts"
+    ],
+    "triggerKinds": {
+      "lib/feature.ts#feature": "changed-dynamic"
+    }
+  },
+  "notes": ""
+}

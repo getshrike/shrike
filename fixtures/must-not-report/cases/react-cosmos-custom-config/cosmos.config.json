@@ -1,0 +1,5 @@
+{
+  "fixturesDir": "src/examples",
+  "fixtureFileSuffix": "example",
+  "ignore": ["**/*.skip.*"]
+}

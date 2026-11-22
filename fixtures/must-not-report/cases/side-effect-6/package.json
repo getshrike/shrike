@@ -1,0 +1,8 @@
+{
+  "name": "corpus-side-effect-6",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "next": "^16.0.0"
+  }
+}

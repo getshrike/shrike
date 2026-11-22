@@ -1,0 +1,12 @@
+{
+  "name": "corpus-storybook-custom-stories",
+  "private": true,
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "storybook": "^8.6.0",
+    "@storybook/react-vite": "^8.6.0"
+  }
+}

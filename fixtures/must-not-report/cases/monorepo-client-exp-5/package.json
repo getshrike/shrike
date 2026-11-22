@@ -1,0 +1,9 @@
+{
+  "name": "corpus-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}

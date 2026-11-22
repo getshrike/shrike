@@ -1,0 +1,8 @@
+{
+  "name": "corpus-unreferenced-scripts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsx scripts/used-by-package.ts"
+  }
+}

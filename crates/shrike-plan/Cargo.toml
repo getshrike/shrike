@@ -1,0 +1,16 @@
+[package]
+name = "shrike-plan"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+shrike-core = { workspace = true }
+shrike-graph = { workspace = true }
+shrike-delta = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

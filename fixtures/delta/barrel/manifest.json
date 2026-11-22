@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0",
+  "id": "barrel",
+  "dirty": false,
+  "config": {},
+  "expected": {
+    "newlyDead": [
+      "lib/barrel.ts#impl",
+      "lib/impl.ts#impl"
+    ],
+    "newlyDeadFiles": [
+      "lib/barrel.ts",
+      "lib/impl.ts"
+    ],
+    "triggerKinds": {
+      "lib/barrel.ts#impl": "removed-import",
+      "lib/impl.ts#impl": "removed-import"
+    },
+    "triggerFiles": {
+      "lib/barrel.ts#impl": "app/page.tsx",
+      "lib/impl.ts#impl": "app/page.tsx"
+    }
+  },
+  "notes": ""
+}

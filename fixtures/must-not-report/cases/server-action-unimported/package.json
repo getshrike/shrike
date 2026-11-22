@@ -1,0 +1,8 @@
+{
+  "name": "corpus-server-action-unimported",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "next": "^16.0.0"
+  }
+}

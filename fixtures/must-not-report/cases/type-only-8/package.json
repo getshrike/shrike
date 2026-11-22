@@ -1,0 +1,8 @@
+{
+  "name": "corpus-type-only-8",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "next": "^16.0.0"
+  }
+}

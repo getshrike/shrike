@@ -1,0 +1,52 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+default-members = [
+  "crates/shrike-core",
+  "crates/shrike-protocol",
+  "crates/shrike-syntax",
+  "crates/shrike-resolve",
+  "crates/shrike-graph",
+  "crates/shrike-delta",
+  "crates/shrike-plan",
+  "crates/shrike-evidence",
+  "crates/shrike-receipt",
+  "crates/shrike-engine",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.dependencies]
+shrike-core = { path = "crates/shrike-core" }
+shrike-protocol = { path = "crates/shrike-protocol" }
+shrike-syntax = { path = "crates/shrike-syntax" }
+shrike-resolve = { path = "crates/shrike-resolve" }
+shrike-graph = { path = "crates/shrike-graph" }
+shrike-delta = { path = "crates/shrike-delta" }
+shrike-plan = { path = "crates/shrike-plan" }
+shrike-evidence = { path = "crates/shrike-evidence" }
+
+oxc_allocator = "0.90.0"
+oxc_ast = "0.90.0"
+oxc_ast_visit = "0.90.0"
+oxc_parser = "0.90.0"
+oxc_span = "0.90.0"
+oxc_syntax = "0.90.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+ignore = "0.4"
+globset = "0.4"
+blake3 = "1.8"
+sha2 = "0.10"
+thiserror = "2.0"
+rayon = "1.11"
+tempfile = "3.23"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"

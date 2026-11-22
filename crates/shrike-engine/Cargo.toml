@@ -1,0 +1,27 @@
+[package]
+name = "shrike-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "shrike-engine"
+path = "src/main.rs"
+
+[dependencies]
+shrike-core = { workspace = true }
+shrike-protocol = { workspace = true }
+shrike-syntax = { workspace = true }
+shrike-resolve = { workspace = true }
+shrike-graph = { workspace = true }
+shrike-delta = { workspace = true }
+shrike-plan = { workspace = true }
+shrike-evidence = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+blake3 = { workspace = true }
+rayon = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

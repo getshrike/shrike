@@ -1,0 +1,82 @@
+name: ci
+
+on:
+  push:
+    branches: [main, implementation]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
+
+  node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --prod
+      - run: pnpm -r typecheck
+      - run: pnpm test:node
+      - run: pnpm run build:ts
+      - run: node scripts/check-package.mjs
+
+  differential:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: cargo build -p shrike-engine
+      - run: node scripts/differential.mjs
+      - run: node scripts/differential.mjs --fixture fixtures/differential-glob
+
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p shrike-engine
+      - run: node scripts/check-schemas.mjs
+      - run: node scripts/check-receipts.mjs
+      - run: node scripts/check-corpus.mjs
+      - run: node scripts/verify-fixtures.mjs
+      - run: node scripts/run-fixtures.mjs --engine
+      - run: node scripts/corpus-runner.mjs
+      - run: node scripts/e2e-prune.mjs
+      - name: Determinism
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/shrike-det
+          printf '%s\n' '{"protocolVersion":"1.0","id":"a","command":"analyze","payload":{"root":"fixtures/delta/removed-caller/base","config":{}}}' | target/debug/shrike-engine > /tmp/shrike-det/a.json
+          printf '%s\n' '{"protocolVersion":"1.0","id":"b","command":"analyze","payload":{"root":"fixtures/delta/removed-caller/base","config":{}}}' | target/debug/shrike-engine > /tmp/shrike-det/b.json
+          diff <(sed 's/"id":"a"/"id":"x"/' /tmp/shrike-det/a.json) <(sed 's/"id":"b"/"id":"x"/' /tmp/shrike-det/b.json)

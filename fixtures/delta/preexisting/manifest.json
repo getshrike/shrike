@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "id": "preexisting",
+  "dirty": "pre-existing dead code is not a delta",
+  "config": {},
+  "expected": {
+    "newlyDead": [],
+    "newlyDeadFiles": [],
+    "triggerKinds": {}
+  },
+  "notes": ""
+}

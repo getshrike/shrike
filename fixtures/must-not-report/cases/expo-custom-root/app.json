@@ -1,0 +1,7 @@
+{
+  "expo": {
+    "plugins": [
+      ["expo-router", { "root": "./src/routes" }]
+    ]
+  }
+}

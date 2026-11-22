@@ -1,0 +1,8 @@
+{
+  "name": "corpus-const-namespace-dynamic-import",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "next": "^16.0.0"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "corpus-vite-root-entry-1",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "typescript": "^5.9.0"
+  }
+}

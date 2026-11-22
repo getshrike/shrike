@@ -1,0 +1,8 @@
+{
+  "name": "corpus-use-client-1",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "next": "^16.0.0"
+  }
+}

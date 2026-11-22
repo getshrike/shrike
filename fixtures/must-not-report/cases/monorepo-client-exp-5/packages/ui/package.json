@@ -1,0 +1,8 @@
+{
+  "name": "@acme/ui",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/Button.tsx"
+  }
+}

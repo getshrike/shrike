@@ -1,0 +1,30 @@
+{
+  "source": "next analyze export",
+  "version": "16.4.0",
+  "files": ["app/page.tsx", "lib/action.ts"],
+  "symbols": ["app/page.tsx#default", "lib/action.ts#submit"],
+  "layers": {
+    "lib/action.ts": "server"
+  },
+  "routes": [
+    {
+      "route": "/",
+      "runtime": "client",
+      "files": ["app/page.tsx"],
+      "symbols": ["app/page.tsx#default"]
+    }
+  ],
+  "clientReferences": [
+    {
+      "from": "app/page.tsx#default",
+      "to": "lib/action.ts#submit",
+      "kind": "server-action"
+    }
+  ],
+  "sizes": {
+    "app/page.tsx": 1200,
+    "lib/action.ts": 100,
+    "app/page.tsx#default": 50,
+    "lib/action.ts#submit": 50
+  }
+}

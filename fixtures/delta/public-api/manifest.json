@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "id": "public-api",
+  "dirty": "public package exports are never deleted",
+  "config": {},
+  "expected": {
+    "newlyDead": [],
+    "newlyDeadFiles": [],
+    "triggerKinds": {}
+  },
+  "notes": ""
+}

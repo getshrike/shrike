@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0",
+  "id": "removed-caller",
+  "dirty": false,
+  "config": {},
+  "expected": {
+    "newlyDead": [
+      "lib/format.ts#formatInvoice"
+    ],
+    "newlyDeadFiles": [
+      "lib/format.ts"
+    ],
+    "triggerKinds": {
+      "lib/format.ts#formatInvoice": "removed-import"
+    },
+    "triggerFiles": {
+      "lib/format.ts#formatInvoice": "app/page.tsx"
+    }
+  },
+  "notes": ""
+}

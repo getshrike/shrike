@@ -1,0 +1,25 @@
+name: nightly-benchmark
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p shrike-engine
+      - run: node benchmarks/generate.mjs --out /tmp/shrike-bench --files 10000
+      - run: node benchmarks/harness.mjs --files 10000 | tee benchmark.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ github.sha }}
+          path: benchmark.json
