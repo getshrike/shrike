@@ -15,6 +15,7 @@ export function runPrune(root: string, base: string): number {
   });
   const stdout = result.stdout ?? "";
   const stderr = result.stderr ?? "";
+  if (result.error) process.stderr.write(`shrike: failed to run ${cli.command}: ${result.error.message}\n`);
   if (stderr.trim()) process.stderr.write(stderr);
   let outcome = "unknown";
   let receipts: string[] = [];

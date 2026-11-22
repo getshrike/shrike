@@ -42,7 +42,9 @@ var import_node_module = require("node:module");
 var import_node_path = require("node:path");
 function resolveCli(root) {
   const configured = process.env.SHRIKE_CLI;
-  if (configured) return { command: configured, args: [] };
+  if (configured) {
+    return /\.(?:c|m)?js$/i.test(configured) ? { command: process.execPath, args: [configured] } : { command: configured, args: [] };
+  }
   try {
     const require2 = (0, import_node_module.createRequire)((0, import_node_path.join)(root, "package.json"));
     const manifest = require2.resolve("getshrike/package.json");
@@ -72,6 +74,8 @@ function runDelta(root, base, maxItems, failOn) {
   );
   const stdout = result.stdout ?? "";
   const stderr = result.stderr ?? "";
+  if (result.error) process.stderr.write(`shrike: failed to run ${cli.command}: ${result.error.message}
+`);
   if (stderr.trim()) process.stderr.write(stderr);
   let summary = "## Shrike orphan delta\n\n";
   let count = 0;
@@ -128,6 +132,8 @@ function runPrune(root, base) {
   });
   const stdout = result.stdout ?? "";
   const stderr = result.stderr ?? "";
+  if (result.error) process.stderr.write(`shrike: failed to run ${cli.command}: ${result.error.message}
+`);
   if (stderr.trim()) process.stderr.write(stderr);
   let outcome = "unknown";
   let receipts = [];

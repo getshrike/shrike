@@ -129,6 +129,39 @@ test("delta artifacts are replaced on rerun and removed when the delta fails", (
   }
 });
 
+test("SHRIKE_CLI accepts a JavaScript launcher without an executable bit", () => {
+  const directory = scratch("shrike-cli");
+  try {
+    const launcher = join(directory, "launcher.mjs");
+    writeFileSync(
+      launcher,
+      `import { appendFileSync } from "node:fs";
+appendFileSync(process.env.FAKE_SHRIKE_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");
+console.log(JSON.stringify({ newlyDead: [], newlyDeadFiles: [] }));
+`,
+    );
+    const { result, log } = run(directory, { INPUT_MODE: "delta", SHRIKE_CLI: launcher });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(log, /"delta"/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a missing SHRIKE_CLI fails closed with a spawn error", () => {
+  const directory = scratch("shrike-cli-missing");
+  try {
+    const { result } = run(directory, {
+      INPUT_MODE: "delta",
+      SHRIKE_CLI: join(directory, "absent-shrike"),
+    });
+    assert.equal(result.status, 4, result.stderr);
+    assert.match(result.stderr, /failed to run/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("prune refuses a fork pull request before invoking the CLI", () => {
   const directory = scratch("fork");
   try {
