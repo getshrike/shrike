@@ -1,24 +1,37 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 use super::Builder;
 use crate::types::{EdgeRecord, ProofRecord, WitnessRecord};
 
 impl<'a> Builder<'a> {
     pub(super) fn reachability(&self) -> (BTreeSet<String>, Vec<WitnessRecord>, Vec<ProofRecord>) {
-        let mut outgoing: BTreeMap<&str, Vec<&EdgeRecord>> = BTreeMap::new();
-        let mut incoming: BTreeMap<&str, Vec<&EdgeRecord>> = BTreeMap::new();
+        let mut outgoing: HashMap<&str, Vec<&EdgeRecord>> = HashMap::new();
+        let mut incoming: HashMap<&str, Vec<&EdgeRecord>> = HashMap::new();
         for edge in &self.edges {
             outgoing.entry(&edge.source).or_default().push(edge);
             incoming.entry(&edge.target).or_default().push(edge);
         }
-        let mut live = BTreeSet::new();
-        let mut parent: BTreeMap<String, (String, String)> = BTreeMap::new();
-        let mut queue = VecDeque::new();
-        let mut entries = self.entries.clone();
+        // Every live symbol expands once, so sort each adjacency list once
+        // rather than cloning and sorting it on every visit.
+        for edges in outgoing.values_mut() {
+            edges.sort_by(|a, b| a.target.cmp(&b.target).then_with(|| a.kind.cmp(&b.kind)));
+        }
+        // BFS membership is a hash set: every edge target probes the set, so
+        // hashing is cheaper than a tree search. The returned set is rebuilt in
+        // sorted order once, after the walk.
+        let mut live: HashSet<String> = HashSet::new();
+        // Parent links borrow from `self.edges`: a witness path only needs the
+        // source and kind of the edge that first reached the symbol. Cloning
+        // them here allocated three strings per live symbol.
+        let mut parent: HashMap<&str, (&str, &str)> = HashMap::new();
+        // The worklist borrows keys too; the `live` set owns the one copy each
+        // symbol needs for the output.
+        let mut queue: VecDeque<&str> = VecDeque::new();
+        let mut entries: Vec<&crate::types::EntryRecord> = self.entries.iter().collect();
         entries.sort_by(|a, b| a.symbol.cmp(&b.symbol));
-        for entry in &entries {
+        for entry in entries {
             if live.insert(entry.symbol.clone()) {
-                queue.push_back(entry.symbol.clone());
+                queue.push_back(entry.symbol.as_str());
             }
         }
         // Unknown edges widen the live set in their bounded scope. Widened
@@ -30,7 +43,7 @@ impl<'a> Builder<'a> {
                 "repo" => {
                     for symbol in &self.symbols {
                         if live.insert(symbol.key.clone()) {
-                            queue.push_back(symbol.key.clone());
+                            queue.push_back(symbol.key.as_str());
                         }
                     }
                 }
@@ -40,16 +53,18 @@ impl<'a> Builder<'a> {
                             if self.package_of.get(&symbol.file) == Some(package)
                                 && live.insert(symbol.key.clone())
                             {
-                                queue.push_back(symbol.key.clone());
+                                queue.push_back(symbol.key.as_str());
                             }
                         }
                     }
                 }
                 "module" => {
                     if let Some(file) = self.files.iter().find(|file| file.path == unknown.file) {
-                        for (_, key) in self.exports.get(&file.path).cloned().unwrap_or_default() {
-                            if live.insert(key.clone()) {
-                                queue.push_back(key);
+                        if let Some(exports) = self.exports.get(&file.path) {
+                            for key in exports.values() {
+                                if live.insert(key.clone()) {
+                                    queue.push_back(key.as_str());
+                                }
                             }
                         }
                     }
@@ -58,13 +73,14 @@ impl<'a> Builder<'a> {
             }
         }
         while let Some(source) = queue.pop_front() {
-            if let Some(edges) = outgoing.get(source.as_str()) {
-                let mut targets: Vec<&EdgeRecord> = edges.clone();
-                targets.sort_by(|a, b| a.target.cmp(&b.target).then_with(|| a.kind.cmp(&b.kind)));
-                for edge in targets {
+            if let Some(edges) = outgoing.get(source) {
+                for edge in edges {
                     if live.insert(edge.target.clone()) {
-                        parent.insert(edge.target.clone(), (source.clone(), edge.kind.clone()));
-                        queue.push_back(edge.target.clone());
+                        parent.insert(
+                            edge.target.as_str(),
+                            (edge.source.as_str(), edge.kind.as_str()),
+                        );
+                        queue.push_back(edge.target.as_str());
                     }
                 }
             }
@@ -72,11 +88,11 @@ impl<'a> Builder<'a> {
         let mut witnesses = Vec::new();
         for symbol in &live {
             let mut path = vec![symbol.clone()];
-            let mut current = symbol.clone();
+            let mut current = symbol.as_str();
             let mut guard = 0;
-            while let Some((next, _)) = parent.get(&current) {
-                path.push(next.clone());
-                current = next.clone();
+            while let Some(&(next, _)) = parent.get(current) {
+                path.push(next.to_string());
+                current = next;
                 guard += 1;
                 if guard > 4096 {
                     break;
@@ -121,7 +137,7 @@ impl<'a> Builder<'a> {
                     }),
             });
         }
-        (live, witnesses, proofs)
+        (live.into_iter().collect(), witnesses, proofs)
     }
 
     /// Exported symbols that are live only because their own file references
@@ -137,40 +153,52 @@ impl<'a> Builder<'a> {
         // reach the symbol today, so they must not keep a same-file-only
         // export out of `internalOnly`. Unknown source keys fail closed and
         // count as external.
-        let known: BTreeSet<&str> = self
+        let known: HashSet<&str> = self
             .symbols
             .iter()
             .map(|symbol| symbol.key.as_str())
             .collect();
         let counts_as_external = |key: &str| !known.contains(key) || live.contains(key);
-        let mut external: BTreeSet<String> = BTreeSet::new();
-        for edge in &self.edges {
-            if file_of(&edge.source) != file_of(&edge.target) && counts_as_external(&edge.source) {
-                external.insert(edge.target.clone());
-            }
-        }
         let type_only: BTreeSet<&str> = self
             .symbols
             .iter()
             .filter(|symbol| symbol.type_only)
             .map(|symbol| symbol.key.as_str())
             .collect();
-        let mut changed = true;
-        while changed {
-            changed = false;
-            for edge in &self.edges {
-                if file_of(&edge.source) != file_of(&edge.target)
-                    || !external.contains(&edge.source)
-                    || !counts_as_external(&edge.source)
-                {
-                    continue;
+        // Same-file re-export and type-to-type reference edges propagate
+        // external visibility. Build that adjacency and the external set in
+        // one pass over the edges, borrowing keys instead of cloning them:
+        // this set and its worklist can hold most of the graph.
+        let mut external: HashSet<&str> = HashSet::new();
+        let mut propagates: HashMap<&str, Vec<&str>> = HashMap::new();
+        for edge in &self.edges {
+            if file_of(&edge.source) != file_of(&edge.target) {
+                if counts_as_external(&edge.source) {
+                    external.insert(edge.target.as_str());
                 }
-                let propagates = edge.kind == "re-export"
-                    || (edge.kind == "reference"
-                        && type_only.contains(edge.source.as_str())
-                        && type_only.contains(edge.target.as_str()));
-                if propagates && external.insert(edge.target.clone()) {
-                    changed = true;
+                continue;
+            }
+            let propagates_edge = edge.kind == "re-export"
+                || (edge.kind == "reference"
+                    && type_only.contains(edge.source.as_str())
+                    && type_only.contains(edge.target.as_str()));
+            if propagates_edge {
+                propagates
+                    .entry(edge.source.as_str())
+                    .or_default()
+                    .push(edge.target.as_str());
+            }
+        }
+        let mut queue: VecDeque<&str> = external.iter().copied().collect();
+        while let Some(source) = queue.pop_front() {
+            if !counts_as_external(source) {
+                continue;
+            }
+            if let Some(targets) = propagates.get(source) {
+                for target in targets {
+                    if external.insert(*target) {
+                        queue.push_back(*target);
+                    }
                 }
             }
         }
@@ -182,7 +210,7 @@ impl<'a> Builder<'a> {
                     && !symbol.public_api
                     && !symbol.generated
                     && live.contains(&symbol.key)
-                    && !external.contains(&symbol.key)
+                    && !external.contains(symbol.key.as_str())
             })
             .map(|symbol| symbol.key.clone())
             .collect()
@@ -195,7 +223,7 @@ impl<'a> Builder<'a> {
             .iter()
             .map(|symbol| symbol.key.as_str())
             .collect();
-        let index_of: BTreeMap<&str, usize> = keys
+        let index_of: HashMap<&str, usize> = keys
             .iter()
             .enumerate()
             .map(|(index, key)| (*key, index))

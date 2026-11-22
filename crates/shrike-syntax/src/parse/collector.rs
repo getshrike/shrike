@@ -2,14 +2,14 @@ use oxc_ast::ast::{
     Argument, ArrayExpressionElement, BindingPatternKind, CallExpression, ComputedMemberExpression,
     Expression, FormalParameters, FunctionBody, IdentifierReference, ImportExpression,
     JSXIdentifier, JSXMemberExpression, JSXMemberExpressionObject, MemberExpression, NewExpression,
-    ObjectPattern, PropertyKey, StaticMemberExpression, VariableDeclaration,
-    VariableDeclarationKind, VariableDeclarator,
+    ObjectPattern, PropertyKey, StaticMemberExpression, TSQualifiedName, TSTypeName,
+    VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
 };
 use oxc_ast_visit::Visit;
 use oxc_ast_visit::walk::{
     walk_call_expression, walk_computed_member_expression, walk_import_expression,
-    walk_new_expression, walk_static_member_expression, walk_variable_declaration,
-    walk_variable_declarator,
+    walk_new_expression, walk_static_member_expression, walk_ts_qualified_name,
+    walk_variable_declaration, walk_variable_declarator,
 };
 use shrike_core::Span;
 
@@ -77,7 +77,25 @@ impl<'a> Visit<'a> for RefCollector {
                 object: object.name.to_string(),
                 property: Some(it.property.name.to_string()),
                 computed: false,
+                instance: false,
             });
+            return;
+        }
+        if let Some(class) = instance_class_name(&it.object) {
+            // `new Counter().increment()` and `Counter.prototype.increment`
+            // read an instance member, not a static one.
+            self.identifiers.push(class.name.to_string());
+            self.members.push(MemberAccess {
+                object: class.name.to_string(),
+                property: Some(it.property.name.to_string()),
+                computed: false,
+                instance: true,
+            });
+            if let Expression::NewExpression(new) = &it.object {
+                for argument in &new.arguments {
+                    self.visit_argument(argument);
+                }
+            }
             return;
         }
         walk_static_member_expression(self, it);
@@ -86,16 +104,7 @@ impl<'a> Visit<'a> for RefCollector {
     fn visit_computed_member_expression(&mut self, it: &ComputedMemberExpression<'a>) {
         if let Expression::Identifier(object) = &it.object {
             self.identifiers.push(object.name.to_string());
-            let property = match &it.expression {
-                Expression::StringLiteral(literal) => Some(literal.value.to_string()),
-                Expression::NumericLiteral(literal) => Some(
-                    literal
-                        .raw
-                        .as_ref()
-                        .map_or_else(|| literal.value.to_string(), ToString::to_string),
-                ),
-                _ => None,
-            };
+            let property = literal_member_name(&it.expression);
             if property.is_none()
                 && matches!(
                     object.name.as_str(),
@@ -112,13 +121,50 @@ impl<'a> Visit<'a> for RefCollector {
                 object: object.name.to_string(),
                 property,
                 computed: true,
+                instance: false,
             });
             // The key expression may contain references (`UI[key]`), but the
             // object itself was handled above.
             self.visit_expression(&it.expression);
             return;
         }
+        if let Some(class) = instance_class_name(&it.object) {
+            let property = literal_member_name(&it.expression);
+            self.identifiers.push(class.name.to_string());
+            self.members.push(MemberAccess {
+                object: class.name.to_string(),
+                property,
+                computed: true,
+                instance: true,
+            });
+            if let Expression::NewExpression(new) = &it.object {
+                for argument in &new.arguments {
+                    self.visit_argument(argument);
+                }
+            }
+            self.visit_expression(&it.expression);
+            return;
+        }
         walk_computed_member_expression(self, it);
+    }
+
+    fn visit_ts_qualified_name(&mut self, it: &TSQualifiedName<'a>) {
+        // A qualified type name (`Status.Active`, `types.Config`) is the
+        // type-position spelling of a member access. Recording it as a member
+        // keeps the root identifier out of `free`, so an enum member used only
+        // in a type annotation is credited precisely instead of widening every
+        // member of the enum.
+        if let TSTypeName::IdentifierReference(object) = &it.left {
+            self.identifiers.push(object.name.to_string());
+            self.members.push(MemberAccess {
+                object: object.name.to_string(),
+                property: Some(it.right.name.to_string()),
+                computed: false,
+                instance: false,
+            });
+            return;
+        }
+        walk_ts_qualified_name(self, it);
     }
 
     fn visit_jsx_member_expression(&mut self, it: &JSXMemberExpression<'a>) {
@@ -132,6 +178,7 @@ impl<'a> Visit<'a> for RefCollector {
                     object: object.name.to_string(),
                     property: Some(it.property.name.to_string()),
                     computed: false,
+                    instance: false,
                 });
             }
             JSXMemberExpressionObject::MemberExpression(inner) => {
@@ -723,6 +770,39 @@ fn dynamic_base(expression: &Expression<'_>) -> Option<DynamicBase> {
             }
             base.property = Some(property.value.to_string());
             Some(base)
+        }
+        _ => None,
+    }
+}
+
+fn literal_member_name(expression: &Expression<'_>) -> Option<String> {
+    match expression {
+        Expression::StringLiteral(literal) => Some(literal.value.to_string()),
+        Expression::NumericLiteral(literal) => Some(
+            literal
+                .raw
+                .as_ref()
+                .map_or_else(|| literal.value.to_string(), ToString::to_string),
+        ),
+        _ => None,
+    }
+}
+
+/// The class whose instance is the object of a member access:
+/// `new Counter().increment` or `Counter.prototype.increment`.
+fn instance_class_name<'a, 'b>(
+    expression: &'b Expression<'a>,
+) -> Option<&'b oxc_ast::ast::IdentifierReference<'a>> {
+    match expression {
+        Expression::NewExpression(new) => match &new.callee {
+            Expression::Identifier(class) => Some(class),
+            _ => None,
+        },
+        Expression::StaticMemberExpression(member) if member.property.name == "prototype" => {
+            match &member.object {
+                Expression::Identifier(class) => Some(class),
+                _ => None,
+            }
         }
         _ => None,
     }

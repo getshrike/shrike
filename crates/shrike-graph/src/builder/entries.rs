@@ -403,17 +403,46 @@ fn next_framework_exports(
 /// toolchain, and `rolldown-vite` is the drop-in Vite distribution.
 const VITE_ENABLERS: &[&str] = &["vite", "vitest", "rolldown-vite"];
 
-fn package_depends_on(root: &Path, directory: &str, name: &str) -> bool {
-    package_depends_on_any(root, directory, &[name])
-}
+impl Builder<'_> {
+    fn package_depends_on(&self, directory: &str, name: &str) -> bool {
+        self.package_depends_on_any(directory, &[name])
+    }
 
-/// Whether the package manifest explicitly declares any of `names`. A missing
-/// or unreadable manifest returns `None`, so convention detection stays
-/// conservative for incomplete trees instead of hiding a possible entry.
-pub(super) fn package_declares_any(root: &Path, directory: &str, names: &[&str]) -> Option<bool> {
-    let text = fs::read_to_string(root.join(directory).join("package.json")).ok()?;
-    let value = serde_json::from_str::<serde_json::Value>(&text).ok()?;
-    Some(
+    /// Whether the package manifest explicitly declares any of `names`. A
+    /// missing or unreadable manifest returns `None`, so convention detection
+    /// stays conservative for incomplete trees instead of hiding a possible
+    /// entry. Manifests are parsed once when the builder is created.
+    pub(super) fn package_declares_any(&self, directory: &str, names: &[&str]) -> Option<bool> {
+        let value = self.package_manifests.get(directory)?.as_ref()?;
+        Some(
+            [
+                "dependencies",
+                "devDependencies",
+                "peerDependencies",
+                "optionalDependencies",
+            ]
+            .iter()
+            .any(|section| {
+                let Some(dependencies) = value.get(section) else {
+                    return false;
+                };
+                names.iter().any(|name| dependencies.get(name).is_some())
+            }),
+        )
+    }
+
+    /// Whether the owning package declares Next.js itself.
+    pub(super) fn package_declares_next(&self, directory: &str) -> Option<bool> {
+        self.package_declares_any(directory, &["next"])
+    }
+
+    /// Storybook's default story glob includes every `.mdx` page, not just
+    /// files named `*.stories.mdx`, and the plugin only applies when the
+    /// package depends on Storybook. `@nrwl/storybook` is the Nx wrapper.
+    fn package_depends_on_storybook(&self, directory: &str) -> bool {
+        let Some(Some(value)) = self.package_manifests.get(directory) else {
+            return false;
+        };
         [
             "dependencies",
             "devDependencies",
@@ -421,65 +450,17 @@ pub(super) fn package_declares_any(root: &Path, directory: &str, names: &[&str])
             "optionalDependencies",
         ]
         .iter()
-        .any(|section| {
-            let Some(dependencies) = value.get(section) else {
-                return false;
-            };
-            names.iter().any(|name| dependencies.get(name).is_some())
-        }),
-    )
-}
-
-/// Whether the owning package declares Next.js itself.
-pub(super) fn package_declares_next(root: &Path, directory: &str) -> Option<bool> {
-    package_declares_any(root, directory, &["next"])
-}
-
-/// Storybook's default story glob includes every `.mdx` page, not just files
-/// named `*.stories.mdx`, and the plugin only applies when the package depends
-/// on Storybook. `@nrwl/storybook` is the Nx wrapper.
-fn package_depends_on_storybook(root: &Path, directory: &str) -> bool {
-    let Ok(text) = fs::read_to_string(root.join(directory).join("package.json")) else {
-        return false;
-    };
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return false;
-    };
-    [
-        "dependencies",
-        "devDependencies",
-        "peerDependencies",
-        "optionalDependencies",
-    ]
-    .iter()
-    .filter_map(|section| value.get(section).and_then(|deps| deps.as_object()))
-    .any(|dependencies| {
-        dependencies.keys().any(|name| {
-            name == "storybook" || name.starts_with("@storybook/") || name == "@nrwl/storybook"
+        .filter_map(|section| value.get(section).and_then(|deps| deps.as_object()))
+        .any(|dependencies| {
+            dependencies.keys().any(|name| {
+                name == "storybook" || name.starts_with("@storybook/") || name == "@nrwl/storybook"
+            })
         })
-    })
-}
+    }
 
-fn package_depends_on_any(root: &Path, directory: &str, names: &[&str]) -> bool {
-    let Ok(text) = fs::read_to_string(root.join(directory).join("package.json")) else {
-        return false;
-    };
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return false;
-    };
-    [
-        "dependencies",
-        "devDependencies",
-        "peerDependencies",
-        "optionalDependencies",
-    ]
-    .iter()
-    .any(|section| {
-        let Some(dependencies) = value.get(section) else {
-            return false;
-        };
-        names.iter().any(|name| dependencies.get(name).is_some())
-    })
+    fn package_depends_on_any(&self, directory: &str, names: &[&str]) -> bool {
+        self.package_declares_any(directory, names) == Some(true)
+    }
 }
 
 /// React roots that existed before `createRoot`: `ReactDOM.render` and
@@ -1044,29 +1025,33 @@ impl<'a> Builder<'a> {
     /// Next's `pageExtensions` may contain dots (`page.tsx`). Knip reads it
     /// from the config AST; read only the literal values here and scope each
     /// config to its package so a nested app is not widened by the root.
-    pub(super) fn configured_page_extensions(&self) -> BTreeMap<String, BTreeSet<String>> {
-        let mut page_extensions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for summary in &self.summaries {
-            if !next_config::is_config_path(&summary.path) {
-                continue;
+    pub(super) fn configured_page_extensions(&mut self) -> BTreeMap<String, BTreeSet<String>> {
+        if self.page_extensions.is_none() {
+            let mut page_extensions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+            for summary in self.summaries.iter() {
+                if !next_config::is_config_path(&summary.path) {
+                    continue;
+                }
+                let Ok(source) = fs::read_to_string(self.resolver.root().join(&summary.path))
+                else {
+                    continue;
+                };
+                let extensions = next_config::page_extensions(&source);
+                if extensions.is_empty() {
+                    continue;
+                }
+                let package_directory = self
+                    .resolver
+                    .package_for(&summary.path)
+                    .map_or_else(String::new, |package| package.directory.clone());
+                page_extensions
+                    .entry(package_directory)
+                    .or_default()
+                    .extend(extensions);
             }
-            let Ok(source) = fs::read_to_string(self.resolver.root().join(&summary.path)) else {
-                continue;
-            };
-            let extensions = next_config::page_extensions(&source);
-            if extensions.is_empty() {
-                continue;
-            }
-            let package_directory = self
-                .resolver
-                .package_for(&summary.path)
-                .map_or_else(String::new, |package| package.directory.clone());
-            page_extensions
-                .entry(package_directory)
-                .or_default()
-                .extend(extensions);
+            self.page_extensions = Some(page_extensions);
         }
-        page_extensions
+        self.page_extensions.clone().unwrap_or_default()
     }
 
     pub(super) fn detect_entries(&mut self) {
@@ -1084,17 +1069,16 @@ impl<'a> Builder<'a> {
         let mut gatsby_packages: BTreeSet<String> = BTreeSet::new();
         let mut ladle_packages: BTreeSet<String> = BTreeSet::new();
         for package in self.resolver.packages() {
-            if package_depends_on_any(self.resolver.root(), &package.directory, VITE_ENABLERS) {
+            if self.package_depends_on_any(&package.directory, VITE_ENABLERS) {
                 vite_packages.insert(package.directory.clone());
             }
-            if package_depends_on_storybook(self.resolver.root(), &package.directory) {
+            if self.package_depends_on_storybook(&package.directory) {
                 storybook_packages.insert(package.directory.clone());
             }
-            if package_depends_on(self.resolver.root(), &package.directory, "react-cosmos") {
+            if self.package_depends_on(&package.directory, "react-cosmos") {
                 cosmos_packages.insert(package.directory.clone());
             }
-            if package_depends_on_any(
-                self.resolver.root(),
+            if self.package_depends_on_any(
                 &package.directory,
                 &[
                     "@docusaurus/core",
@@ -1104,14 +1088,10 @@ impl<'a> Builder<'a> {
             ) {
                 docusaurus_packages.insert(package.directory.clone());
             }
-            if package_depends_on_any(
-                self.resolver.root(),
-                &package.directory,
-                &["gatsby", "gatsby-cli"],
-            ) {
+            if self.package_depends_on_any(&package.directory, &["gatsby", "gatsby-cli"]) {
                 gatsby_packages.insert(package.directory.clone());
             }
-            if package_depends_on(self.resolver.root(), &package.directory, "@ladle/react") {
+            if self.package_depends_on(&package.directory, "@ladle/react") {
                 ladle_packages.insert(package.directory.clone());
             }
         }
@@ -1165,7 +1145,7 @@ impl<'a> Builder<'a> {
         }
         // A layout is the strong signal that a directory tree is Expo Router.
         // Detect it before the entry pass so file order cannot hide routes.
-        for summary in &summaries {
+        for summary in summaries.iter() {
             let package_directory = self
                 .resolver
                 .package_for(&summary.path)
@@ -1188,7 +1168,7 @@ impl<'a> Builder<'a> {
                 expo_layout_packages.insert(package_directory.to_string());
             }
         }
-        for summary in &summaries {
+        for summary in summaries.iter() {
             let package_directory = self
                 .resolver
                 .package_for(&summary.path)
@@ -1264,7 +1244,7 @@ impl<'a> Builder<'a> {
         // cache handlers, Turbopack loaders/aliases). They are roots even
         // though no application module imports them.
         let mut next_config_modules: BTreeSet<String> = BTreeSet::new();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             let file_name = summary.path.rsplit('/').next().unwrap_or("");
             if !matches!(
                 file_name,
@@ -1293,7 +1273,7 @@ impl<'a> Builder<'a> {
         // application code. A static read of `entry`/`context` keeps React and
         // vanilla bootstraps live without executing the config.
         let mut webpack_entry_modules: BTreeSet<String> = BTreeSet::new();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             if !webpack_config::is_config_path(&summary.path) {
                 continue;
             }
@@ -1335,7 +1315,7 @@ impl<'a> Builder<'a> {
         // computed values are skipped; the conventional suffix rules below
         // still apply.
         let mut storybook_story_files: BTreeSet<String> = BTreeSet::new();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             if !storybook_config::is_config_path(&summary.path) {
                 continue;
             }
@@ -1369,7 +1349,7 @@ impl<'a> Builder<'a> {
         for package_directory in &ladle_packages {
             let mut patterns: Vec<String> = Vec::new();
             let mut saw_config = false;
-            for summary in &summaries {
+            for summary in summaries.iter() {
                 if !ladle_config::is_config_path(&summary.path)
                     || ladle_config::package_directory(&summary.path)
                         != Some(package_directory.as_str())
@@ -1403,7 +1383,7 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        for summary in &summaries {
+        for summary in summaries.iter() {
             if ladle_config::is_components_path(&summary.path)
                 && ladle_config::package_directory(&summary.path)
                     .is_some_and(|package| ladle_packages.contains(package))
@@ -1451,7 +1431,7 @@ impl<'a> Builder<'a> {
         // directory for that package rather than reporting a live page.
         let mut gatsby_template_files: BTreeSet<String> = BTreeSet::new();
         let mut gatsby_dynamic_packages: BTreeSet<String> = BTreeSet::new();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             if !gatsby_config::is_node_path(&summary.path) {
                 continue;
             }
@@ -1531,7 +1511,7 @@ impl<'a> Builder<'a> {
         // imports them at runtime, so files named outside `<appDirectory>/routes/`
         // are still route modules and must keep their framework exports.
         let mut router_route_files: BTreeSet<String> = BTreeSet::new();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             let package_directory = self
                 .resolver
                 .package_for(&summary.path)
@@ -1569,7 +1549,7 @@ impl<'a> Builder<'a> {
         // is still live when the runner names it, so resolve the config's
         // path literals against analyzed files before classifying entries.
         let mut test_config_modules: BTreeSet<String> = BTreeSet::new();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             if !test_config::is_config_path(&summary.path) {
                 continue;
             }
@@ -1590,7 +1570,7 @@ impl<'a> Builder<'a> {
         // dead files.
         let mut cypress_specs: BTreeSet<String> = BTreeSet::new();
         let mut cypress_support: BTreeSet<String> = BTreeSet::new();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             if !cypress_config::is_config_path(&summary.path) {
                 continue;
             }
@@ -1598,7 +1578,7 @@ impl<'a> Builder<'a> {
                 .resolver
                 .package_for(&summary.path)
                 .map_or("", |package| package.directory.as_str());
-            if !package_depends_on(self.resolver.root(), package_directory, "cypress") {
+            if !self.package_depends_on(package_directory, "cypress") {
                 continue;
             }
             let Ok(source) = fs::read_to_string(self.resolver.root().join(&summary.path)) else {
@@ -1608,7 +1588,7 @@ impl<'a> Builder<'a> {
             cypress_specs.extend(entries.specs);
             cypress_support.extend(entries.support);
         }
-        for summary in &summaries {
+        for summary in summaries.iter() {
             let path = summary.path.as_str();
             let package_directory = self
                 .resolver
@@ -1807,7 +1787,8 @@ impl<'a> Builder<'a> {
             // one would hide genuinely dead files. Only consult the manifest
             // for paths that could match a convention.
             let package_uses_next = if is_app_shape || is_pages_shape || root_convention_shape {
-                package_declares_next(self.resolver.root(), &package_directory).unwrap_or(true)
+                self.package_declares_next(&package_directory)
+                    .unwrap_or(true)
             } else {
                 true
             };
@@ -1822,14 +1803,15 @@ impl<'a> Builder<'a> {
             // component map becomes a deletion candidate.
             let uses_mdx_component_map = stem == "mdx-components";
             let package_uses_mdx = if uses_mdx_component_map {
-                let local =
-                    package_declares_any(self.resolver.root(), &package_directory, &["@next/mdx"])
-                        .unwrap_or(true);
+                let local = self
+                    .package_declares_any(&package_directory, &["@next/mdx"])
+                    .unwrap_or(true);
                 // Workspaces frequently hoist the MDX plugin to the root even
                 // when each app declares `next` itself. A hoisted dependency
                 // must not make the map look dead.
                 let hoisted = !package_directory.is_empty()
-                    && package_declares_any(self.resolver.root(), "", &["@next/mdx"])
+                    && self
+                        .package_declares_any("", &["@next/mdx"])
                         .unwrap_or(false);
                 local || hoisted
             } else {
@@ -1840,7 +1822,7 @@ impl<'a> Builder<'a> {
             // the protection on the project actually depending on next-intl so
             // an unrelated `i18n/request.ts` stays analyzable.
             if is_next_intl_convention(path)
-                && package_depends_on(self.resolver.root(), &package_directory, "next-intl")
+                && self.package_depends_on(&package_directory, "next-intl")
             {
                 for (_, key) in self.exports.get(path).cloned().unwrap_or_default() {
                     add(self, key, "next-intl", "convention-export", None, "both");
@@ -4491,6 +4473,379 @@ mod tests {
                 .all(|diagnostic| diagnostic.code != "dynamic_segment_name_conflict"),
             "{:?}",
             snapshot.diagnostics
+        );
+    }
+
+    fn pages_route_findings(snapshot: &GraphSnapshot) -> Vec<(&str, &str)> {
+        let mut findings: Vec<(&str, &str)> = snapshot
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic.code == "dynamic_segment_name_conflict"
+                    || diagnostic.code == "pages_router_route_conflict"
+            })
+            .map(|diagnostic| {
+                (
+                    diagnostic.code.as_str(),
+                    diagnostic.file.as_deref().unwrap_or(""),
+                )
+            })
+            .collect();
+        findings.sort();
+        findings
+    }
+
+    #[test]
+    fn next_pages_router_dynamic_name_conflicts_are_reported() {
+        let routes = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"pages","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "packages/plain/package.json",
+                r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            (
+                "pages/index.tsx",
+                "export default function Home() { return null; }\n",
+            ),
+            // Different regular dynamic names at the same position.
+            (
+                "pages/[id].tsx",
+                "export default function A() { return null; }\n",
+            ),
+            (
+                "pages/[slug].tsx",
+                "export default function B() { return null; }\n",
+            ),
+            // The same conflict below a static segment.
+            (
+                "pages/blog/[id].tsx",
+                "export default function C() { return null; }\n",
+            ),
+            (
+                "pages/blog/[slug].tsx",
+                "export default function D() { return null; }\n",
+            ),
+            // Catch-all siblings compare their stripped names too.
+            (
+                "pages/docs/[...id].tsx",
+                "export default function E() { return null; }\n",
+            ),
+            (
+                "pages/docs/[...slug].tsx",
+                "export default function F() { return null; }\n",
+            ),
+            // A regular and a catch-all sibling use different tree slots and
+            // build successfully.
+            (
+                "pages/guide/[id].tsx",
+                "export default function G() { return null; }\n",
+            ),
+            (
+                "pages/guide/[...slug].tsx",
+                "export default function H() { return null; }\n",
+            ),
+            // API routes are pages in the same routing tree.
+            (
+                "pages/api/[id].ts",
+                "export default function handler(req, res) { res.end('ok'); }\n",
+            ),
+            (
+                "pages/api/[slug].ts",
+                "export default function handler(req, res) { res.end('ok'); }\n",
+            ),
+            // A React-only package with a pages-shaped directory is not a
+            // Next.js Pages Router.
+            (
+                "packages/plain/pages/[a].tsx",
+                "export default function I() { return null; }\n",
+            ),
+            (
+                "packages/plain/pages/[b].tsx",
+                "export default function J() { return null; }\n",
+            ),
+        ]);
+        assert_eq!(
+            pages_route_findings(&routes),
+            vec![
+                ("dynamic_segment_name_conflict", "pages/[id].tsx"),
+                ("dynamic_segment_name_conflict", "pages/[slug].tsx"),
+                ("dynamic_segment_name_conflict", "pages/api/[id].ts"),
+                ("dynamic_segment_name_conflict", "pages/api/[slug].ts"),
+                ("dynamic_segment_name_conflict", "pages/blog/[id].tsx"),
+                ("dynamic_segment_name_conflict", "pages/blog/[slug].tsx"),
+                ("dynamic_segment_name_conflict", "pages/docs/[...id].tsx"),
+                ("dynamic_segment_name_conflict", "pages/docs/[...slug].tsx"),
+            ],
+            "{:?}",
+            routes.diagnostics
+        );
+        assert!(
+            routes
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| {
+                    diagnostic.code == "dynamic_segment_name_conflict"
+                        || diagnostic.code == "pages_router_route_conflict"
+                })
+                .all(|diagnostic| diagnostic.severity == shrike_core::Severity::Error),
+            "routing conflicts are build errors: {:?}",
+            routes.diagnostics
+        );
+    }
+
+    #[test]
+    fn next_pages_router_catch_all_and_specificity_conflicts_are_reported() {
+        let routes = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"pages","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "pages/index.tsx",
+                "export default function Home() { return null; }\n",
+            ),
+            // A root optional catch-all also matches `/`, so the root index
+            // page has the same specificity.
+            (
+                "pages/[[...slug]].tsx",
+                "export default function A() { return null; }\n",
+            ),
+            // The same conflict below a static segment, from both a leaf file
+            // and a directory index.
+            (
+                "pages/shop.tsx",
+                "export default function B() { return null; }\n",
+            ),
+            (
+                "pages/shop/[[...slug]].tsx",
+                "export default function C() { return null; }\n",
+            ),
+            (
+                "pages/guide/index.tsx",
+                "export default function D() { return null; }\n",
+            ),
+            (
+                "pages/guide/[[...slug]].tsx",
+                "export default function E() { return null; }\n",
+            ),
+            // Required and optional catch-alls cannot share a level.
+            (
+                "pages/docs/[...id].tsx",
+                "export default function F() { return null; }\n",
+            ),
+            (
+                "pages/docs/[[...id]].tsx",
+                "export default function G() { return null; }\n",
+            ),
+            (
+                "pages/api/[...id].ts",
+                "export default function handler(req, res) { res.end('ok'); }\n",
+            ),
+            (
+                "pages/api/[[...id]].ts",
+                "export default function handler(req, res) { res.end('ok'); }\n",
+            ),
+            // A regular and an optional catch-all sibling with no static leaf
+            // build successfully.
+            (
+                "pages/blog/[id].tsx",
+                "export default function H() { return null; }\n",
+            ),
+            (
+                "pages/blog/[[...slug]].tsx",
+                "export default function I() { return null; }\n",
+            ),
+            // A required catch-all with a static leaf builds successfully.
+            (
+                "pages/legal/[...slug].tsx",
+                "export default function J() { return null; }\n",
+            ),
+            (
+                "pages/legal/foo.tsx",
+                "export default function K() { return null; }\n",
+            ),
+            // Reserved pages are not ordinary route leaves, but a real page
+            // such as `404` is.
+            (
+                "pages/404.tsx",
+                "export default function L() { return null; }\n",
+            ),
+            (
+                "pages/404/[[...slug]].tsx",
+                "export default function M() { return null; }\n",
+            ),
+            (
+                "pages/_app.tsx",
+                "export default function App({ Component, pageProps }) { return <Component {...pageProps} />; }\n",
+            ),
+        ]);
+        assert_eq!(
+            pages_route_findings(&routes),
+            vec![
+                ("pages_router_route_conflict", "pages/404/[[...slug]].tsx"),
+                ("pages_router_route_conflict", "pages/[[...slug]].tsx"),
+                ("pages_router_route_conflict", "pages/api/[...id].ts"),
+                ("pages_router_route_conflict", "pages/api/[[...id]].ts"),
+                ("pages_router_route_conflict", "pages/docs/[...id].tsx"),
+                ("pages_router_route_conflict", "pages/docs/[[...id]].tsx"),
+                ("pages_router_route_conflict", "pages/guide/[[...slug]].tsx"),
+                ("pages_router_route_conflict", "pages/shop/[[...slug]].tsx"),
+            ],
+            "{:?}",
+            routes.diagnostics
+        );
+    }
+
+    #[test]
+    fn next_pages_router_repeated_and_malformed_segments_are_reported() {
+        let routes = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"pages","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "packages/plain/package.json",
+                r#"{"name":"plain","private":true,"dependencies":{"react":"^19.0.0"}}"#,
+            ),
+            (
+                "pages/index.tsx",
+                "export default function Home() { return null; }\n",
+            ),
+            // A slug name cannot repeat within one route, across dynamic kinds.
+            (
+                "pages/repeat/[id]/[id].tsx",
+                "export default function A() { return null; }\n",
+            ),
+            (
+                "pages/repeat-catch/[slug]/[...slug].tsx",
+                "export default function B() { return null; }\n",
+            ),
+            (
+                "pages/repeat-optional/[slug]/[[...slug]].tsx",
+                "export default function C() { return null; }\n",
+            ),
+            // Names that differ only by non-word symbols address the same
+            // parameter.
+            (
+                "pages/repeat-nonword/[id]/[i-d].tsx",
+                "export default function D() { return null; }\n",
+            ),
+            // A catch-all must be the final segment.
+            (
+                "pages/[...slug]/x.tsx",
+                "export default function E() { return null; }\n",
+            ),
+            (
+                "pages/[[...slug]]/x.tsx",
+                "export default function F() { return null; }\n",
+            ),
+            // Optional parameters are only supported as catch-alls.
+            (
+                "pages/[[id]].tsx",
+                "export default function G() { return null; }\n",
+            ),
+            // Different names at different positions are fine.
+            (
+                "pages/ok/[id]/[slug].tsx",
+                "export default function H() { return null; }\n",
+            ),
+            // The same shapes in a React-only package are left alone.
+            (
+                "packages/plain/pages/[...bad]/x.tsx",
+                "export default function I() { return null; }\n",
+            ),
+            (
+                "packages/plain/pages/[[bad]].tsx",
+                "export default function J() { return null; }\n",
+            ),
+        ]);
+        assert_eq!(
+            pages_route_findings(&routes),
+            vec![
+                (
+                    "dynamic_segment_name_conflict",
+                    "pages/repeat-catch/[slug]/[...slug].tsx"
+                ),
+                (
+                    "dynamic_segment_name_conflict",
+                    "pages/repeat-nonword/[id]/[i-d].tsx"
+                ),
+                (
+                    "dynamic_segment_name_conflict",
+                    "pages/repeat-optional/[slug]/[[...slug]].tsx"
+                ),
+                (
+                    "dynamic_segment_name_conflict",
+                    "pages/repeat/[id]/[id].tsx"
+                ),
+                ("pages_router_route_conflict", "pages/[...slug]/x.tsx"),
+                ("pages_router_route_conflict", "pages/[[...slug]]/x.tsx"),
+                ("pages_router_route_conflict", "pages/[[id]].tsx"),
+            ],
+            "{:?}",
+            routes.diagnostics
+        );
+    }
+
+    #[test]
+    fn next_pages_router_route_conflicts_honor_roots_and_page_extensions() {
+        let routes = snapshot(&[
+            (
+                "package.json",
+                r#"{"name":"pages","dependencies":{"next":"^16.0.0","react":"^19.0.0"}}"#,
+            ),
+            (
+                "next.config.ts",
+                "const config = { pageExtensions: ['page.tsx'] };\nexport default config;\n",
+            ),
+            // `pages` and `src/pages` are separate roots: Next.js uses one per
+            // package, so names across the roots do not conflict.
+            (
+                "pages/[a].page.tsx",
+                "export default function A() { return null; }\n",
+            ),
+            (
+                "src/pages/[b].page.tsx",
+                "export default function B() { return null; }\n",
+            ),
+            // Within one root, the configured dotted extension is the page
+            // stem and the conflict is real.
+            (
+                "src/pages/shop/[id].page.tsx",
+                "export default function C() { return null; }\n",
+            ),
+            (
+                "src/pages/shop/[slug].page.tsx",
+                "export default function D() { return null; }\n",
+            ),
+            // A file that does not use the configured extension is not a page,
+            // so it cannot create an optional catch-all specificity conflict.
+            (
+                "pages/legacy.tsx",
+                "export default function E() { return null; }\n",
+            ),
+            (
+                "pages/legacy/[[...slug]].page.tsx",
+                "export default function F() { return null; }\n",
+            ),
+        ]);
+        assert_eq!(
+            pages_route_findings(&routes),
+            vec![
+                (
+                    "dynamic_segment_name_conflict",
+                    "src/pages/shop/[id].page.tsx"
+                ),
+                (
+                    "dynamic_segment_name_conflict",
+                    "src/pages/shop/[slug].page.tsx"
+                ),
+            ],
+            "{:?}",
+            routes.diagnostics
         );
     }
 

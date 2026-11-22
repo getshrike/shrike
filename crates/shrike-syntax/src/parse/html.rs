@@ -50,7 +50,19 @@ pub(crate) fn parse(
         default_export_local: None,
         default_export_has_get_initial_props: false,
         pages_config_runtime: None,
+        unused_page_data_keys: Vec::new(),
         misplaced_directives: Vec::new(),
+        component_props: Vec::new(),
+        component_contracts: Vec::new(),
+        jsx_uses: Vec::new(),
+        jsx_namespace_uses: Vec::new(),
+        component_value_uses: Vec::new(),
+        enums: Vec::new(),
+        classes: Vec::new(),
+        class_bindings: Vec::new(),
+        class_value_escapes: Vec::new(),
+        namespaces: Vec::new(),
+        namespace_member_uses: Vec::new(),
         imports,
         declarations: Vec::new(),
         local_exports: Vec::new(),
@@ -111,7 +123,9 @@ fn module_script_sources(source: &str) -> Vec<(u32, u32, String)> {
 }
 
 fn starts_with_ignore_ascii_case(text: &str, prefix: &str) -> bool {
-    text.len() >= prefix.len() && text[..prefix.len()].eq_ignore_ascii_case(prefix)
+    text.as_bytes()
+        .get(..prefix.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(prefix.as_bytes()))
 }
 
 fn char_len(source: &str, index: usize) -> usize {
@@ -290,6 +304,20 @@ mod tests {
         let parsed = summary(
             r#"<script>const template = '<script type="module" src="/src/fake.ts"></script>';</script>
                <script type="module" src="/src/real.ts"></script>"#,
+            "index.html",
+        );
+        let sources: Vec<&str> = parsed
+            .imports
+            .iter()
+            .map(|import| import.source.as_str())
+            .collect();
+        assert_eq!(sources, vec!["/src/real.ts"]);
+    }
+
+    #[test]
+    fn handles_non_ascii_text_at_a_script_prefix_boundary() {
+        let parsed = summary(
+            r#"<p>テキスト</p><script type="module" src="/src/real.ts"></script>"#,
             "index.html",
         );
         let sources: Vec<&str> = parsed

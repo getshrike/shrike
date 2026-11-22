@@ -15,5 +15,5 @@ mod tests;
 
 pub use shrike_core::PROTOCOL_VERSION;
 
-pub use crate::codec::{decode_request, encode_line};
+pub use crate::codec::{decode_request, encode_line, encode_success_line};
 pub use crate::types::{COMMANDS, ProtocolError, Request, Response};
