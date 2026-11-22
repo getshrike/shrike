@@ -67,6 +67,8 @@ registry publication and the external launch gates are tracked in
   when the installed package does not export `./package.json`.
 - The release version setter is idempotent, so publishing the version already
   present in the source tree succeeds instead of failing the release.
+- The Action supplies the GitHub Actions bot git identity when the runner has
+  none, so prune can commit its verified batch.
 
 ### Security
 
