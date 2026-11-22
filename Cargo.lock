@@ -804,7 +804,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "shrike-core"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "blake3",
  "serde",
@@ -815,7 +815,7 @@ dependencies = [
 
 [[package]]
 name = "shrike-delta"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -826,7 +826,7 @@ dependencies = [
 
 [[package]]
 name = "shrike-engine"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "blake3",
  "rayon",
@@ -845,7 +845,7 @@ dependencies = [
 
 [[package]]
 name = "shrike-evidence"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -856,7 +856,7 @@ dependencies = [
 
 [[package]]
 name = "shrike-graph"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "blake3",
  "globset",
@@ -877,7 +877,7 @@ dependencies = [
 
 [[package]]
 name = "shrike-plan"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -889,7 +889,7 @@ dependencies = [
 
 [[package]]
 name = "shrike-protocol"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -899,7 +899,7 @@ dependencies = [
 
 [[package]]
 name = "shrike-receipt"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -908,7 +908,7 @@ dependencies = [
 
 [[package]]
 name = "shrike-resolve"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -918,7 +918,7 @@ dependencies = [
 
 [[package]]
 name = "shrike-syntax"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "oxc_allocator",
  "oxc_ast",
@@ -1094,7 +1094,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "1.0.0"
+version = "1.0.1"
 
 [[package]]
 name = "zmij"

@@ -4,7 +4,7 @@ All notable changes to Shrike are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.1] — 2026-11-23
 
 ### Fixed
 
@@ -103,4 +103,5 @@ gates are tracked in [`TRACKER.md`](TRACKER.md).
 - The Windows arm64 target and a standalone single-binary distribution are
   post-1.0; `win32-x64` is the only Windows platform package.
 
+[1.0.1]: https://github.com/getshrike/shrike/releases/tag/v1.0.1
 [1.0.0]: https://github.com/getshrike/shrike/releases/tag/v1.0.0

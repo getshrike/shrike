@@ -1,6 +1,6 @@
 {
   "name": "getshrike",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "Verified dead-code cleanup: whole-graph orphan delta, verified deletion batches, and portable receipts.",
   "license": "MIT",
