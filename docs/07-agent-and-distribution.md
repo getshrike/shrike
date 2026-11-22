@@ -215,6 +215,9 @@ identity is left unchanged.
 
 - `contents: read` for delta mode;
 - `contents: write`, `pull-requests: write` for prune mode;
+- the repository setting **Allow GitHub Actions to create and approve pull
+  requests** when prune uses the default `GITHUB_TOKEN`; without it,
+  `gh pr create` is rejected and prune exits 4;
 - no `actions: write`;
 - a fork PR gets read-only delta mode and no secrets.
 
