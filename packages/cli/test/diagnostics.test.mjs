@@ -157,6 +157,98 @@ test("invalid Pages Router exports are actionable routing diagnostics", () => {
   assert.equal(summary.bySeverity.error, 1);
 });
 
+test("unused component props are actionable React diagnostics", () => {
+  const summary = summarizeDiagnostics([
+    {
+      code: "unused_component_prop",
+      severity: "warning",
+      message: "`Badge` destructures prop `tone` but never reads it in the component",
+      file: "components/Internal.tsx",
+    },
+  ]);
+  assert.equal(summary.actionable, 1);
+  assert.equal(summary.groups[0].category, "react");
+  assert.equal(summary.groups[0].actionable, true);
+  assert.equal(summary.bySeverity.warning, 1);
+});
+
+test("absent component props are actionable React diagnostics", () => {
+  const summary = summarizeDiagnostics([
+    {
+      code: "absent_component_prop",
+      severity: "warning",
+      message:
+        "`Card` reads optional prop `flag` but its only known render site does not supply it",
+      file: "components/Card.tsx",
+    },
+  ]);
+  assert.equal(summary.actionable, 1);
+  assert.equal(summary.groups[0].category, "react");
+  assert.equal(summary.groups[0].actionable, true);
+  assert.equal(summary.bySeverity.warning, 1);
+});
+
+test("unused Pages Router data keys are actionable Next.js diagnostics", () => {
+  const summary = summarizeDiagnostics([
+    {
+      code: "unused_page_data_key",
+      severity: "warning",
+      message:
+        "`getStaticProps` returns prop `unused` but the page component never reads it",
+      file: "pages/index.tsx",
+    },
+  ]);
+  assert.equal(summary.actionable, 1);
+  assert.equal(summary.groups[0].category, "next");
+  assert.equal(summary.groups[0].actionable, true);
+  assert.equal(summary.bySeverity.warning, 1);
+});
+
+test("unused enum members are actionable type diagnostics", () => {
+  const summary = summarizeDiagnostics([
+    {
+      code: "unused_enum_member",
+      severity: "warning",
+      message: "`Status` declares enum member `Inactive` but no project reference reads it",
+      file: "src/status.ts",
+    },
+  ]);
+  assert.equal(summary.actionable, 1);
+  assert.equal(summary.groups[0].category, "types");
+  assert.equal(summary.groups[0].actionable, true);
+  assert.equal(summary.bySeverity.warning, 1);
+});
+
+test("unused class members are actionable type diagnostics", () => {
+  const summary = summarizeDiagnostics([
+    {
+      code: "unused_class_member",
+      severity: "warning",
+      message: "`Counter` declares class member `reset` but no project reference reads it",
+      file: "src/counter.ts",
+    },
+  ]);
+  assert.equal(summary.actionable, 1);
+  assert.equal(summary.groups[0].category, "types");
+  assert.equal(summary.groups[0].actionable, true);
+  assert.equal(summary.bySeverity.warning, 1);
+});
+
+test("unused namespace members are actionable type diagnostics", () => {
+  const summary = summarizeDiagnostics([
+    {
+      code: "unused_namespace_member",
+      severity: "warning",
+      message: "`Legacy` declares namespace member `unusedValue` but no project reference reads it",
+      file: "src/legacy.ts",
+    },
+  ]);
+  assert.equal(summary.actionable, 1);
+  assert.equal(summary.groups[0].category, "types");
+  assert.equal(summary.groups[0].actionable, true);
+  assert.equal(summary.bySeverity.warning, 1);
+});
+
 test("client/server leaks are actionable boundary diagnostics", () => {
   const summary = summarizeDiagnostics([
     {
@@ -187,13 +279,19 @@ test("Next.js route conflicts are actionable routing diagnostics", () => {
       message: "sibling Next.js dynamic segments at `/shop` use different names",
       file: "app/shop/[slug]/page.tsx",
     },
+    {
+      code: "pages_router_route_conflict",
+      severity: "error",
+      message: "`/shop` has both required and optional catch-all routes",
+      file: "pages/shop/[[...slug]].tsx",
+    },
   ]);
-  assert.equal(summary.actionable, 2);
+  assert.equal(summary.actionable, 3);
   assert.deepEqual(
     summary.groups.map((group) => group.category),
-    ["routing", "routing"],
+    ["routing", "routing", "routing"],
   );
-  assert.equal(summary.bySeverity.error, 2);
+  assert.equal(summary.bySeverity.error, 3);
 });
 
 test("unknown codes are actionable only when they are not informational", () => {

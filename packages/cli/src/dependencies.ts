@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, readlinkSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, readlinkSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -206,23 +206,22 @@ function readPackageJson(directory: string): PackageJson | null {
   }
 }
 
-function discoverPackageDirectories(root: string): string[] {
+function discoverPackageDirectories(root: string, cache: ScanCache): string[] {
   const directories = new Set<string>();
-  if (existsSync(join(root, "package.json"))) directories.add("");
+  const rootEntries = readdirCached(root, "", cache);
+  if (rootEntries.some((entry) => entry.name === "package.json" && entry.isFile())) {
+    directories.add("");
+  }
   const walk = (directory: string, depth: number): void => {
     if (depth > 3) return;
-    let entries: Array<{ isDirectory(): boolean; name: string }>;
-    try {
-      entries = readdirSync(join(root, directory), { withFileTypes: true });
-    } catch {
-      return;
-    }
+    const entries = readdirCached(root, directory, cache);
     for (const entry of entries) {
       if (!entry.isDirectory() || IGNORED_DIRECTORIES.has(entry.name) || entry.name.startsWith(".")) {
         continue;
       }
       const relative = directory === "" ? entry.name : `${directory}/${entry.name}`;
-      if (existsSync(join(root, relative, "package.json"))) {
+      const childEntries = readdirCached(root, relative, cache);
+      if (childEntries.some((child) => child.name === "package.json" && child.isFile())) {
         directories.add(relative);
         // A workspace package normally owns its subtree; keep descending only
         // one level so nested examples are still found without walking the
@@ -269,8 +268,97 @@ function shellTokens(command: string): string[] {
     .filter((token) => token.length > 0);
 }
 
-function binNames(root: string, directory: string, packageName: string): string[] {
-  const json = installedPackageJson(root, directory, packageName);
+/** Per-scan caches for filesystem evidence. Dependency analysis reads the same
+ * manifests and config files once per declared package, so memoizing them is
+ * the difference between a few hundred file reads and a few thousand. */
+interface ScanCache {
+  texts: Map<string, string | null>;
+  manifests: Map<string, PackageJson | null>;
+  bins: Map<string, string[]>;
+  binLinks: Map<string, Map<string, string>>;
+  dirents: Map<string, Dirent[]>;
+}
+
+function newScanCache(): ScanCache {
+  return {
+    texts: new Map(),
+    manifests: new Map(),
+    bins: new Map(),
+    binLinks: new Map(),
+    dirents: new Map(),
+  };
+}
+
+/** Directory listings shared by the package, config, and source walks. */
+function readdirCached(root: string, directory: string, cache: ScanCache): Dirent[] {
+  const cached = cache.dirents.get(directory);
+  if (cached) return cached;
+  let entries: Dirent[] = [];
+  try {
+    entries = readdirSync(join(root, directory), { withFileTypes: true });
+  } catch {
+    // A missing or unreadable directory has no entries.
+  }
+  cache.dirents.set(directory, entries);
+  return entries;
+}
+
+function readTextCached(root: string, file: string, cache: ScanCache): string | null {
+  const cached = cache.texts.get(file);
+  if (cached !== undefined) return cached;
+  let text: string | null = null;
+  try {
+    text = readFileSync(join(root, file), "utf8");
+  } catch {
+    // An unreadable file stays null so repeated lookups do not retry.
+  }
+  cache.texts.set(file, text);
+  return text;
+}
+
+/** Executable name -> link target for both node_modules/.bin directories. */
+function binLinks(
+  root: string,
+  directory: string,
+  cache: ScanCache,
+): Map<string, string> {
+  const key = directory;
+  const cached = cache.binLinks.get(key);
+  if (cached) return cached;
+  const links = new Map<string, string>();
+  for (const nodeModules of [
+    join(root, directory, "node_modules"),
+    join(root, "node_modules"),
+  ]) {
+    const binDir = join(nodeModules, ".bin");
+    if (!existsSync(binDir)) continue;
+    try {
+      for (const entry of readdirSync(binDir)) {
+        if (links.has(entry)) continue;
+        try {
+          links.set(entry, readlinkSync(join(binDir, entry)).replace(/\\/g, "/"));
+        } catch {
+          // A dangling link cannot attribute a binary.
+        }
+      }
+    } catch {
+      // An unreadable bin directory cannot prove a binary name.
+    }
+  }
+  cache.binLinks.set(key, links);
+  return links;
+}
+
+function binNames(
+  root: string,
+  directory: string,
+  packageName: string,
+  cache: ScanCache,
+): string[] {
+  const key = `${directory}\0${packageName}`;
+  const cached = cache.bins.get(key);
+  if (cached) return cached;
+  const json = installedPackageJson(root, directory, packageName, cache);
   const output: string[] = [];
   if (json) {
     if (typeof json.bin === "string") {
@@ -282,33 +370,17 @@ function binNames(root: string, directory: string, packageName: string): string[
   // pnpm exposes executables through `.bin` even when the package manifest is
   // not reachable from a direct `node_modules/<name>` path. Read the link
   // target to attribute the binary to the package that provides it.
-  for (const nodeModules of [
-    join(root, directory, "node_modules"),
-    join(root, "node_modules"),
-  ]) {
-    const binDir = join(nodeModules, ".bin");
-    if (!existsSync(binDir)) continue;
-    try {
-      for (const entry of readdirSync(binDir)) {
-        if (output.includes(entry)) continue;
-        let target = "";
-        try {
-          target = readlinkSync(join(binDir, entry)).replace(/\\/g, "/");
-        } catch {
-          continue;
-        }
-        if (
-          target.includes(`/${packageName}/`) ||
-          target.startsWith(`${packageName}/`) ||
-          target.includes(`node_modules/${packageName}/`)
-        ) {
-          output.push(entry);
-        }
-      }
-    } catch {
-      // An unreadable bin directory cannot prove a binary name.
+  for (const [entry, target] of binLinks(root, directory, cache)) {
+    if (output.includes(entry)) continue;
+    if (
+      target.includes(`/${packageName}/`) ||
+      target.startsWith(`${packageName}/`) ||
+      target.includes(`node_modules/${packageName}/`)
+    ) {
+      output.push(entry);
     }
   }
+  cache.bins.set(key, output);
   return output;
 }
 
@@ -356,31 +428,44 @@ function pnpmManifest(nodeModules: string, name: string): PackageJson | null {
  * falling back to the hoisted root tree used by npm/pnpm workspaces, then to
  * the pnpm content-addressed store when the package is not linked.
  */
-function installedPackageJson(root: string, directory: string, name: string): PackageJson | null {
+function installedPackageJson(
+  root: string,
+  directory: string,
+  name: string,
+  cache: ScanCache,
+): PackageJson | null {
+  const key = `${directory}\0${name}`;
+  const cached = cache.manifests.get(key);
+  if (cached !== undefined) return cached;
   const localModules = join(root, directory, "node_modules");
   const rootModules = join(root, "node_modules");
   const candidates = [
     join(localModules, name, "package.json"),
     join(rootModules, name, "package.json"),
   ];
+  let result: PackageJson | null = null;
   for (const path of candidates) {
     if (!existsSync(path)) continue;
     try {
       const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
       if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-        return parsed as PackageJson;
+        result = parsed as PackageJson;
+        break;
       }
     } catch {
       // A malformed installed manifest cannot prove a requirement.
     }
   }
-  return pnpmManifest(localModules, name) ?? pnpmManifest(rootModules, name);
+  result ??= pnpmManifest(localModules, name) ?? pnpmManifest(rootModules, name);
+  cache.manifests.set(key, result);
+  return result;
 }
 
 function relevantConfigFiles(
   root: string,
   context: PackageContext,
   directories: string[],
+  cache: ScanCache,
 ): string[] {
   const files = new Set<string>();
   for (const file of context.files) {
@@ -388,14 +473,10 @@ function relevantConfigFiles(
   }
   const scope = context.directory === "" ? directories : [context.directory];
   for (const directory of scope) {
-    try {
-      for (const entry of readdirSync(join(root, directory), { withFileTypes: true })) {
-        if (!entry.isFile()) continue;
-        const relative = directory === "" ? entry.name : `${directory}/${entry.name}`;
-        if (CONFIG_FILE.test(relative)) files.add(relative);
-      }
-    } catch {
-      // A missing package directory simply has no extra config.
+    for (const entry of readdirCached(root, directory, cache)) {
+      if (!entry.isFile()) continue;
+      const relative = directory === "" ? entry.name : `${directory}/${entry.name}`;
+      if (CONFIG_FILE.test(relative)) files.add(relative);
     }
   }
   return [...files].sort();
@@ -410,31 +491,36 @@ const FILE_EXTENSION_NAMES = new Set([
   "vue", "svelte", "astro", "mdx", "md", "html", "yaml", "yml",
 ]);
 
-function configMentions(root: string, file: string, name: string): boolean {
-  try {
-    const text = readFileSync(join(root, file), "utf8");
-    // `/` is a boundary: a scoped package is often referenced inside a path
-    // (`node_modules/@biomejs/biome/schema.json`).
-    const pattern = new RegExp(
-      `(^|[^A-Za-z0-9_-])${escapeRegExp(name)}($|[^A-Za-z0-9_-])`,
-      "g",
-    );
-    for (const match of text.matchAll(pattern)) {
-      const start = (match.index ?? 0) + (match[1]?.length ?? 0);
-      const before = text[start - 1] ?? "";
-      const after = text[start + name.length] ?? "";
-      if (FILE_EXTENSION_NAMES.has(name)) {
-        // `*.test.tsx`, `**/*.tsx`, `\\.tsx?$`
-        if (before === "." || before === "*" || after === "?") continue;
-        // `*.{js,ts,tsx}`
-        if ((before === "," || before === "{") && (after === "}" || after === ",")) continue;
-      }
-      return true;
+function configMentions(
+  root: string,
+  file: string,
+  name: string,
+  cache: ScanCache,
+): boolean {
+  const text = readTextCached(root, file, cache);
+  if (text === null) return false;
+  // Most dependencies never appear in a given config. The literal check is
+  // much cheaper than compiling and running the boundary regex below.
+  if (!text.includes(name)) return false;
+  // `/` is a boundary: a scoped package is often referenced inside a path
+  // (`node_modules/@biomejs/biome/schema.json`).
+  const pattern = new RegExp(
+    `(^|[^A-Za-z0-9_-])${escapeRegExp(name)}($|[^A-Za-z0-9_-])`,
+    "g",
+  );
+  for (const match of text.matchAll(pattern)) {
+    const start = (match.index ?? 0) + (match[1]?.length ?? 0);
+    const before = text[start - 1] ?? "";
+    const after = text[start + name.length] ?? "";
+    if (FILE_EXTENSION_NAMES.has(name)) {
+      // `*.test.tsx`, `**/*.tsx`, `\\.tsx?$`
+      if (before === "." || before === "*" || after === "?") continue;
+      // `*.{js,ts,tsx}`
+      if ((before === "," || before === "{") && (after === "}" || after === ",")) continue;
     }
-    return false;
-  } catch {
-    return false;
+    return true;
   }
+  return false;
 }
 
 /** Names a config file may use for a dependency (`eslint-config-next` -> `next`). */
@@ -474,29 +560,35 @@ function typesTarget(name: string): string | null {
 }
 
 /** Package names listed in `compilerOptions.types` across tsconfig files. */
-function compilerTypeNames(root: string, files: string[]): Set<string> {
+function compilerTypeNames(
+  root: string,
+  files: string[],
+  cache: ScanCache,
+): Set<string> {
   const names = new Set<string>();
   for (const file of files) {
     if (!/(^|\/)tsconfig(?:\.[^/]*)?\.json$/.test(file)) continue;
-    try {
-      const text = readFileSync(join(root, file), "utf8");
-      const match = /"types"\s*:\s*\[([^\]]*)\]/.exec(text);
-      if (!match) continue;
-      const list = match[1];
-      if (!list) continue;
-      for (const item of list.matchAll(/"([^"]+)"/g)) {
-        const name = item[1];
-        if (name) names.add(name);
-      }
-    } catch {
-      // An unreadable tsconfig cannot prove a type package is used.
+    const text = readTextCached(root, file, cache);
+    if (text === null) continue;
+    const match = /"types"\s*:\s*\[([^\]]*)\]/.exec(text);
+    if (!match) continue;
+    const list = match[1];
+    if (!list) continue;
+    for (const item of list.matchAll(/"([^"]+)"/g)) {
+      const name = item[1];
+      if (name) names.add(name);
     }
   }
   return names;
 }
 
-function mentionsAny(root: string, file: string, aliases: string[]): boolean {
-  return aliases.some((alias) => configMentions(root, file, alias));
+function mentionsAny(
+  root: string,
+  file: string,
+  aliases: string[],
+  cache: ScanCache,
+): boolean {
+  return aliases.some((alias) => configMentions(root, file, alias, cache));
 }
 
 /**
@@ -506,15 +598,15 @@ function mentionsAny(root: string, file: string, aliases: string[]): boolean {
  * boolean or an options object counts; `false`, dynamic values, and comments
  * that do not match the option shape do not.
  */
-function nextReactCompilerEnabled(root: string, files: string[]): boolean {
+function nextReactCompilerEnabled(
+  root: string,
+  files: string[],
+  cache: ScanCache,
+): boolean {
   for (const file of files) {
     if (!/(^|\/)next\.config\.[cm]?[jt]s$/.test(file)) continue;
-    try {
-      const text = readFileSync(join(root, file), "utf8");
-      if (/\breactCompiler\s*:\s*(?:true|\{)/.test(text)) return true;
-    } catch {
-      // An unreadable config cannot prove the option is enabled.
-    }
+    const text = readTextCached(root, file, cache);
+    if (text !== null && /\breactCompiler\s*:\s*(?:true|\{)/.test(text)) return true;
   }
   return false;
 }
@@ -538,18 +630,17 @@ interface WalkOptions {
 }
 
 /** Bounded walk used for source/config surfaces the parser does not cover. */
-function walkFiles(root: string, directory: string, options: WalkOptions): string[] {
+function walkFiles(
+  root: string,
+  directory: string,
+  options: WalkOptions,
+  cache: ScanCache,
+): string[] {
   const output: string[] = [];
   const maxDepth = options.maxDepth ?? 5;
   const walk = (relative: string, depth: number): void => {
     if (depth > maxDepth) return;
-    let entries: Array<{ isDirectory(): boolean; isFile(): boolean; name: string }>;
-    try {
-      entries = readdirSync(join(root, relative), { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
+    for (const entry of readdirCached(root, relative, cache)) {
       const path = relative === "" ? entry.name : `${relative}/${entry.name}`;
       if (entry.isDirectory()) {
         if (IGNORED_DIRECTORIES.has(entry.name)) continue;
@@ -569,7 +660,7 @@ function walkFiles(root: string, directory: string, options: WalkOptions): strin
  * and config files in subdirectories. These files execute tools but are not
  * part of a package's module graph, so they are scanned by content instead.
  */
-function toolConfigFiles(root: string, directory: string): string[] {
+function toolConfigFiles(root: string, directory: string, cache: ScanCache): string[] {
   const prefix = directory === "" ? "" : `${directory}/`;
   const starts = new Set<string>();
   for (const name of ["jest", ".storybook"]) {
@@ -584,23 +675,23 @@ function toolConfigFiles(root: string, directory: string): string[] {
       extensions: /\.(?:[cm]?[jt]sx?|json)$/i,
       maxDepth: 4,
       includeHidden: true,
-    })) {
+    }, cache)) {
       files.add(file);
     }
   }
   for (const file of walkFiles(root, directory, {
     extensions: CONFIG_FILE,
     maxDepth: 4,
-  })) {
+  }, cache)) {
     files.add(file);
   }
   return [...files].sort();
 }
 
 /** Files executed by git hooks or shell tooling, not by the module graph. */
-function shellFiles(root: string, directory: string): string[] {
+function shellFiles(root: string, directory: string, cache: ScanCache): string[] {
   const files = new Set(
-    walkFiles(root, directory, { extensions: /\.(?:sh|bash|zsh)$/i, maxDepth: 4 }),
+    walkFiles(root, directory, { extensions: /\.(?:sh|bash|zsh)$/i, maxDepth: 4 }, cache),
   );
   const hooks = join(root, directory, ".husky");
   const walkHooks = (relative: string): void => {
@@ -677,7 +768,8 @@ export function analyzeDependencies(
   ignore: string[] = [],
 ): DependencyReport {
   const ignored = new Set(ignore);
-  const directories = discoverPackageDirectories(root);
+  const cache = newScanCache();
+  const directories = discoverPackageDirectories(root, cache);
   const allNames = new Set<string>();
   const contexts: PackageContext[] = [];
   const modules = snapshot.modules ?? [];
@@ -738,6 +830,13 @@ export function analyzeDependencies(
         declarations.set(name, list);
       }
     }
+    // Alias sets are consulted for every config/CSS/shell file. Derive them
+    // once per package instead of rebuilding them inside the file loops.
+    const aliasesByName = new Map<string, string[]>();
+    for (const name of declarations.keys()) {
+      aliasesByName.set(name, dependencyAliases(name));
+    }
+    const aliasesOf = (name: string): string[] => aliasesByName.get(name) ?? [name];
     const used = new Set<string>();
     const usedBy: Record<string, string[]> = {};
     const mark = (name: string, evidence: string): void => {
@@ -784,19 +883,19 @@ export function analyzeDependencies(
 
     const scriptTokens = scriptTokensFor(root, context, directories);
     for (const name of declarations.keys()) {
-      const aliases = dependencyAliases(name);
+      const aliases = aliasesOf(name);
       if (aliases.some((alias) => scriptTokens.has(alias))) {
         mark(name, "package.json script");
         continue;
       }
-      if (binNames(root, context.directory, name).some((bin) => scriptTokens.has(bin))) {
+      if (binNames(root, context.directory, name, cache).some((bin) => scriptTokens.has(bin))) {
         mark(name, "package.json script (bin)");
       }
     }
 
     // Shell scripts and git hooks execute tools outside the module graph.
     const hookTokens = new Set<string>();
-    for (const file of shellFiles(root, context.directory)) {
+    for (const file of shellFiles(root, context.directory, cache)) {
       try {
         for (const token of shellTokens(readFileSync(join(root, file), "utf8"))) {
           hookTokens.add(token);
@@ -807,9 +906,9 @@ export function analyzeDependencies(
     }
     for (const name of declarations.keys()) {
       if (used.has(name)) continue;
-      const aliases = dependencyAliases(name);
+      const aliases = aliasesOf(name);
       if (aliases.some((alias) => hookTokens.has(alias))) mark(name, "shell script");
-      else if (binNames(root, context.directory, name).some((bin) => hookTokens.has(bin))) {
+      else if (binNames(root, context.directory, name, cache).some((bin) => hookTokens.has(bin))) {
         mark(name, "shell script (bin)");
       }
     }
@@ -820,24 +919,24 @@ export function analyzeDependencies(
     // CSS tool directives (`@plugin`, `@import`, `@apply`) are tool config.
     for (const file of walkFiles(root, context.directory, {
       extensions: /\.(?:css|scss|sass|less|styl|pcss)$/i,
-    })) {
+    }, cache)) {
       for (const name of declarations.keys()) {
         if (used.has(name)) continue;
-        if (mentionsAny(root, file, dependencyAliases(name))) mark(name, file);
+        if (mentionsAny(root, file, aliasesOf(name), cache)) mark(name, file);
       }
     }
 
     // Config files: content, filename, and package.json tool fields. Shared
     // Jest/Storybook helpers and nested config files execute tools too.
     const configFiles = new Set([
-      ...relevantConfigFiles(root, context, directories),
-      ...toolConfigFiles(root, context.directory),
+      ...relevantConfigFiles(root, context, directories, cache),
+      ...toolConfigFiles(root, context.directory, cache),
     ]);
     for (const file of [...configFiles].sort()) {
       for (const name of declarations.keys()) {
         if (used.has(name)) continue;
-        const aliases = dependencyAliases(name);
-        if (mentionsAny(root, file, aliases) || fileNameMentions(file, aliases)) {
+        const aliases = aliasesOf(name);
+        if (mentionsAny(root, file, aliases, cache) || fileNameMentions(file, aliases)) {
           mark(name, file);
         }
       }
@@ -847,7 +946,7 @@ export function analyzeDependencies(
     // `babel-plugin-react-compiler`.
     if (
       declarations.has("babel-plugin-react-compiler") &&
-      nextReactCompilerEnabled(root, [...configFiles])
+      nextReactCompilerEnabled(root, [...configFiles], cache)
     ) {
       mark("babel-plugin-react-compiler", "next.config reactCompiler");
     }
@@ -860,10 +959,10 @@ export function analyzeDependencies(
     // for its ESM boundary, so prose is not dependency evidence.
     for (const file of walkFiles(root, context.directory, {
       extensions: /\.(?:vue|svelte|astro)$/i,
-    })) {
+    }, cache)) {
       for (const name of declarations.keys()) {
         if (used.has(name)) continue;
-        if (mentionsAny(root, file, dependencyAliases(name))) mark(name, file);
+        if (mentionsAny(root, file, aliasesOf(name), cache)) mark(name, file);
       }
     }
 
@@ -872,15 +971,12 @@ export function analyzeDependencies(
 
     // `importHelpers` emits imports of tslib from the compiler.
     if (declarations.has("tslib")) {
-      for (const file of relevantConfigFiles(root, context, directories)) {
+      for (const file of relevantConfigFiles(root, context, directories, cache)) {
         if (!/tsconfig/.test(file)) continue;
-        try {
-          if (/"importHelpers"\s*:\s*true/.test(readFileSync(join(root, file), "utf8"))) {
-            mark("tslib", `${file} importHelpers`);
-            break;
-          }
-        } catch {
-          // An unreadable tsconfig cannot prove the setting.
+        const text = readTextCached(root, file, cache);
+        if (text !== null && /"importHelpers"\s*:\s*true/.test(text)) {
+          mark("tslib", `${file} importHelpers`);
+          break;
         }
       }
     }
@@ -903,7 +999,7 @@ export function analyzeDependencies(
       const cached = requirementCache.get(name);
       if (cached) return cached;
       const output = new Set<string>(KNOWN_REQUIREMENTS[name] ?? []);
-      const manifest = installedPackageJson(root, context.directory, name);
+      const manifest = installedPackageJson(root, context.directory, name, cache);
       if (manifest) {
         for (const kind of REQUIREMENT_KINDS) {
           for (const dependency of Object.keys(manifest[kind] ?? {})) output.add(dependency);
@@ -933,7 +1029,7 @@ export function analyzeDependencies(
     // kept when its target is used, when it provides ambient globals, or when
     // tsconfig lists it explicitly. When the target is declared but unused,
     // both declarations are stale and both are reported.
-    const compilerTypes = compilerTypeNames(root, [...configFiles]);
+    const compilerTypes = compilerTypeNames(root, [...configFiles], cache);
     for (const name of declarations.keys()) {
       if (!name.startsWith("@types/")) continue;
       if (GLOBAL_TYPE_PACKAGES.has(name)) {
@@ -963,7 +1059,7 @@ export function analyzeDependencies(
     const declaredRequirements = new Set<string>();
     for (const name of declarations.keys()) {
       for (const dependency of KNOWN_REQUIREMENTS[name] ?? []) declaredRequirements.add(dependency);
-      const manifest = installedPackageJson(root, context.directory, name);
+      const manifest = installedPackageJson(root, context.directory, name, cache);
       if (!manifest) continue;
       for (const kind of ["peerDependencies", "optionalDependencies"] as const) {
         for (const dependency of Object.keys(manifest[kind] ?? {})) {
