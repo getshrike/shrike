@@ -16,6 +16,7 @@ export function runDelta(root: string, base: string, maxItems: number, failOn: s
   );
   const stdout = result.stdout ?? "";
   const stderr = result.stderr ?? "";
+  if (result.error) process.stderr.write(`shrike: failed to run ${cli.command}: ${result.error.message}\n`);
   if (stderr.trim()) process.stderr.write(stderr);
 
   let summary = "## Shrike orphan delta\n\n";

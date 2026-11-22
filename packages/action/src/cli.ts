@@ -17,7 +17,11 @@ export interface CliInvocation {
  */
 export function resolveCli(root: string): CliInvocation {
   const configured = process.env.SHRIKE_CLI;
-  if (configured) return { command: configured, args: [] };
+  if (configured) {
+    return /\.(?:c|m)?js$/i.test(configured)
+      ? { command: process.execPath, args: [configured] }
+      : { command: configured, args: [] };
+  }
   try {
     const require = createRequire(join(root, "package.json"));
     const manifest = require.resolve("getshrike/package.json");
