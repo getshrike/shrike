@@ -26,7 +26,7 @@ export function initCommand(root: string, args: ParsedArgs): number {
   const force = booleanFlag(args, "force");
   const path = join(root, "shrike.config.ts");
   if (existsSync(path) && !force) throw new UsageError("shrike.config.ts already exists; pass --force to replace it");
-  const config = `import type { ShrikeConfig } from "shrike/config";
+  const config = `import type { ShrikeConfig } from "getshrike/config";
 
 /** Shrike configuration. See schemas/config.schema.json. */
 const config: Partial<ShrikeConfig> = {

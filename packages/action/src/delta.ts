@@ -2,14 +2,16 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { resolveCli } from "./cli.ts";
 import { writeOutput, writeSummary } from "./inputs.ts";
 
 export function runDelta(root: string, base: string, maxItems: number, failOn: string): number {
   const jsonPath = join(root, ".shrike", "action-delta.json");
   mkdirSync(dirname(jsonPath), { recursive: true });
+  const cli = resolveCli(root);
   const result = spawnSync(
-    "shrike",
-    ["delta", "--base", base, "--json", "--allow-dirty", "--fail-on", "never"],
+    cli.command,
+    [...cli.args, "delta", "--base", base, "--json", "--allow-dirty", "--fail-on", "never"],
     { cwd: root, encoding: "utf8" },
   );
   const stdout = result.stdout ?? "";

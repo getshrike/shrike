@@ -1,8 +1,8 @@
 # Shrike 1.0 — Tracker
 
 > **Canonical design:** [`MASTER_PROMPT.md`](MASTER_PROMPT.md)
-> **Status:** implementation complete for phases 0–4 and the local distribution/hardening surfaces; external launch, design-partner, publish, and external partner-app acceptance items are blocked
-> **Last updated:** 2026-11-21
+> **Status:** implementation complete for phases 0–4 and the local distribution/hardening surfaces; npm packaging and release automation are implemented; external launch, design-partner, publish, and external audit items are blocked
+> **Last updated:** 2026-11-23
 
 This tracker is authoritative for Shrike 1.0 status. A phase is not done because
 the document is long or the code compiles; it is done when the exit gate is
@@ -45,9 +45,12 @@ demonstrated and the evidence is linked here.
   must-not-report corpus runs every case as its own project in both static and
   build-evidence modes from a clean cache (315 cases, zero protected symbols
   reported), and eleven `fixtures/build-graph/` scenarios cover the join,
-  fallback, and boundary matrix. External launch, design-partner, publish, and
-  external partner-app acceptance items are `blocked` on credentials or
-  participants, not on code.
+  fallback, and boundary matrix. The npm release path is implemented: an
+  unscoped `getshrike` CLI, five `getshrike-*` platform packages, fail-closed
+  SHA-256 verification, a clean-machine install test, and a release workflow
+  with attestations and keyless signing. External launch, design-partner,
+  publish, and independent-audit items are `blocked` on credentials, a test
+  repository, an auditor, or participants, not on code.
 - **Prior prototype:** not a dependency. The old tree was removed; a backup
   exists outside the repository only as a safety net. No code, schema, or fixture
   from it is reused.
@@ -63,8 +66,8 @@ demonstrated and the evidence is linked here.
 | 2 | [Graph and delta](plans/PLAN-2-graph-and-delta.md) | `done` | Orphan delta correct; corpus clean |
 | 3 | [Verification and receipts](plans/PLAN-3-verification-and-receipts.md) | `done` | End-to-end verified deletion PR + receipt; 3 real batches verified on a Next.js 16.4.2 app with typecheck, lint, test, and build |
 | 4 | [Build graph and Next.js](plans/PLAN-4-build-graph-and-nextjs.md) | `done` | Build evidence join, streaming, verdicts, bytes, boundaries, fallbacks, fixtures, and receipts green; local real Next.js 16.4.2 reference-app coverage is 1.00 (25/25 modules); external partner-app runs remain a distribution gate |
-| 5 | [Distribution and launch](plans/PLAN-5-distribution-and-launch.md) | `in-progress` | Hooks + Action + MCP done; design partners and publish blocked |
-| 6 | [Hardening and scale](plans/PLAN-6-hardening-and-scale.md) | `in-progress` | Corpus, scale, benchmarks done; labeled set and release blocked |
+| 5 | [Distribution and launch](plans/PLAN-5-distribution-and-launch.md) | `in-progress` | Hooks + Action + MCP + npm packaging done; design partners, a test-repository Action run, and publish blocked |
+| 6 | [Hardening and scale](plans/PLAN-6-hardening-and-scale.md) | `in-progress` | Corpus, scale, benchmarks, and supply-chain automation done; labeled set, independent audit, and release blocked |
 
 ---
 
@@ -188,16 +191,16 @@ demonstrated and the evidence is linked here.
 | 5.4 | Fast-path budget | `done` | ≤ 60 s or delta-only | `shrike hook run` runs configured fast-tier checks (or discovers typecheck/lint), reuses a matching stored baseline, shares one 60 s deadline with the 55 s delta, and records `pass`/`fail`/`timeout`/`error`/`skipped`/`skipped-budget`; `SHRIKE_HOOK_TOTAL_BUDGET_MS`/`SHRIKE_HOOK_CHECKS_BUDGET_MS`; `packages/cli/test/contracts.test.mjs` (5 hook fast-path tests) |
 | 5.5 | Hook output + brief | `done` | One-screen summary + JSON `CleanupBrief` | `packages/agent/src/brief.ts`; `.shrike/brief.json` contract test |
 | 5.6 | Hook safety | `done` | No source upload; `.shrike/` only; timeout | hook writes `.shrike/` only; prompt-injection sanitization; contract test |
-| 5.7 | GitHub Action | `blocked` | Opens a draft PR on a test repo | `packages/action/` supports delta/prune, `fail-on` (`newly-dead` or `never`), records outputs, replaces the delta artifact on rerun, removes stale evidence on failure, and refuses forks; local tests cover thresholds, fail-on, invalid inputs, artifact replacement/removal, fork refusal, prune outputs, and unknown modes; external test-repo run is blocked on a test repository |
+| 5.7 | GitHub Action | `blocked` | Opens a draft PR on a test repo | `packages/action/` supports delta/prune, `fail-on` (`newly-dead` or `never`), records outputs, replaces the delta artifact on rerun, removes stale evidence on failure, and refuses forks; it runs from the committed `dist/main.cjs` bundle and resolves a project-local `getshrike` install, `SHRIKE_CLI`, or `shrike` on `PATH`; local tests cover thresholds, fail-on, invalid inputs, artifact replacement/removal, fork refusal, prune outputs, unknown modes, and the bundled artifact; external test-repo run is blocked on a test repository |
 | 5.8 | PR template + receipt comment | `done` | Per-batch commits; receipt link; rejected list | `packages/receipts/src/render.ts`; `scripts/e2e-prune.mjs` per-batch commits |
 | 5.9 | MCP wrapper | `done` | 4 tools; no mutation | `packages/cli/src/commands/mcp.ts`; four-tool contract test; live stdio test on accounteer verified initialize, tools/list, proof, receipt list, path-traversal rejection, unknown tool/method, and clean exit |
-| 5.10 | Package naming + publish dry run | `blocked` | Name available; tarball contents verified | local tarball gate passes (`scripts/check-package.mjs`: launcher, dist, README, license; no source/tests/fixtures); npm scope availability and registry publish dry run remain blocked on credentials |
+| 5.10 | Package naming + publish dry run | `done` | Name available; tarball contents verified | `getshrike` and the five `getshrike-*` platform names return 404 on the npm registry (2026-11-23; `left-pad` and `shrike@0.5.2` resolve normally); `scripts/check-package.mjs` packs the real CLI tarball (40 files) and a staged platform tarball (5 files), checks the rewritten optional dependencies, bundle boundary, types, README, license, and `pnpm publish --dry-run`; `scripts/test-install.mjs` installs both tarballs into an empty project and runs both bins; the registry publish itself is 6.10 |
 | 5.11 | Landing test | `blocked` | Two positionings; qualified sign-ups measured | blocked: landing test requires participants |
 | 5.12 | Teardown content | `blocked` | 10 public Next.js repos; before/after receipts | blocked: public repo teardown requires publishing and review |
 | 5.13 | Design-partner kit | `done` | One-command trial; read-only first | `design-partner/` ships a read-only `trial.sh` (delta + plan), trust-boundary guide, triage template, and one-command removal; exercised on a synthetic feature branch |
 | 5.14 | Design partners | `blocked` | 3 teams; at least 1 merged PR each | blocked: requires design partners |
 | 5.15 | Launch | `blocked` | Post, demo, receipt screenshots | blocked: requires launch channel and demo assets |
-| 5.16 | Docs update | `done` | `docs/07` matches behavior | `docs/07` updated for actual Action inputs/outputs, hook run, launcher resolution, packaging gate, design-partner kit, and local acceptance evidence |
+| 5.16 | Docs update | `done` | `docs/07` matches behavior | `docs/07` updated for actual Action inputs/outputs, hook run, launcher resolution, packaging gate, design-partner kit, and local acceptance evidence; `docs/09` records the implemented supply-chain controls and the remaining audit; README and `CHANGELOG.md` describe the `getshrike` install path |
 
 ### Phase 6 — Hardening and scale
 
@@ -208,12 +211,12 @@ demonstrated and the evidence is linked here.
 | 6.3 | Calibration report | `blocked` | Per-rule precision + calibration curve | blocked: calibration needs the labeled set |
 | 6.4 | Monorepo scale | `done` | 10k+ files; workspace boundaries correct | `benchmarks/harness.mjs` 10k run; monorepo fixture |
 | 6.5 | 10k performance | `done` | All budgets met on reference hardware | this file §5; `benchmarks/README.md` |
-| 6.6 | Security review | `done` | Trust boundaries, redaction, injection tests | Internal review in `docs/09` §11; config and verifier child environments are allowlisted; redaction, prompt-injection, render, traversal, fork, dirty-tree, and cache-corruption tests pass; `pnpm audit --prod` clean and `cargo audit` 0 vulnerabilities (1550 advisories, 108 deps); external audit and signed release/launcher checksum remain blocked under 6.7 |
-| 6.7 | Supply chain | `blocked` | Signed binaries, checksums, provenance, audit | blocked: signed binaries and provenance require release infrastructure |
+| 6.6 | Security review | `done` | Trust boundaries, redaction, injection tests | Internal review in `docs/09` §11; config and verifier child environments are allowlisted; redaction, prompt-injection, render, traversal, fork, dirty-tree, and cache-corruption tests pass; `pnpm audit --prod` clean and `cargo audit` 0 vulnerabilities (1550 advisories, 108 deps); launcher checksum verification and release signing are implemented and locally tested; the independent audit remains blocked under 6.7 |
+| 6.7 | Supply chain | `blocked` | Signed binaries, checksums, provenance, audit | release workflow builds Linux/macOS x64+arm64 and Windows x64, stages each binary with a SHA-256 sidecar, creates GitHub attestations for every tarball and standalone engine, signs `SHA256SUMS` keylessly with Sigstore, and publishes from the attested tarballs with npm provenance; the launcher fails closed on a missing or mismatched checksum (`packages/cli/test/engine.test.mjs`, `scripts/test-install.mjs`); blocked on the first signed release run and an independent audit |
 | 6.8 | Failure injection | `done` | Crash, timeout, corrupted cache, failed revert | engine crash/timeout tests; corrupted snapshot and manifest are discarded and rebuilt; `cache verify` reports broken entries; revert-failure/recovery e2e; `packages/cli/test/contracts.test.mjs` |
 | 6.9 | Docs and README final | `done` | Every claim reproducible; links valid | README status, build-graph row, quick start, and MIT license reconciled with the implementation; `node scripts/check-links.mjs` (115 files), `node scripts/check-docs.mjs` (13 docs, 7 plans, 111 task IDs), and `node scripts/check-schemas.mjs` (1231 fixture files) pass |
-| 6.10 | Release candidate | `blocked` | 1.0.0-rc.1 on npm + GitHub | blocked: npm release requires credentials |
-| 6.11 | 1.0 release | `blocked` | Tagged, signed, published | blocked: release requires credentials and external validation |
+| 6.10 | Release candidate | `blocked` | 1.0.0-rc.1 on npm + GitHub | release workflow, version bumping, release notes, checksums, manifest, attestations, keyless signing, npm publish, and registry smoke test are implemented; blocked on npm credentials and `environment: npm` approval |
+| 6.11 | 1.0 release | `blocked` | Tagged, signed, published | same release path as 6.10; blocked on the first successful rc publication and external validation |
 | 6.12 | Opt-in telemetry | `deferred` | Not in v1; revisit after adoption | deferred by D-016 |
 
 ---
@@ -272,6 +275,7 @@ The active decisions are below. Rejected alternatives and the reasoning are in
 | D-020 | `serverActionPolicy: "graph"` is the default; unreferenced `"use server"` exports are candidates, `"protect"` restores D-019 | keep unconditional protection; report only warnings | Next.js embeds an action id only in code that references the action; knip and fallow both report the 25 requo actions, Shrike also reports five unreferenced schemas/helpers in the same modules, and accounteer restores 23 actions. Verified deletion can use client-reference evidence | accepted |
 | D-021 | Test and script modules are module entries; ordinary exports follow the graph, while story, `__mocks__`, and type-test exports stay entries | seed every test/script export; module-only for all test files | Runners execute the file, not arbitrary exports. Knip and fallow both report unused test fixtures; the controlled A/B adds exactly 21 requo and 8 accounteer symbols with 0 removals, and the only no-agreement symbols are genuinely unimported | accepted |
 | D-022 | File findings require no entry, no incoming cross-file edge, and a dead module symbol | report every all-candidates file; keep only symbol findings | Knip and fallow file rules are import-level; on frozen snapshots this rule matches all 8 competitor-agreed files in requo and all 8 in accounteer with no extras, while keeping imported barrels and dead-code-only imports out of the root report | accepted |
+| D-053 | The npm package is `getshrike`; the command stays `shrike` | `shrike` (taken at 0.5.2); `shrike-cli`; `shrikeclean`; `shrikeproof`; a scoped package | All six unscoped names are unclaimed; the command is unchanged; the name reads as an action and matches `getshrike.dev`; no scope friction | accepted |
 
 ---
 
@@ -1036,6 +1040,7 @@ implementation starts; design-package validation is recorded below.
 | 2026-11-23 | Benchmark (performance) | Shrike 1.0.0 (`35040c6` working tree), fallow 3.46.0, knip 6.47.0, depcheck 1.4.7, ts-prune 0.10.3, ts-unused-exports 11.0.1 over 12 paired fixtures; `python3 benchmarks/competitors/bench.py --work /tmp/opencode/bench-v2 --tools shrike-cli,shrike-engine,fallow,knip`; narrow suite with `--tools depcheck,ts-prune,ts-unused-exports --quick`; [benchmarks/competitor-2026-11-23.md](benchmarks/competitor-2026-11-23.md) | OK: 5 measured rounds after 2 warmups, rotating tool order, finding counts and exits validated, invalid knip configs excluded. CLI beats fallow 11/12 cold (median 1.47×, geomean 1.45×) and 12/12 warm (1.93× / 1.90×); engine beats fallow 12/12 cold (3.33× / 3.64×) and 12/12 warm (9.46× / 10.14×); CLI is 1.27–27.06× faster than valid knip cold on 10 fixtures. The first run found a UTF-8 HTML scanner panic on Vite, fixed with a regression test and no analysis-rule change; the reported run uses an `exec`-gated, PID-validated RSS sampler |
 
 | 2026-11-23 | Final gates (competitor benchmark) | `cargo test --workspace`; `cargo clippy --workspace --all-targets -- -D warnings`; `pnpm -r typecheck`; `node --test "packages/**/*.test.mjs"`; `node scripts/check-corpus.mjs`; `node scripts/corpus-runner.mjs`; `node scripts/differential.mjs`; `node scripts/differential.mjs --fixture fixtures/differential-glob`; `pnpm run check:docs`; `pnpm run check:links`; `pnpm run check:schemas` | OK: 336 Rust tests pass, clippy clean; typecheck clean, 134 Node tests pass; corpus 315 cases across 56 categories with 0 protected symbols in 192 candidates and 88 build-evidence suppressions; differential `agreed=3`, `shrike-only=0`, `tool-only=0`, `internal-only=1`; glob differential `agreed=1`, `shrike-only=1` (negative-pattern control), `tool-only=0`; 13 docs and 111 tracker ids, 122 links, 6 schemas and 944 fixture JSON files parse |
+| 2026-11-23 | npm release engineering | `packages/cli/package.json`, `packages/platform/*/package.json`, `packages/cli/src/engine.ts`, `packages/action/src/cli.ts`, `scripts/build-cli.mjs`, `scripts/build-action.mjs`, `scripts/stage-platform.mjs`, `scripts/check-package.mjs`, `scripts/test-install.mjs`, `scripts/set-version.mjs`, `scripts/release-notes.mjs`, `scripts/checksums.mjs`, `scripts/release-manifest.mjs`, `.github/workflows/release.yml`, `.github/workflows/ci.yml`, `.github/workflows/nightly.yml`, `README.md`, `CHANGELOG.md`, `docs/07`, `docs/09`, `docs/12`, `TRACKER.md` | OK: `getshrike` and five platform names unclaimed; esbuild CLI bundle has no private runtime dependency; `pnpm run build:ts` produces `dist/main.js`, `dist/index.js`, `dist/config.js`, declarations, and the committed Action bundle; main tarball 40 files, platform tarball 5 files; `pnpm publish --dry-run` succeeds; clean-machine install runs both bins and a real scan; checksum mismatch and missing platform package exit 4; 6 engine tests and 7 Action tests pass; `actionlint` clean; all workflows pin Actions by commit SHA; first registry publish remains blocked on npm credentials |
 
 ---
 

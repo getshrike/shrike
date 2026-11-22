@@ -165,7 +165,7 @@ const NODE_BUILTINS = new Set([
 
 // The analyzer itself is provided by the runner. A project's Shrike config may
 // import the tool's types without declaring the tool as a package dependency.
-const TOOL_PACKAGES = new Set(["shrike", "@shrike/cli"]);
+const TOOL_PACKAGES = new Set(["getshrike", "shrike", "@shrike/cli"]);
 
 // Ecosystem requirements that cannot be read from an installed manifest (the
 // repository may not have been installed, or the dependency may be a peer).

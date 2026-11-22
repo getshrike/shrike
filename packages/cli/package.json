@@ -1,12 +1,12 @@
 {
-  "name": "shrike",
+  "name": "getshrike",
   "version": "1.0.0",
-  "private": true,
   "type": "module",
   "description": "Verified dead-code cleanup: whole-graph orphan delta, verified deletion batches, and portable receipts.",
   "license": "MIT",
   "bin": {
-    "shrike": "./bin/shrike.mjs"
+    "shrike": "./bin/shrike.mjs",
+    "getshrike": "./bin/shrike.mjs"
   },
   "types": "./dist/index.d.ts",
   "exports": {
@@ -25,18 +25,47 @@
     "README.md",
     "LICENSE"
   ],
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getshrike/shrike.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://getshrike.dev",
+  "bugs": {
+    "url": "https://github.com/getshrike/shrike/issues"
+  },
+  "keywords": [
+    "dead-code",
+    "unused-code",
+    "typescript",
+    "nextjs",
+    "static-analysis",
+    "cleanup"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "test": "node --test",
     "typecheck": "tsc -p tsconfig.json",
-    "build": "tsc -p tsconfig.build.json"
+    "build": "node ../../scripts/build-cli.mjs"
   },
-  "dependencies": {
-    "@shrike/agent": "workspace:*",
-    "@shrike/receipts": "workspace:*",
-    "@shrike/verifier": "workspace:*"
+  "optionalDependencies": {
+    "getshrike-linux-x64": "workspace:*",
+    "getshrike-linux-arm64": "workspace:*",
+    "getshrike-darwin-x64": "workspace:*",
+    "getshrike-darwin-arm64": "workspace:*",
+    "getshrike-win32-x64": "workspace:*"
   },
   "devDependencies": {
+    "@shrike/agent": "workspace:*",
+    "@shrike/receipts": "workspace:*",
     "@shrike/testkit": "workspace:*",
+    "@shrike/verifier": "workspace:*",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.3"
   }

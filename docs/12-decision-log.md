@@ -287,6 +287,9 @@ well-understood exception (for example, test-only scope) can be safe.
 platform packages containing the native engine. Also publish a standalone
 binary.
 
+**2026-11-23 update:** the npm package is `getshrike` and the platform packages
+are `getshrike-*`; the command remains `shrike`. See D-053.
+
 **Alternatives considered:**
 
 - A single static binary only.
@@ -2335,6 +2338,54 @@ workload the suite does not cover.
 
 ---
 
+## D-053 — The npm package is `getshrike`; the command stays `shrike`
+
+**Decision:** Publish the CLI as the unscoped npm package `getshrike`, expose
+both `shrike` and `getshrike` bins from the same launcher, and publish five
+unscoped platform packages: `getshrike-linux-x64`, `getshrike-linux-arm64`,
+`getshrike-darwin-x64`, `getshrike-darwin-arm64`, and `getshrike-win32-x64`.
+The product name and CLI command remain `shrike`. The GitHub organization and
+repository are `getshrike/shrike`, and `getshrike.dev` is the project domain.
+
+**Alternatives considered:**
+
+- `shrike`: rejected because the unscoped name is already published at `0.5.2`
+  by an unrelated project. Taking it over is not realistic, and depending on it
+  would install the wrong tool.
+- `shrike-cli`: rejected because it is generic, crowded, and reads as a
+  secondary package rather than the product.
+- `shrikeclean` or `shrikeproof`: rejected because both are longer, narrower,
+  and less memorable than the action-shaped `getshrike`.
+- A scoped package such as `@getshrike/cli`: rejected because a scope adds
+  install friction, implies an organization the project does not need yet, and
+  loses the simple `npx getshrike` path. The unscoped names are available.
+
+**Why:** All six names returned 404 from the npm registry on 2026-11-23, while
+the registry served `left-pad` and the existing `shrike@0.5.2` normally, so the
+availability check was live. `getshrike` reads as an imperative ("get Shrike"),
+keeps the command unchanged, and leaves the native package names predictable.
+`getshrike.dev` was already owned, so the package and the domain agree.
+
+**Consequences:**
+
+- `packages/cli/package.json` is `getshrike@1.0.0` with both bins and five
+  `workspace:*` optional dependencies; `pnpm pack` rewrites them to the release
+  version.
+- The launcher resolves the host platform package, verifies its SHA-256
+  sidecar, and fails closed when the package or checksum is missing.
+- The release workflow publishes the five platform packages before
+  `getshrike`, using the exact attested tarballs.
+- The repository metadata points at `github.com/getshrike/shrike`; the transfer
+  from `marrrkkk/shrike` needs the organization to exist first, and GitHub.com
+  only creates organizations in the web UI.
+- The unrelated `shrike` npm package must never be used or depended on.
+
+**Revisit if:** npm ownership changes, the `getshrike` name is challenged, or a
+future distribution channel makes the package name less important than the
+binary name.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -2349,7 +2400,7 @@ external app, credential, or participant.
 | Q-004 | fast = typecheck+lint; standard adds test; full adds build | Matches CI cost tiers; standard is the default |
 | Q-005 | Content-address first; signing deferred | A hash is verifiable without key distribution; signing is additive |
 | Q-006 | Read-only trial kit; no network; `.shrike/` only | A partner can evaluate without granting write trust |
-| Q-007 | Registry availability blocked; local tarball gate green | Package-name and publish checks need credentials |
+| Q-007 | `getshrike` and five platform names are unclaimed; local tarball gate green | D-053: registry publish is blocked on npm credentials, not on the name |
 | Q-008 | Next.js 16.4+ full; 16.1–16.3 partial; older unsupported | The export contract is only complete from 16.4 |
 | Q-009 | Protocol/snapshot `1.0` checked; mismatch fails closed | A cached proof from an unknown version is not a proof |
 | Q-010 | Workspaces from `package.json` and `pnpm-workspace.yaml` | Native monorepo semantics without a new config surface |
@@ -2366,7 +2417,7 @@ external app, credential, or participant.
 | Q-021 | Per-repository results deferred | Publication needs the labeled set and partner consent |
 | Q-022 | Trial reports stay local; aggregates need permission | No source upload and no surprise publication |
 | Q-023 | Native first; WASM fallback | Native meets the memory and startup budgets |
-| Q-024 | Linux/macOS x64+arm64, Windows x64 planned | D-011 distribution matrix; publishing is blocked |
+| Q-024 | Linux/macOS x64+arm64 and Windows x64 are in the release matrix | D-011/D-053 distribution matrix; publish is blocked on credentials |
 | Q-025 | Only present-in-both, newly unreachable symbols are orphans | A rename or deletion is not a cleanup target, so it cannot become a false orphan |
 | Q-026 | Full checks first; affected-only deferred | Measure real check cost before narrowing coverage |
 | Q-027 | Client-reference manifest optional | Its absence degrades to static reachability, never a blocked run |
@@ -2430,6 +2481,7 @@ external app, credential, or participant.
 | D-050 | CLI scan JSON is insertion-ordered; receipts stay canonical | accepted |
 | D-051 | Large scans reuse the engine snapshot and run independent passes concurrently | accepted |
 | D-052 | Competitor claims use a paired, validated, multi-scope corpus | accepted |
+| D-053 | The npm package is `getshrike`; the command stays `shrike` | accepted |
 
 ## Rejected ideas
 

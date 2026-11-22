@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
-import { accessSync, constants } from "node:fs";
+import { createHash } from "node:crypto";
+import { accessSync, constants, existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { EngineUnavailableError } from "./errors.ts";
 import { logTiming } from "./timing.ts";
 
@@ -35,26 +36,130 @@ function isExecutable(path: string): boolean {
   }
 }
 
-/** Locate the native engine. Fails closed with exit code 4 when absent. */
+const PLATFORM_PACKAGES: Record<string, string> = {
+  "linux-x64": "getshrike-linux-x64",
+  "linux-arm64": "getshrike-linux-arm64",
+  "darwin-x64": "getshrike-darwin-x64",
+  "darwin-arm64": "getshrike-darwin-arm64",
+  "win32-x64": "getshrike-win32-x64",
+};
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Verify a SHA-256 sidecar before executing an engine.
+ *
+ * Repo builds and `SHRIKE_ENGINE` overrides only need a sidecar when one is
+ * present. Packaged platform binaries require one: a missing or malformed
+ * checksum is a broken install, not a reason to run an unverified binary.
+ */
+function verifyChecksum(binary: string, required: boolean): void {
+  const sidecar = `${binary}.sha256`;
+  if (!existsSync(sidecar)) {
+    if (required) {
+      throw new EngineUnavailableError(
+        `engine checksum sidecar is missing: ${sidecar}. Reinstall getshrike.`,
+      );
+    }
+    return;
+  }
+  let expected: string;
+  try {
+    expected = (readFileSync(sidecar, "utf8").trim().split(/\s+/)[0] ?? "").toLowerCase();
+  } catch (error) {
+    throw new EngineUnavailableError(
+      `could not read engine checksum ${sidecar}: ${errorMessage(error)}`,
+    );
+  }
+  if (!/^[0-9a-f]{64}$/.test(expected)) {
+    throw new EngineUnavailableError(`engine checksum file is malformed: ${sidecar}`);
+  }
+  let actual: string;
+  try {
+    actual = createHash("sha256").update(readFileSync(binary)).digest("hex");
+  } catch (error) {
+    throw new EngineUnavailableError(
+      `could not read engine binary ${binary}: ${errorMessage(error)}`,
+    );
+  }
+  if (actual !== expected) {
+    throw new EngineUnavailableError(
+      `engine checksum mismatch for ${binary}: expected ${expected}, got ${actual}. Reinstall getshrike.`,
+    );
+  }
+}
+
+/** Resolve the platform package installed by npm, if the host has one. */
+function platformPackageEngine(): { binary: string } | { error: string } {
+  const key = `${process.platform}-${process.arch}`;
+  const name = PLATFORM_PACKAGES[key];
+  if (!name) {
+    return {
+      error: `unsupported platform ${key}; supported: ${Object.keys(PLATFORM_PACKAGES).join(", ")}`,
+    };
+  }
+  let manifest: string;
+  try {
+    manifest = createRequire(import.meta.url).resolve(`${name}/package.json`);
+  } catch {
+    return { error: `optional package ${name} is not installed` };
+  }
+  const binary = join(dirname(manifest), "bin", executable("shrike-engine"));
+  if (!isExecutable(binary)) {
+    return { error: `optional package ${name} is installed but ${binary} is missing or not executable` };
+  }
+  // A packaged binary is verified before every run. A mismatch is a hard
+  // failure; it is never downgraded to a PATH fallback.
+  verifyChecksum(binary, true);
+  return { binary };
+}
+
+/**
+ * Locate the native engine. Fails closed with exit code 4 when absent.
+ *
+ * Order: `SHRIKE_ENGINE`, a repository `target/{release,debug}` build, the
+ * installed platform package, then `PATH`.
+ */
 export function findEngine(): string {
+  const problems: string[] = [];
   const configured = process.env.SHRIKE_ENGINE;
-  if (configured && isExecutable(configured)) return configured;
+  if (configured) {
+    if (isExecutable(configured)) {
+      verifyChecksum(configured, false);
+      return configured;
+    }
+    problems.push(`SHRIKE_ENGINE is set to ${configured}, but it is not executable`);
+  }
   let current = resolve(process.cwd());
   for (;;) {
     for (const profile of ["release", "debug"]) {
       const candidate = join(current, "target", profile, executable("shrike-engine"));
-      if (isExecutable(candidate)) return candidate;
+      if (isExecutable(candidate)) {
+        verifyChecksum(candidate, false);
+        return candidate;
+      }
     }
     const parent = dirname(current);
     if (parent === current) break;
     current = parent;
   }
+  const packaged = platformPackageEngine();
+  if ("binary" in packaged) return packaged.binary;
+  problems.push(packaged.error);
   for (const directory of (process.env.PATH ?? "").split(process.platform === "win32" ? ";" : ":")) {
+    if (!directory) continue;
     const candidate = join(directory, executable("shrike-engine"));
-    if (isExecutable(candidate)) return candidate;
+    if (isExecutable(candidate)) {
+      verifyChecksum(candidate, false);
+      return candidate;
+    }
   }
   throw new EngineUnavailableError(
-    "shrike-engine was not found. Set SHRIKE_ENGINE or run `cargo build -p shrike-engine`.",
+    "shrike-engine was not found. Install getshrike with npm (npm install -D getshrike), " +
+      "set SHRIKE_ENGINE, or run `cargo build -p shrike-engine`." +
+      (problems.length > 0 ? ` Details: ${problems.join("; ")}.` : ""),
   );
 }
 

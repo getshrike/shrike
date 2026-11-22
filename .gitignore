@@ -1,6 +1,11 @@
 target/
 node_modules/
 dist/
+!packages/action/dist/
+!packages/action/dist/main.cjs
+packages/platform/*/bin/
+packages/platform/*/README.md
+packages/platform/*/LICENSE
 *.tsbuildinfo
 .shrike/
 .next/
