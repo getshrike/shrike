@@ -111,6 +111,13 @@ scenario("verified batch", () => {
       "delta did not report the newly dead symbol",
     );
 
+    const dryRun = runCli(directory, ["prune", "--base", "main", "--json", "--dry-run", "--pr"]);
+    assert(
+      dryRun.status === 1,
+      `expected dry-run exit 1, got ${dryRun.status}: ${dryRun.stderr}`,
+    );
+    assert(!dryRun.stderr.includes("unknown flag"), `prune rejected its own flags: ${dryRun.stderr}`);
+
     const result = runPrune(directory);
     assert(result.status === 0, `expected exit 0, got ${result.status}: ${result.stderr}`);
     const output = JSON.parse(result.stdout);
