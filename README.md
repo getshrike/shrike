@@ -16,9 +16,9 @@ Action, and MCP server are implemented. Phase 4 (Next.js build-graph evidence)
 includes JSONL streaming, route and byte attribution, server/client verdicts,
 build-edge feedback, and the fallback matrix. The npm package layout, native
 platform packages, checksums, attestations, and keyless release signing are
-implemented and locally gated. The first registry publish and the external
-launch items (design partners, independent audit) remain blocked on credentials
-and participants; see [`TRACKER.md`](TRACKER.md).
+implemented and published. The external launch items (design partners and an
+independent audit) remain blocked on participants; see
+[`TRACKER.md`](TRACKER.md).
 
 ---
 
@@ -73,8 +73,8 @@ The wedge is not "we find dead code." It is:
 | Verified deletion | Implemented — `node scripts/e2e-prune.mjs` |
 | Build-graph evidence | Implemented — JSONL joins, routes, bytes, verdicts, fallbacks, build-edge feedback; 11 build-graph fixtures |
 | npm packaging | Implemented — `getshrike` tarball, five platform packages, checksum verification, clean-machine install test |
-| Release automation | Implemented — five-target build, SHA-256 sidecars, GitHub attestations, keyless Sigstore signing, npm provenance; first publish blocked on npm credentials |
-| External launch | Blocked on partners, an independent audit, and registry credentials — see [`TRACKER.md`](TRACKER.md) |
+| Release automation | Published — `v1.0.0` five-target build, SHA-256 sidecars, GitHub attestations, keyless Sigstore signing, npm provenance, and a passing registry smoke test |
+| External launch | Blocked on design partners and an independent audit — see [`TRACKER.md`](TRACKER.md) |
 
 The full status, decisions, metrics, and evidence log live in
 [`TRACKER.md`](TRACKER.md).

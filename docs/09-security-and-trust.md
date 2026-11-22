@@ -214,9 +214,10 @@ check. A re-run produces a new receipt; it does not overwrite the old one.
 - The release workflow has the minimum permissions and uses the `npm`
   environment for publishing secrets and approval.
 
-The workflow is implemented and actionlint-clean. Its first real run is a
-release gate; until it runs, the signed artifacts do not yet exist in a public
-release.
+The workflow is implemented and actionlint-clean. It first ran for
+`v1.0.0-rc.2` and `v1.0.0`; both published all six packages with provenance,
+and `v1.0.0` has five engine binaries, six tarballs, `SHA256SUMS` and its
+Sigstore bundle, a release manifest, and release notes.
 
 ---
 
@@ -348,8 +349,7 @@ review against the threat model above, not a third-party audit.
   The controls are explicit consent, worktree isolation, safe environment, and
   no write token on forks; this is not a sandbox.
 - Release artifacts are signed, checksummed, and provenance-attested by the
-  release workflow, but the workflow has not produced a public release yet; the
-  first run is 6.10/6.11 and is blocked on npm credentials. The launcher
-  checksum verification is implemented and tested locally.
+  release workflow. `v1.0.0` is public on npm and GitHub; the launcher checksum
+  verification is implemented and tested locally.
 - No external security review has been performed. The local review and tests are
   the evidence available at this stage; the independent audit is 6.7.
