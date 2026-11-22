@@ -34,10 +34,16 @@ export interface AnalysisPair {
   cleanup: () => void;
 }
 
+export interface AnalyzePairOptions {
+  allowDirty?: boolean;
+  /** Flags owned by the calling command that the shared validation must accept. */
+  extraFlags?: string[];
+}
+
 export async function analyzePair(
   root: string,
   args: ParsedArgs,
-  options: { allowDirty?: boolean } = {},
+  options: AnalyzePairOptions = {},
 ): Promise<AnalysisPair> {
   rejectUnknownFlags(args, [
     "json", "base", "help", "allow-dirty", "quiet", "build", "require-build-evidence",
@@ -45,6 +51,7 @@ export async function analyzePair(
     // `prune --dry-run` computes a plan without touching the tree; the flag is
     // owned by prune but must survive this shared validation.
     "dry-run",
+    ...(options.extraFlags ?? []),
   ]);
   const config = await loadConfig(root);
   const baseRef = resolveDefaultBase(root, stringFlag(args, "base"));

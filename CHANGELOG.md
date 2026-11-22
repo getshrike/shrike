@@ -61,7 +61,8 @@ registry publication and the external launch gates are tracked in
 
 - `prune --pr` strips a configured remote from the analyzed base ref before
   calling `gh pr create`, so the default `origin/main` opens a pull request
-  against `main` instead of failing.
+  against `main` instead of failing. It also checks the remote for an existing
+  cleanup branch instead of trusting a stale remote-tracking ref.
 - The GitHub Action resolves a project-local `getshrike` through its main entry
   when the installed package does not export `./package.json`.
 

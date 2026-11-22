@@ -41,7 +41,10 @@ export async function pruneCommand(root: string, args: ParsedArgs): Promise<numb
   const allowDirty = booleanFlag(args, "allow-dirty") || config.verification.allowDirty;
   if (isDirty(root) && !allowDirty) throw new UsageError("prune requires a clean working tree");
   const tier = parseTier(stringFlag(args, "tier"), config.verification.tier);
-  const pair = await analyzePair(root, args, { allowDirty: config.verification.allowDirty });
+  const pair = await analyzePair(root, args, {
+    allowDirty: config.verification.allowDirty,
+    extraFlags: ["pr", "verify", "receipt"],
+  });
   const plan = await requestEngine<Plan>("plan", { snapshot: pair.head, delta: pair.delta, config: engineConfig(config) });
   storePlan(root, pair, plan, tier);
   const receiptBuild = toReceiptBuild(pair.build);
@@ -294,9 +297,17 @@ export function openPullRequest(
   const title = config.pr.title === "Shrike: verified cleanup"
     ? `Shrike: remove ${plan.totals.symbols} dead symbols`
     : config.pr.title;
-  const remote = spawnSync("git", ["rev-parse", "--verify", `origin/${branch}`], { cwd: root, encoding: "utf8" });
-  if (remote.status === 0) {
-    const ancestor = spawnSync("git", ["merge-base", "--is-ancestor", `origin/${branch}`, "HEAD"], { cwd: root, encoding: "utf8" });
+  // A remote-tracking ref can outlive a deleted branch, so ask the remote
+  // instead of trusting `origin/<branch>`.
+  const remote = spawnSync("git", ["ls-remote", "--heads", "origin", branch], { cwd: root, encoding: "utf8" });
+  const remoteExists = remote.status === 0 && remote.stdout.trim().length > 0;
+  if (remoteExists) {
+    const fetched = spawnSync("git", ["fetch", "--quiet", "origin", branch], { cwd: root, encoding: "utf8" });
+    if (fetched.status !== 0) {
+      writeStderr(`Could not fetch origin/${branch}; refusing to force-push. Push manually after review.`);
+      return;
+    }
+    const ancestor = spawnSync("git", ["merge-base", "--is-ancestor", "FETCH_HEAD", "HEAD"], { cwd: root, encoding: "utf8" });
     if (ancestor.status !== 0) {
       writeStderr(`Remote branch ${branch} diverged; refusing to force-push. Push manually after review.`);
       return;
