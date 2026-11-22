@@ -41,6 +41,34 @@ process.exit(${exitCode});
   return bin;
 }
 
+/**
+ * Install a fake `getshrike` package in the project. The manifest deliberately
+ * omits the `./package.json` export so resolution must fall back to the main
+ * entry, matching the published package shape that exposed the bug.
+ */
+function fakeInstalledPackage(directory) {
+  const pkg = join(directory, "node_modules", "getshrike");
+  mkdirSync(join(pkg, "dist"), { recursive: true });
+  mkdirSync(join(pkg, "bin"), { recursive: true });
+  writeFileSync(
+    join(pkg, "package.json"),
+    JSON.stringify({
+      name: "getshrike",
+      version: "1.0.0",
+      type: "module",
+      exports: { ".": "./dist/index.js" },
+    }),
+  );
+  writeFileSync(join(pkg, "dist", "index.js"), "export {};\n");
+  writeFileSync(
+    join(pkg, "bin", "shrike.mjs"),
+    `import { appendFileSync } from "node:fs";
+appendFileSync(process.env.FAKE_SHRIKE_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");
+console.log(JSON.stringify({ newlyDead: [], newlyDeadFiles: [] }));
+`,
+  );
+}
+
 function run(directory, env) {
   const output = join(directory, "github-output");
   writeFileSync(output, "");
@@ -141,6 +169,21 @@ console.log(JSON.stringify({ newlyDead: [], newlyDeadFiles: [] }));
 `,
     );
     const { result, log } = run(directory, { INPUT_MODE: "delta", SHRIKE_CLI: launcher });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(log, /"delta"/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a project-local getshrike resolves without a package.json export", () => {
+  const directory = scratch("local-package");
+  try {
+    fakeInstalledPackage(directory);
+    const { result, log } = run(directory, {
+      INPUT_MODE: "delta",
+      PATH: join(directory, "empty-bin"),
+    });
     assert.equal(result.status, 0, result.stderr);
     assert.match(log, /"delta"/);
   } finally {

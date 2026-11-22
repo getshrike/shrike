@@ -172,6 +172,9 @@ try {
     );
   }
   if (manifest.engines?.node !== ">=22") fail(`engines.node is ${manifest.engines?.node}, expected >=22`);
+  if (manifest.exports?.["./package.json"] !== "./package.json") {
+    fail("package.json must export ./package.json for tooling that resolves the package root");
+  }
   if (manifest.publishConfig?.provenance !== true) fail("publishConfig.provenance must be true");
 
   const unbundled = [...paths].filter(

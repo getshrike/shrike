@@ -24,9 +24,20 @@ export function resolveCli(root: string): CliInvocation {
   }
   try {
     const require = createRequire(join(root, "package.json"));
-    const manifest = require.resolve("getshrike/package.json");
-    const launcher = join(dirname(manifest), "bin", "shrike.mjs");
-    if (existsSync(launcher)) return { command: process.execPath, args: [launcher] };
+    const candidates: string[] = [];
+    for (const specifier of ["getshrike/package.json", "getshrike"]) {
+      try {
+        const resolved = require.resolve(specifier);
+        const packageRoot = specifier.endsWith("package.json")
+          ? dirname(resolved)
+          : dirname(dirname(resolved));
+        candidates.push(join(packageRoot, "bin", "shrike.mjs"));
+      } catch {
+        // The package may not export package.json; try the main entry.
+      }
+    }
+    const launcher = candidates.find((path) => existsSync(path));
+    if (launcher) return { command: process.execPath, args: [launcher] };
   } catch {
     // Not installed in the workspace; fall through to PATH.
   }
