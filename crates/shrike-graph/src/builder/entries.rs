@@ -312,10 +312,16 @@ fn next_framework_exports(
                 names.extend(NEXT_APP_ROUTE_CONFIG_EXPORTS);
             }
             "icon" | "apple-icon" => {
+                // The metadata image loader forwards every named export into
+                // the icon descriptor, and Next.js spreads that descriptor onto
+                // the rendered `<link>`. A probe build emits `alt` on the icon
+                // link even though the docs list only `size` and
+                // `contentType`.
                 names.extend([
                     "default",
                     "size",
                     "contentType",
+                    "alt",
                     "generateImageMetadata",
                     "generateStaticParams",
                 ]);
@@ -5345,6 +5351,7 @@ mod tests {
             "app/icon.tsx#default",
             "app/icon.tsx#size",
             "app/icon.tsx#contentType",
+            "app/icon.tsx#alt",
             "app/icon.tsx#generateImageMetadata",
             "app/opengraph-image.tsx#default",
             "app/opengraph-image.tsx#alt",
@@ -5408,7 +5415,6 @@ mod tests {
             "app/sitemap.ts#prefetch",
             "app/sitemap.ts#ensureStatic",
             "app/sitemap.ts#unusedSitemapHelper",
-            "app/icon.tsx#alt",
             "pages/index.tsx#metadata",
             "pages/index.tsx#dynamic",
             "pages/index.tsx#GET",
