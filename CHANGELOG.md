@@ -57,6 +57,14 @@ registry publication and the external launch gates are tracked in
   the private `@shrike/*` workspace packages.
 - GitHub Actions in CI, nightly, and release workflows are pinned by commit SHA.
 
+### Fixed
+
+- `prune --pr` strips a configured remote from the analyzed base ref before
+  calling `gh pr create`, so the default `origin/main` opens a pull request
+  against `main` instead of failing.
+- The GitHub Action resolves a project-local `getshrike` through its main entry
+  when the installed package does not export `./package.json`.
+
 ### Security
 
 - Keyless Sigstore signing for `SHA256SUMS`, npm provenance, GitHub

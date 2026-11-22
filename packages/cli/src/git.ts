@@ -32,6 +32,26 @@ export function mergeBase(root: string, base: string): string {
   throw new Error(`could not resolve base ref ${base}`);
 }
 
+export function listRemotes(root: string): string[] {
+  return git(root, ["remote"], true)
+    .split("\n")
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+}
+
+/**
+ * `gh pr create --base` expects a branch name, but a plan records the ref it
+ * analyzed, which is usually the remote-tracking `origin/main`. Strip a
+ * leading remote name only when it is a configured remote, so a branch such
+ * as `release/1.0` is left alone.
+ */
+export function pullRequestBase(baseRef: string, remotes: string[]): string {
+  const slash = baseRef.indexOf("/");
+  if (slash <= 0) return baseRef;
+  const remote = baseRef.slice(0, slash);
+  return remotes.includes(remote) ? baseRef.slice(slash + 1) : baseRef;
+}
+
 export function resolveDefaultBase(root: string, explicit?: string): string {
   if (explicit) return explicit;
   for (const candidate of ["origin/main", "main", "origin/master", "master"]) {

@@ -8,7 +8,7 @@ import { requestEngine } from "../engine.ts";
 import { CliError, ExitCode, RevertFailedError, UsageError } from "../errors.ts";
 import { formatCount, writeHuman, writeJson, writeStderr } from "../output.ts";
 import { writeRecoverySnapshot, type RecoveryReference } from "../recovery.ts";
-import { commitAll, createBranchWorktree, ensureBranch, isDirty, restoreAll } from "../git.ts";
+import { commitAll, createBranchWorktree, ensureBranch, isDirty, listRemotes, pullRequestBase, restoreAll } from "../git.ts";
 import {
   classifyCheck, detectPackageManager, detectRepositoryChecks, runChecks,
   type Baseline, type CheckResult, type CheckSpec, type ComparedCheck,
@@ -266,7 +266,7 @@ export function openPullRequest(
   receiptPaths: string[],
   config: ShrikeConfig,
 ): void {
-  const base = config.pr.base ?? plan.base.ref ?? "main";
+  const base = pullRequestBase(config.pr.base ?? plan.base.ref ?? "main", listRemotes(root));
   const receipts = receiptPaths.map((path) => readReceipt(path));
   const batches = receipts.map((receipt) => ({
     id: receipt.batch.id,
