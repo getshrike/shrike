@@ -65,6 +65,8 @@ registry publication and the external launch gates are tracked in
   cleanup branch instead of trusting a stale remote-tracking ref.
 - The GitHub Action resolves a project-local `getshrike` through its main entry
   when the installed package does not export `./package.json`.
+- The release version setter is idempotent, so publishing the version already
+  present in the source tree succeeds instead of failing the release.
 
 ### Security
 
