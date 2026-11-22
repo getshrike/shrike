@@ -35,26 +35,33 @@ for (const relative of manifests) {
 
 const versionPath = join(root, "packages", "cli", "src", "version.ts");
 const versionSource = readFileSync(versionPath, "utf8");
-const nextVersionSource = versionSource.replace(
-  /export const VERSION = "[^"]+";/,
-  `export const VERSION = "${version}";`,
-);
-if (nextVersionSource === versionSource) {
+const versionMatch = /export const VERSION = "([^"]+)";/.exec(versionSource);
+if (!versionMatch) {
   console.error(`FAIL version: could not update ${versionPath}`);
   process.exit(1);
 }
-writeFileSync(versionPath, nextVersionSource);
+if (versionMatch[1] !== version) {
+  writeFileSync(
+    versionPath,
+    versionSource.replace(
+      /export const VERSION = "[^"]+";/,
+      `export const VERSION = "${version}";`,
+    ),
+  );
+}
 
 const cargoPath = join(root, "Cargo.toml");
 const cargo = readFileSync(cargoPath, "utf8");
-const nextCargo = cargo.replace(
-  /(\[workspace\.package\][\s\S]*?\nversion = ")[^"]+(")/,
-  `$1${version}$2`,
-);
-if (nextCargo === cargo) {
+const cargoMatch = /(\[workspace\.package\][\s\S]*?\nversion = ")([^"]+)(")/.exec(cargo);
+if (!cargoMatch) {
   console.error(`FAIL version: could not update [workspace.package] in ${cargoPath}`);
   process.exit(1);
 }
-writeFileSync(cargoPath, nextCargo);
+if (cargoMatch[2] !== version) {
+  writeFileSync(
+    cargoPath,
+    cargo.replace(cargoMatch[0], () => `${cargoMatch[1]}${version}${cargoMatch[3]}`),
+  );
+}
 
 console.log(`OK: set version ${version} in ${manifests.length} manifests, version.ts, and Cargo.toml`);
