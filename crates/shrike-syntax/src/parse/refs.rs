@@ -95,9 +95,12 @@ pub(super) fn narrow_dynamic_bindings(summary: &mut FileSummary) {
                 }
             }
         }
-        if widened || names.is_empty() {
+        if widened {
             continue;
         }
+        // No escape and no static member access means the binding is never
+        // read. An empty list is precise: the import runs for side effects and
+        // consumes no exports.
         let names: Vec<String> = names.into_iter().collect();
         for index in indices {
             summary.dynamic[index].imported = Some(names.clone());

@@ -11,7 +11,7 @@ use crate::payloads::{CacheManifest, ManifestEntry};
 // Bump whenever graph construction, entry detection, edge resolution, or
 // reachability semantics change. The tool version alone is not enough: a local
 // rebuild at the same version must not reuse snapshots built by older logic.
-const ANALYSIS_VERSION: &str = "73";
+const ANALYSIS_VERSION: &str = "85";
 
 pub(crate) fn load_manifest(path: &Path) -> CacheManifest {
     fs::read(path)
@@ -51,8 +51,10 @@ pub(crate) fn snapshot_cache_key(
     format!("blake3:{}", hasher.finalize().to_hex())
 }
 
-pub(crate) fn write_cache(path: &Path, snapshot: &shrike_graph::GraphSnapshot) -> ShrikeResult<()> {
-    atomic_write(path, &serde_json::to_vec(snapshot)?)
+/// Write already-serialized snapshot JSON. The caller reuses the same bytes
+/// for the protocol response, so a cold run serializes the snapshot once.
+pub(crate) fn write_cache_bytes(path: &Path, bytes: &[u8]) -> ShrikeResult<()> {
+    atomic_write(path, bytes)
 }
 
 pub(crate) fn write_manifest(path: &Path, manifest: &CacheManifest) -> ShrikeResult<()> {

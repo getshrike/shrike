@@ -10,8 +10,11 @@ pub mod summary;
 
 pub use parse::{parse_file, parse_source};
 pub use summary::{
-    BindingKind, DeclarationKind, DeclarationRecord, DynamicKind, DynamicRecord, DynamicSpecifier,
-    ExportAllRecord, ExportedConstValue, ExportedConstValueRecord, FileSummary, ImportBinding,
-    ImportKind, ImportRecord, LocalExportRecord, MemberAccess, ModuleRefs, NextSegmentExportRecord,
+    BindingKind, ClassBindingRecord, ClassMemberKind, ClassMemberRecord, ClassRecord,
+    ComponentContractProp, ComponentContractRecord, DeclarationKind, DeclarationRecord,
+    DynamicKind, DynamicRecord, DynamicSpecifier, EnumMemberRecord, EnumRecord, ExportAllRecord,
+    ExportedConstValue, ExportedConstValueRecord, FileSummary, ImportBinding, ImportKind,
+    ImportRecord, JsxNamespaceUseRecord, JsxUseRecord, LocalExportRecord, MemberAccess, ModuleRefs,
+    NamespaceMemberRecord, NamespaceMemberUseRecord, NamespaceRecord, NextSegmentExportRecord,
     ParseStatus, ReExportRecord, UnknownRecord, UnknownScope,
 };

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "count": 308,
+  "count": 314,
   "entries": [
     {
       "id": "page-entry-1",
@@ -5876,6 +5876,306 @@
       ],
       "usedFiles": [
         "scripts/used-by-package.ts"
+      ]
+    },
+    {
+      "id": "unused-component-prop-1",
+      "category": "react-component-prop",
+      "files": [
+        "app",
+        "components",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "components/Internal.tsx#Badge",
+          "reason": "live local component; an unread prop is a warning, never a deletion candidate"
+        },
+        {
+          "symbol": "components/Internal.tsx#Typed",
+          "reason": "same-file typed props component; an unread prop is a warning, never a deletion candidate"
+        },
+        {
+          "symbol": "components/Internal.tsx#Memoized",
+          "reason": "local memo wrapper; an unread prop is a warning, never a deletion candidate"
+        },
+        {
+          "symbol": "components/Internal.tsx#Forwarded",
+          "reason": "local forwardRef wrapper; an unread prop is a warning, never a deletion candidate"
+        }
+      ],
+      "mustReport": [
+        "components/Internal.tsx#Dead"
+      ]
+    },
+    {
+      "id": "unused-enum-member-1",
+      "category": "unused-enum-member",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/status.ts#Status",
+          "reason": "one member is read; unused members are warnings, never deletion candidates"
+        },
+        {
+          "symbol": "src/status.ts#Numeric",
+          "reason": "numeric member read"
+        },
+        {
+          "symbol": "src/status.ts#WholeObject",
+          "reason": "Object.values reads every member"
+        },
+        {
+          "symbol": "src/status.ts#Computed",
+          "reason": "computed access credits every member"
+        },
+        {
+          "symbol": "src/status.ts#Destructured",
+          "reason": "object destructuring credits every member"
+        },
+        {
+          "symbol": "src/status.ts#Initializer",
+          "reason": "an initializer reference reads the earlier member"
+        },
+        {
+          "symbol": "src/status.ts#OnlyType",
+          "reason": "type-qualified member read"
+        },
+        {
+          "symbol": "src/status.ts#SameFile",
+          "reason": "same-file member read"
+        },
+        {
+          "symbol": "src/status.ts#Reexported",
+          "reason": "member read through a re-exported barrel"
+        }
+      ],
+      "mustReport": [
+        "src/status.ts#DeadEnum"
+      ]
+    },
+    {
+      "id": "unused-class-member-1",
+      "category": "unused-class-member",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/counter.ts#Counter",
+          "reason": "live class; unread members are warnings, never deletion candidates"
+        },
+        {
+          "symbol": "src/panel.tsx#Panel",
+          "reason": "live React class component; lifecycle names and unread members are warnings"
+        }
+      ],
+      "mustReport": [
+        "src/dead.ts#DeadClass"
+      ]
+    },
+    {
+      "id": "unused-page-data-key-1",
+      "category": "next-page-data",
+      "files": [
+        "pages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "pages/index.tsx#default",
+          "reason": "Next.js renders the Pages Router page; an unread returned key is a warning, never a deletion candidate"
+        },
+        {
+          "symbol": "pages/index.tsx#getStaticProps",
+          "reason": "Next.js calls the page data function"
+        },
+        {
+          "symbol": "pages/about.tsx#default",
+          "reason": "Next.js renders the page whose getInitialProps returns an unread key"
+        }
+      ],
+      "mustReport": [
+        "pages/index.tsx#unusedPageHelper",
+        "pages/about.tsx#unusedAboutHelper"
+      ]
+    },
+    {
+      "id": "next-pages-router-route-conflict",
+      "category": "pages-router-route-conflict",
+      "files": [
+        "pages",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "pages/[id].tsx#default",
+          "reason": "Next.js still treats each conflicting Pages Router file as a page entry; the conflict is an error diagnostic, not a dead-code finding"
+        },
+        {
+          "symbol": "pages/[slug].tsx#default",
+          "reason": "Next.js still treats each conflicting Pages Router file as a page entry; the conflict is an error diagnostic, not a dead-code finding"
+        }
+      ],
+      "mustReport": [
+        "pages/[id].tsx#unusedIdHelper"
+      ]
+    },
+    {
+      "id": "unused-namespace-member-1",
+      "category": "unused-namespace-member",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/legacy.ts#Legacy",
+          "reason": "used, aliased, and destructured members are read; unused members are warnings, never deletion candidates"
+        },
+        {
+          "symbol": "src/legacy.ts#Outer",
+          "reason": "nested member and whole nested-namespace reads credit the members they touch"
+        },
+        {
+          "symbol": "src/legacy.ts#Merged",
+          "reason": "namespace merged with a class; helper read credits the member, constructor call does not widen"
+        },
+        {
+          "symbol": "src/legacy.ts#Color",
+          "reason": "namespace merged with an enum; parse and enum member reads credit the members they touch"
+        },
+        {
+          "symbol": "src/legacy.ts#make",
+          "reason": "namespace merged with a function; defaults read credits the member, call does not widen"
+        },
+        {
+          "symbol": "src/legacy.ts#Typed",
+          "reason": "ambient type namespace in a .ts file; unread type members are warnings"
+        },
+        {
+          "symbol": "src/legacy.ts#Whole",
+          "reason": "Object.keys reads the whole namespace object"
+        },
+        {
+          "symbol": "src/legacy.ts#Spread",
+          "reason": "object spread reads the whole namespace object"
+        },
+        {
+          "symbol": "src/legacy.ts#Reexported",
+          "reason": "member read through the namespace export"
+        },
+        {
+          "symbol": "src/legacy.ts#Body",
+          "reason": "entry is read and the body reference credits helper"
+        },
+        {
+          "symbol": "src/more.ts#Api",
+          "reason": "namespace import, typeof, nested type, and escaped nested-namespace reads credit members"
+        },
+        {
+          "symbol": "src/more.ts#Split",
+          "reason": "merged namespace declarations; the second declaration reads the first member"
+        },
+        {
+          "symbol": "src/more.ts#Dotted",
+          "reason": "dotted declaration; a nested member read credits the path"
+        },
+        {
+          "symbol": "src/ambient.d.ts#Ambient",
+          "reason": "inline import type read; declaration files abstain from namespace-member warnings"
+        }
+      ],
+      "mustReport": [
+        "src/legacy.ts#LocalOnly"
+      ]
+    },
+    {
+      "id": "react-component-loader-1",
+      "category": "react-component-loader",
+      "files": [
+        "app",
+        "package.json",
+        "src",
+        "tsconfig.json"
+      ],
+      "protected": [
+        {
+          "symbol": "src/LazyView.tsx#default",
+          "reason": "React.lazy consumes only the default export of the loaded module"
+        },
+        {
+          "symbol": "src/LazyView.tsx#NamedView",
+          "reason": "the loader's .then callback selects NamedView explicitly"
+        },
+        {
+          "symbol": "src/NamespaceView.tsx#default",
+          "reason": "React namespace lazy consumes only the default export"
+        },
+        {
+          "symbol": "src/DynamicView.tsx#default",
+          "reason": "next/dynamic consumes only the default export"
+        },
+        {
+          "symbol": "src/LookalikeView.tsx#lookalikeNamed",
+          "reason": "an unknown local wrapper keeps the whole module namespace live"
+        },
+        {
+          "symbol": "src/ShadowedView.tsx#shadowedNamed",
+          "reason": "a shadowed lazy parameter has no React.lazy contract"
+        },
+        {
+          "symbol": "src/LocalLazyView.tsx#default",
+          "reason": "a top-level const arrow loader passed only to React.lazy consumes only default"
+        },
+        {
+          "symbol": "src/LocalDynamicView.tsx#default",
+          "reason": "a top-level function-declaration loader passed only to next/dynamic consumes only default"
+        },
+        {
+          "symbol": "src/SharedLoaderView.tsx#default",
+          "reason": "a loader with another direct call keeps the whole module namespace live"
+        },
+        {
+          "symbol": "src/SharedLoaderView.tsx#sharedLoaderNamed",
+          "reason": "a loader with another direct call keeps every named export live"
+        },
+        {
+          "symbol": "src/ExportedLoaderView.tsx#default",
+          "reason": "an exported loader escapes the module, so it keeps the whole namespace live"
+        },
+        {
+          "symbol": "src/ExportedLoaderView.tsx#exportedLoaderNamed",
+          "reason": "an exported loader keeps every named export live"
+        },
+        {
+          "symbol": "src/ReassignableLoaderView.tsx#default",
+          "reason": "a let loader can be reassigned, so it keeps the whole namespace live"
+        },
+        {
+          "symbol": "src/ReassignableLoaderView.tsx#reassignableLoaderNamed",
+          "reason": "a reassignable loader keeps every named export live"
+        }
+      ],
+      "mustReport": [
+        "src/LazyView.tsx#unusedLazyNamed",
+        "src/NamespaceView.tsx#unusedNamespaceNamed",
+        "src/DynamicView.tsx#unusedDynamicNamed",
+        "src/LocalLazyView.tsx#unusedLocalLazyNamed",
+        "src/LocalDynamicView.tsx#unusedLocalDynamicNamed"
       ]
     }
   ]

@@ -6,4 +6,4 @@ mod cache;
 mod dispatch;
 mod payloads;
 
-pub use crate::dispatch::dispatch;
+pub use crate::dispatch::{DispatchResult, dispatch, write_response};

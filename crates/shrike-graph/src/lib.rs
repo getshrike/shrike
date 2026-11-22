@@ -22,4 +22,4 @@ pub use crate::types::{
     EdgeRecord, EntryRecord, FileRecord, GraphSnapshot, ModuleRecord, ProofRecord, SymbolRecord,
     UnknownRecord, WitnessRecord, unused_files,
 };
-pub use crate::util::rehash_snapshot;
+pub use crate::util::{rehash_snapshot, snapshot_json};
