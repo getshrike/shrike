@@ -1,0 +1,98 @@
+[
+  {
+    "name": "portfolio",
+    "path": "repos/portfolio",
+    "kind": "next-app",
+    "source": "local copy",
+    "tag": "working tree",
+    "expected_source_files": 23
+  },
+  {
+    "name": "next-portfolio",
+    "path": "repos/next-portfolio",
+    "kind": "next-app",
+    "source": "local copy",
+    "tag": "working tree",
+    "expected_source_files": 32
+  },
+  {
+    "name": "markalvarez",
+    "path": "repos/markalvarez",
+    "kind": "next-app",
+    "source": "local copy",
+    "tag": "working tree",
+    "expected_source_files": 37
+  },
+  {
+    "name": "accounteer",
+    "path": "repos/accounteer",
+    "kind": "next-app",
+    "source": "local copy",
+    "tag": "working tree",
+    "expected_source_files": 676
+  },
+  {
+    "name": "requo",
+    "path": "repos/requo",
+    "kind": "next-app",
+    "source": "local copy",
+    "tag": "working tree",
+    "expected_source_files": 1677
+  },
+  {
+    "name": "preact",
+    "path": "repos/preact",
+    "kind": "library",
+    "source": "https://github.com/preactjs/preact.git",
+    "tag": "10.25.4",
+    "expected_source_files": 244
+  },
+  {
+    "name": "fastify",
+    "path": "repos/fastify",
+    "kind": "library",
+    "source": "https://github.com/fastify/fastify.git",
+    "tag": "v5.2.1",
+    "expected_source_files": 286
+  },
+  {
+    "name": "zod",
+    "path": "repos/zod",
+    "kind": "library",
+    "source": "https://github.com/colinhacks/zod.git",
+    "tag": "v3.24.2",
+    "expected_source_files": 174
+  },
+  {
+    "name": "query",
+    "path": "repos/query",
+    "kind": "monorepo",
+    "source": "https://github.com/TanStack/query.git",
+    "tag": "v5.90.3",
+    "expected_source_files": 901
+  },
+  {
+    "name": "vite",
+    "path": "repos/vite",
+    "kind": "monorepo",
+    "source": "https://github.com/vitejs/vite.git",
+    "tag": "v8.0.1",
+    "expected_source_files": 1420
+  },
+  {
+    "name": "synthetic-1k",
+    "path": "synthetic/1k",
+    "kind": "synthetic",
+    "source": "benchmarks/generate.mjs",
+    "tag": "seed 42",
+    "expected_source_files": 1001
+  },
+  {
+    "name": "synthetic-5k",
+    "path": "synthetic/5k",
+    "kind": "synthetic",
+    "source": "benchmarks/generate.mjs",
+    "tag": "seed 42",
+    "expected_source_files": 5001
+  }
+]
