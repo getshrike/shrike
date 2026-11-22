@@ -1,13 +1,27 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
+use rayon::prelude::*;
 use shrike_core::ids::module_symbol_key;
 use shrike_core::{Diagnostic, Span, normalize_relative};
-use shrike_syntax::{DynamicKind, DynamicRecord, DynamicSpecifier, ParseStatus};
+use shrike_syntax::{DynamicKind, DynamicRecord, DynamicSpecifier, FileSummary, ParseStatus};
 
 use super::Builder;
-use crate::types::{ModuleRecord, UnknownRecord};
+use crate::types::{EdgeRecord, ModuleRecord, UnknownRecord};
 use crate::util::{edge, parent_dir};
+
+/// Per-file output of import resolution. Files are processed in parallel and
+/// appended in file order, so the resulting snapshot matches the sequential
+/// pass exactly.
+struct FileImports {
+    edges: Vec<EdgeRecord>,
+    diagnostics: Vec<Diagnostic>,
+    unknowns: Vec<UnknownRecord>,
+    module: ModuleRecord,
+    imports: BTreeMap<String, (String, String)>,
+    namespaces: BTreeMap<String, Vec<String>>,
+}
 
 /// Dynamic edges keep the module live; workers use their own edge kind so a
 /// witness path and delta trigger explain why a file that is not imported is
@@ -60,342 +74,366 @@ fn is_non_source_specifier(specifier: &str) -> bool {
 
 impl<'a> Builder<'a> {
     pub(super) fn resolve_imports(&mut self) {
-        let mut imports: BTreeMap<String, BTreeMap<String, (String, String)>> = BTreeMap::new();
-        let mut namespaces: BTreeMap<String, BTreeMap<String, Vec<String>>> = BTreeMap::new();
-        let summaries = self.summaries.clone();
-        for summary in &summaries {
-            if summary.parse_status != ParseStatus::Ok {
-                continue;
-            }
-            let mut module_imports = BTreeMap::new();
-            let mut module_namespaces = BTreeMap::new();
-            let mut specifiers = Vec::new();
-            let mut resolved = Vec::new();
-            let mut unresolved = Vec::new();
-            let mut external = Vec::new();
-            for import in &summary.imports {
-                specifiers.push(import.source.clone());
-                let resolution = self.resolver.resolve(&summary.path, &import.source);
-                // Assets and framework components have no parsed symbols. Keep
-                // package evidence, but do not create an edge to a module node
-                // that cannot exist in the graph.
-                if is_non_source_specifier(&import.source) {
-                    if resolution.external {
-                        external.push(import.source.clone());
-                    } else if resolution.target.is_none() {
-                        self.diagnostics.push(
-                            Diagnostic::info(
-                                "asset_import",
-                                format!("`{}` is not analyzed as source", import.source),
-                            )
-                            .in_file(&summary.path)
-                            .at(import.span),
-                        );
-                    }
-                    continue;
-                }
-                let targets: Vec<&String> = resolution.targets().collect();
-                if let Some(primary) = targets.first() {
-                    for target in &targets {
-                        resolved.push((*target).clone());
-                        let target_module = module_symbol_key(target);
-                        self.edges.push(edge(
-                            &module_symbol_key(&summary.path),
-                            &target_module,
-                            "import",
-                            "certain",
-                            &summary.path,
-                            import.span,
-                        ));
-                        for binding in &import.bindings {
-                            match binding.kind {
-                                shrike_syntax::BindingKind::Namespace => {
-                                    let locals = module_namespaces
-                                        .entry(binding.local.clone())
-                                        .or_insert_with(Vec::new);
-                                    if !locals.iter().any(|local| local == *target) {
-                                        locals.push((*target).clone());
-                                    }
-                                }
-                                _ => {
-                                    let target_symbol = self.resolve_export(
-                                        target,
-                                        &binding.imported,
-                                        &mut BTreeSet::new(),
-                                    );
-                                    if let Some(target_symbol) = target_symbol {
-                                        if *target == *primary {
-                                            module_imports.insert(
-                                                binding.local.clone(),
-                                                ((*target).clone(), binding.imported.clone()),
-                                            );
-                                        }
-                                        self.edges.push(edge(
-                                            &module_symbol_key(&summary.path),
-                                            &target_symbol,
-                                            "import",
-                                            if binding.type_only { "type" } else { "certain" },
-                                            &summary.path,
-                                            binding.span,
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else if !resolution.external {
-                    unresolved.push(import.source.clone());
-                    self.diagnostics.push(
-                        Diagnostic::warning(
-                            "unresolved_import",
-                            format!("cannot resolve `{}`", import.source),
+        let summaries = Arc::clone(&self.summaries);
+        // Resolution only reads exports, imports and the resolver, so files
+        // can be processed in parallel. Results are collected in file order
+        // and appended in that order, keeping the snapshot identical to the
+        // sequential implementation.
+        let files: Vec<FileImports> = summaries
+            .par_iter()
+            .filter(|summary| summary.parse_status == ParseStatus::Ok)
+            .map(|summary| self.collect_file_imports(summary))
+            .collect();
+        let mut imports = BTreeMap::new();
+        let mut namespaces = BTreeMap::new();
+        for file in files {
+            self.edges.extend(file.edges);
+            self.diagnostics.extend(file.diagnostics);
+            self.unknowns.extend(file.unknowns);
+            imports.insert(file.module.path.clone(), file.imports);
+            namespaces.insert(file.module.path.clone(), file.namespaces);
+            self.modules.push(file.module);
+        }
+        self.imports = imports;
+        self.namespaces = namespaces;
+    }
+
+    fn collect_file_imports(&self, summary: &FileSummary) -> FileImports {
+        let mut edges = Vec::new();
+        let mut diagnostics = Vec::new();
+        let mut unknowns = Vec::new();
+        let mut module_imports = BTreeMap::new();
+        let mut module_namespaces = BTreeMap::new();
+        let mut specifiers = Vec::new();
+        let mut resolved = Vec::new();
+        let mut unresolved = Vec::new();
+        let mut external = Vec::new();
+        for import in &summary.imports {
+            specifiers.push(import.source.clone());
+            let resolution = self.resolver.resolve(&summary.path, &import.source);
+            // Assets and framework components have no parsed symbols. Keep
+            // package evidence, but do not create an edge to a module node
+            // that cannot exist in the graph.
+            if is_non_source_specifier(&import.source) {
+                if resolution.external {
+                    external.push(import.source.clone());
+                } else if resolution.target.is_none() {
+                    diagnostics.push(
+                        Diagnostic::info(
+                            "asset_import",
+                            format!("`{}` is not analyzed as source", import.source),
                         )
                         .in_file(&summary.path)
                         .at(import.span),
                     );
-                } else {
-                    external.push(import.source.clone());
                 }
+                continue;
             }
-            for dynamic in &summary.dynamic {
-                match &dynamic.specifier {
-                    DynamicSpecifier::Literal(specifier) => {
-                        specifiers.push(specifier.clone());
-                        if dynamic.kind == DynamicKind::Worker && is_runtime_worker_url(specifier) {
-                            // A runtime URL is not a package or a module edge;
-                            // keep it out of dependency evidence as well.
-                            continue;
-                        }
-                        let resolution = self.resolver.resolve(&summary.path, specifier);
-                        if is_non_source_specifier(specifier) {
-                            if resolution.external {
-                                external.push(specifier.clone());
+            let targets: Vec<&String> = resolution.targets().collect();
+            if let Some(primary) = targets.first() {
+                for target in &targets {
+                    resolved.push((*target).clone());
+                    let target_module = module_symbol_key(target);
+                    edges.push(edge(
+                        &module_symbol_key(&summary.path),
+                        &target_module,
+                        "import",
+                        "certain",
+                        &summary.path,
+                        import.span,
+                    ));
+                    for binding in &import.bindings {
+                        match binding.kind {
+                            shrike_syntax::BindingKind::Namespace => {
+                                let locals = module_namespaces
+                                    .entry(binding.local.clone())
+                                    .or_insert_with(Vec::new);
+                                if !locals.iter().any(|local| local == *target) {
+                                    locals.push((*target).clone());
+                                }
                             }
-                            continue;
-                        }
-                        let targets: Vec<String> = resolution.targets().cloned().collect();
-                        if !targets.is_empty() {
-                            for target in &targets {
-                                self.edges.push(edge(
-                                    &module_symbol_key(&summary.path),
-                                    &module_symbol_key(target),
-                                    dynamic_edge_kind(dynamic),
-                                    "certain",
-                                    &summary.path,
-                                    dynamic.span,
-                                ));
-                                self.link_dynamic_exports(&summary.path, target, dynamic);
+                            _ => {
+                                let target_symbol = self.resolve_export(
+                                    target,
+                                    &binding.imported,
+                                    &mut BTreeSet::new(),
+                                );
+                                if let Some(target_symbol) = target_symbol {
+                                    if *target == *primary {
+                                        module_imports.insert(
+                                            binding.local.clone(),
+                                            ((*target).clone(), binding.imported.clone()),
+                                        );
+                                    }
+                                    edges.push(edge(
+                                        &module_symbol_key(&summary.path),
+                                        &target_symbol,
+                                        "import",
+                                        if binding.type_only { "type" } else { "certain" },
+                                        &summary.path,
+                                        binding.span,
+                                    ));
+                                }
                             }
-                        } else if !resolution.external {
-                            self.unknowns.push(UnknownRecord {
-                                reason: format!("dynamic import `{specifier}` did not resolve"),
-                                scope: "repo".to_string(),
-                                package: self.package_of.get(&summary.path).cloned(),
-                                file: summary.path.clone(),
-                                span: dynamic.span,
-                            });
-                        } else {
+                        }
+                    }
+                }
+            } else if !resolution.external {
+                unresolved.push(import.source.clone());
+                diagnostics.push(
+                    Diagnostic::warning(
+                        "unresolved_import",
+                        format!("cannot resolve `{}`", import.source),
+                    )
+                    .in_file(&summary.path)
+                    .at(import.span),
+                );
+            } else {
+                external.push(import.source.clone());
+            }
+        }
+        for dynamic in &summary.dynamic {
+            match &dynamic.specifier {
+                DynamicSpecifier::Literal(specifier) => {
+                    specifiers.push(specifier.clone());
+                    if dynamic.kind == DynamicKind::Worker && is_runtime_worker_url(specifier) {
+                        // A runtime URL is not a package or a module edge;
+                        // keep it out of dependency evidence as well.
+                        continue;
+                    }
+                    let resolution = self.resolver.resolve(&summary.path, specifier);
+                    if is_non_source_specifier(specifier) {
+                        if resolution.external {
                             external.push(specifier.clone());
                         }
+                        continue;
                     }
-                    DynamicSpecifier::TemplatePrefix(prefix) => {
-                        let base = normalize_relative(&format!(
-                            "{}/{}",
-                            parent_dir(&summary.path),
-                            prefix
-                        ));
-                        let mut matched = 0;
-                        for file in &self.files {
-                            if file.path.starts_with(&base) {
-                                matched += 1;
-                                self.edges.push(edge(
-                                    &module_symbol_key(&summary.path),
-                                    &module_symbol_key(&file.path),
-                                    dynamic_edge_kind(dynamic),
-                                    "probable",
-                                    &summary.path,
-                                    dynamic.span,
-                                ));
-                            }
+                    let targets: Vec<String> = resolution.targets().cloned().collect();
+                    if !targets.is_empty() {
+                        for target in &targets {
+                            edges.push(edge(
+                                &module_symbol_key(&summary.path),
+                                &module_symbol_key(target),
+                                dynamic_edge_kind(dynamic),
+                                "certain",
+                                &summary.path,
+                                dynamic.span,
+                            ));
+                            self.link_dynamic_exports(&summary.path, target, dynamic, &mut edges);
                         }
-                        if matched == 0 {
-                            self.unknowns.push(UnknownRecord {
-                                reason: format!("dynamic prefix `{prefix}` matched no files"),
-                                scope: "repo".to_string(),
-                                package: self.package_of.get(&summary.path).cloned(),
-                                file: summary.path.clone(),
-                                span: dynamic.span,
-                            });
-                        }
+                    } else if !resolution.external {
+                        unknowns.push(UnknownRecord {
+                            reason: format!("dynamic import `{specifier}` did not resolve"),
+                            scope: "repo".to_string(),
+                            package: self.package_of.get(&summary.path).cloned(),
+                            file: summary.path.clone(),
+                            span: dynamic.span,
+                        });
+                    } else {
+                        external.push(specifier.clone());
                     }
-                    DynamicSpecifier::Glob { patterns, excludes } => {
-                        let mut includes = Vec::new();
-                        for pattern in patterns {
-                            if let Some(resolved) =
-                                self.resolver.glob_pattern(&summary.path, pattern)
-                            {
-                                includes.push(resolved);
-                            } else {
-                                self.diagnostics.push(
-                                    Diagnostic::warning(
-                                        "unresolved_glob",
-                                        format!("cannot resolve glob pattern `{pattern}`"),
-                                    )
-                                    .in_file(&summary.path)
-                                    .at(dynamic.span),
-                                );
-                                self.unknowns.push(UnknownRecord {
-                                    reason: format!("glob pattern `{pattern}` cannot be bounded"),
-                                    scope: "repo".to_string(),
-                                    package: self.package_of.get(&summary.path).cloned(),
-                                    file: summary.path.clone(),
-                                    span: dynamic.span,
-                                });
-                            }
-                        }
-                        if includes.is_empty() {
-                            continue;
-                        }
-                        // Vite anchors a `**` exclude at the common base of
-                        // the positive patterns, not at the importing file.
-                        let base = common_glob_base(&includes);
-                        let mut resolved_excludes = Vec::new();
-                        for exclude in excludes {
-                            if exclude.starts_with("**") {
-                                if let Some(base) = &base {
-                                    resolved_excludes.push(if base.is_empty() {
-                                        exclude.clone()
-                                    } else {
-                                        format!("{base}/{exclude}")
-                                    });
-                                }
-                            } else if let Some(resolved) =
-                                self.resolver.glob_pattern(&summary.path, exclude)
-                            {
-                                resolved_excludes.push(resolved);
-                            }
-                            // An exclude this resolver cannot place removes no
-                            // file, which can only keep symbols live.
-                        }
-                        match compile_globs(&includes, &resolved_excludes) {
-                            Ok(matcher) => {
-                                let matched_files: Vec<String> = self
-                                    .files
-                                    .iter()
-                                    .filter(|file| matcher.matches(&file.path))
-                                    .map(|file| file.path.clone())
-                                    .collect();
-                                let matched = matched_files.len();
-                                for file in matched_files {
-                                    self.edges.push(edge(
-                                        &module_symbol_key(&summary.path),
-                                        &module_symbol_key(&file),
-                                        "dynamic",
-                                        "probable",
-                                        &summary.path,
-                                        dynamic.span,
-                                    ));
-                                    self.link_dynamic_exports(&summary.path, &file, dynamic);
-                                }
-                                if matched == 0 {
-                                    self.diagnostics.push(
-                                        Diagnostic::warning(
-                                            "glob_matched_no_files",
-                                            format!(
-                                                "glob patterns [{}] matched no analyzed files",
-                                                includes.join(", ")
-                                            ),
-                                        )
-                                        .in_file(&summary.path)
-                                        .at(dynamic.span),
-                                    );
-                                }
-                            }
-                            Err(error) => {
-                                self.diagnostics.push(
-                                    Diagnostic::warning(
-                                        "invalid_glob",
-                                        format!("dynamic glob cannot be compiled: {error}"),
-                                    )
-                                    .in_file(&summary.path)
-                                    .at(dynamic.span),
-                                );
-                                self.unknowns.push(UnknownRecord {
-                                    reason: "dynamic glob cannot be compiled".to_string(),
-                                    scope: "repo".to_string(),
-                                    package: self.package_of.get(&summary.path).cloned(),
-                                    file: summary.path.clone(),
-                                    span: dynamic.span,
-                                });
-                            }
+                }
+                DynamicSpecifier::TemplatePrefix(prefix) => {
+                    let base =
+                        normalize_relative(&format!("{}/{}", parent_dir(&summary.path), prefix));
+                    let mut matched = 0;
+                    for file in &self.files {
+                        if file.path.starts_with(&base) {
+                            matched += 1;
+                            edges.push(edge(
+                                &module_symbol_key(&summary.path),
+                                &module_symbol_key(&file.path),
+                                dynamic_edge_kind(dynamic),
+                                "probable",
+                                &summary.path,
+                                dynamic.span,
+                            ));
                         }
                     }
-                    DynamicSpecifier::Unknown => {
-                        let package = self.package_of.get(&summary.path).cloned();
-                        self.unknowns.push(UnknownRecord {
-                            reason: "dynamic specifier cannot be bounded".to_string(),
-                            scope: if package.is_some() {
-                                "package".to_string()
-                            } else {
-                                "repo".to_string()
-                            },
-                            package,
+                    if matched == 0 {
+                        unknowns.push(UnknownRecord {
+                            reason: format!("dynamic prefix `{prefix}` matched no files"),
+                            scope: "repo".to_string(),
+                            package: self.package_of.get(&summary.path).cloned(),
                             file: summary.path.clone(),
                             span: dynamic.span,
                         });
                     }
                 }
-            }
-            for unknown in &summary.unknown {
-                self.unknowns.push(UnknownRecord {
-                    reason: unknown.reason.clone(),
-                    scope: match unknown.scope {
-                        shrike_syntax::UnknownScope::Repo => "repo".to_string(),
-                        shrike_syntax::UnknownScope::Package(_) => "package".to_string(),
-                        shrike_syntax::UnknownScope::Module(_) => "module".to_string(),
-                    },
-                    package: self.package_of.get(&summary.path).cloned(),
-                    file: summary.path.clone(),
-                    span: unknown.span,
-                });
-            }
-            // Type-position imports (`import("./types").Config`, JSDoc
-            // `@type {import("./types").Config}`) use an export without a
-            // runtime import. Link the file's module symbol to that export so
-            // the type remains live while the file itself is reachable.
-            for type_import in &summary.type_imports {
-                let Some(target_file) = self
-                    .resolver
-                    .resolve(&summary.path, &type_import.source)
-                    .target
-                else {
-                    continue;
-                };
-                let Some(imported) = &type_import.imported else {
-                    continue;
-                };
-                if let Some(target) =
-                    self.resolve_export(&target_file, imported, &mut BTreeSet::new())
-                {
-                    self.edges.push(edge(
-                        &module_symbol_key(&summary.path),
-                        &target,
-                        "type",
-                        "certain",
-                        &summary.path,
-                        Span::default(),
-                    ));
-                } else {
-                    self.unknowns.push(UnknownRecord {
-                        reason: format!("unknown type import member `{imported}`"),
-                        scope: "module".to_string(),
-                        package: self.package_of.get(&summary.path).cloned(),
-                        file: target_file,
-                        span: Span::default(),
+                DynamicSpecifier::Glob { patterns, excludes } => {
+                    let mut includes = Vec::new();
+                    for pattern in patterns {
+                        if let Some(resolved) = self.resolver.glob_pattern(&summary.path, pattern) {
+                            includes.push(resolved);
+                        } else {
+                            diagnostics.push(
+                                Diagnostic::warning(
+                                    "unresolved_glob",
+                                    format!("cannot resolve glob pattern `{pattern}`"),
+                                )
+                                .in_file(&summary.path)
+                                .at(dynamic.span),
+                            );
+                            unknowns.push(UnknownRecord {
+                                reason: format!("glob pattern `{pattern}` cannot be bounded"),
+                                scope: "repo".to_string(),
+                                package: self.package_of.get(&summary.path).cloned(),
+                                file: summary.path.clone(),
+                                span: dynamic.span,
+                            });
+                        }
+                    }
+                    if includes.is_empty() {
+                        continue;
+                    }
+                    // Vite anchors a `**` exclude at the common base of
+                    // the positive patterns, not at the importing file.
+                    let base = common_glob_base(&includes);
+                    let mut resolved_excludes = Vec::new();
+                    for exclude in excludes {
+                        if exclude.starts_with("**") {
+                            if let Some(base) = &base {
+                                resolved_excludes.push(if base.is_empty() {
+                                    exclude.clone()
+                                } else {
+                                    format!("{base}/{exclude}")
+                                });
+                            }
+                        } else if let Some(resolved) =
+                            self.resolver.glob_pattern(&summary.path, exclude)
+                        {
+                            resolved_excludes.push(resolved);
+                        }
+                        // An exclude this resolver cannot place removes no
+                        // file, which can only keep symbols live.
+                    }
+                    match compile_globs(&includes, &resolved_excludes) {
+                        Ok(matcher) => {
+                            let matched_files: Vec<String> = self
+                                .files
+                                .iter()
+                                .filter(|file| matcher.matches(&file.path))
+                                .map(|file| file.path.clone())
+                                .collect();
+                            let matched = matched_files.len();
+                            for file in matched_files {
+                                edges.push(edge(
+                                    &module_symbol_key(&summary.path),
+                                    &module_symbol_key(&file),
+                                    "dynamic",
+                                    "probable",
+                                    &summary.path,
+                                    dynamic.span,
+                                ));
+                                self.link_dynamic_exports(
+                                    &summary.path,
+                                    &file,
+                                    dynamic,
+                                    &mut edges,
+                                );
+                            }
+                            if matched == 0 {
+                                diagnostics.push(
+                                    Diagnostic::warning(
+                                        "glob_matched_no_files",
+                                        format!(
+                                            "glob patterns [{}] matched no analyzed files",
+                                            includes.join(", ")
+                                        ),
+                                    )
+                                    .in_file(&summary.path)
+                                    .at(dynamic.span),
+                                );
+                            }
+                        }
+                        Err(error) => {
+                            diagnostics.push(
+                                Diagnostic::warning(
+                                    "invalid_glob",
+                                    format!("dynamic glob cannot be compiled: {error}"),
+                                )
+                                .in_file(&summary.path)
+                                .at(dynamic.span),
+                            );
+                            unknowns.push(UnknownRecord {
+                                reason: "dynamic glob cannot be compiled".to_string(),
+                                scope: "repo".to_string(),
+                                package: self.package_of.get(&summary.path).cloned(),
+                                file: summary.path.clone(),
+                                span: dynamic.span,
+                            });
+                        }
+                    }
+                }
+                DynamicSpecifier::Unknown => {
+                    let package = self.package_of.get(&summary.path).cloned();
+                    unknowns.push(UnknownRecord {
+                        reason: "dynamic specifier cannot be bounded".to_string(),
+                        scope: if package.is_some() {
+                            "package".to_string()
+                        } else {
+                            "repo".to_string()
+                        },
+                        package,
+                        file: summary.path.clone(),
+                        span: dynamic.span,
                     });
                 }
             }
-            self.modules.push(ModuleRecord {
+        }
+        for unknown in &summary.unknown {
+            unknowns.push(UnknownRecord {
+                reason: unknown.reason.clone(),
+                scope: match unknown.scope {
+                    shrike_syntax::UnknownScope::Repo => "repo".to_string(),
+                    shrike_syntax::UnknownScope::Package(_) => "package".to_string(),
+                    shrike_syntax::UnknownScope::Module(_) => "module".to_string(),
+                },
+                package: self.package_of.get(&summary.path).cloned(),
+                file: summary.path.clone(),
+                span: unknown.span,
+            });
+        }
+        // Type-position imports (`import("./types").Config`, JSDoc
+        // `@type {import("./types").Config}`) use an export without a
+        // runtime import. Link the file's module symbol to that export so
+        // the type remains live while the file itself is reachable.
+        for type_import in &summary.type_imports {
+            let Some(target_file) = self
+                .resolver
+                .resolve(&summary.path, &type_import.source)
+                .target
+            else {
+                continue;
+            };
+            let Some(imported) = &type_import.imported else {
+                continue;
+            };
+            if let Some(target) = self.resolve_export(&target_file, imported, &mut BTreeSet::new())
+            {
+                edges.push(edge(
+                    &module_symbol_key(&summary.path),
+                    &target,
+                    "type",
+                    "certain",
+                    &summary.path,
+                    Span::default(),
+                ));
+            } else {
+                unknowns.push(UnknownRecord {
+                    reason: format!("unknown type import member `{imported}`"),
+                    scope: "module".to_string(),
+                    package: self.package_of.get(&summary.path).cloned(),
+                    file: target_file,
+                    span: Span::default(),
+                });
+            }
+        }
+        FileImports {
+            edges,
+            diagnostics,
+            unknowns,
+            module: ModuleRecord {
                 path: summary.path.clone(),
                 file: summary.path.clone(),
                 specifiers,
@@ -403,12 +441,10 @@ impl<'a> Builder<'a> {
                 unresolved,
                 external,
                 type_refs: summary.type_refs.clone(),
-            });
-            imports.insert(summary.path.clone(), module_imports);
-            namespaces.insert(summary.path.clone(), module_namespaces);
+            },
+            imports: module_imports,
+            namespaces: module_namespaces,
         }
-        self.imports = imports;
-        self.namespaces = namespaces;
     }
 
     /// Link a literal dynamic import to the exports it actually consumes.
@@ -417,23 +453,44 @@ impl<'a> Builder<'a> {
     /// empty name list, or a name that does not resolve widens to every
     /// export: fail closed rather than report an export that an unknown
     /// namespace use could still reach.
-    fn link_dynamic_exports(&mut self, source: &str, target: &str, dynamic: &DynamicRecord) {
-        let precise = dynamic
-            .imported
-            .as_ref()
-            .filter(|names| !names.is_empty())
-            .and_then(|names| {
+    fn link_dynamic_exports(
+        &self,
+        source: &str,
+        target: &str,
+        dynamic: &DynamicRecord,
+        edges: &mut Vec<EdgeRecord>,
+    ) {
+        // An empty name list is precise: the namespace is discarded or never
+        // read, so no export is consumed. A non-empty list must resolve
+        // completely; one unknown name widens rather than risk dropping a
+        // real consumer.
+        let precise = match dynamic.imported.as_ref() {
+            Some(names) if names.is_empty() => Some(Vec::new()),
+            Some(names) => {
                 let mut keys = Vec::new();
+                let mut complete = true;
                 for name in names {
-                    keys.push(self.resolve_export(target, name, &mut BTreeSet::new())?);
+                    match self.resolve_export(target, name, &mut BTreeSet::new()) {
+                        Some(key) => keys.push(key),
+                        None => {
+                            complete = false;
+                            break;
+                        }
+                    }
                 }
-                keys.sort();
-                keys.dedup();
-                Some(keys)
-            });
+                if complete {
+                    keys.sort();
+                    keys.dedup();
+                    Some(keys)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        };
         if let Some(keys) = precise {
             for key in keys {
-                self.edges.push(edge(
+                edges.push(edge(
                     &module_symbol_key(source),
                     &key,
                     "dynamic",
@@ -446,7 +503,7 @@ impl<'a> Builder<'a> {
         }
         if let Some(exports) = self.exports.get(target).cloned() {
             for (_, key) in exports {
-                self.edges.push(edge(
+                edges.push(edge(
                     &module_symbol_key(source),
                     &key,
                     "dynamic",
@@ -464,16 +521,22 @@ impl<'a> Builder<'a> {
         name: &str,
         seen: &mut BTreeSet<(String, String)>,
     ) -> Option<String> {
-        if !seen.insert((file.to_string(), name.to_string())) {
-            return None;
-        }
+        // Direct exports resolve without recursion; checking them before the
+        // cycle set avoids two string allocations on the hot path.
         if let Some(map) = self.exports.get(file) {
             if let Some(key) = map.get(name) {
                 return Some(key.clone());
             }
         }
+        if !seen.insert((file.to_string(), name.to_string())) {
+            return None;
+        }
         // Explicit re-exports and aliases are resolved by their edge targets.
-        if let Some(summary) = self.summaries.iter().find(|summary| summary.path == file) {
+        if let Some(summary) = self
+            .summary_index
+            .get(file)
+            .map(|index| &self.summaries[*index])
+        {
             for re_export in &summary.re_exports {
                 if re_export.exported == name {
                     if let Some(target_file) = self.resolver.resolve(file, &re_export.source).target

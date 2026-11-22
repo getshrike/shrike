@@ -327,6 +327,13 @@ struct PagesRouterPage {
     api: bool,
     /// Whether the file is a reserved `_app`, `_document`, or `_error` page.
     reserved: bool,
+    /// The URL path segments after the page root, with `index` removed and
+    /// dynamic syntax intact.
+    segments: Vec<String>,
+    /// The page root (`pages` or `src/pages`). Next.js uses one root per
+    /// package; keeping the root in the route-tree key prevents two roots from
+    /// being treated as one namespace.
+    root: &'static str,
 }
 
 /// Classify a file as a Pages Router page anchored at its package root.
@@ -345,10 +352,10 @@ fn classify_pages_router_page(
     } else {
         path.strip_prefix(&format!("{package_directory}/"))?
     };
-    let rest = if let Some(rest) = package_path.strip_prefix("pages/") {
-        rest
+    let (root, rest) = if let Some(rest) = package_path.strip_prefix("pages/") {
+        ("pages", rest)
     } else {
-        package_path.strip_prefix("src/pages/")?
+        ("src/pages", package_path.strip_prefix("src/pages/")?)
     };
     let file_name = rest.rsplit('/').next()?;
     if !pages_router_page_extension(file_name, extensions) {
@@ -374,7 +381,21 @@ fn classify_pages_router_page(
         dynamic,
         api,
         reserved,
+        segments: parts.into_iter().map(str::to_string).collect(),
+        root,
     })
+}
+
+/// Whether a Pages Router file is a page that Next.js runs data functions on.
+/// API routes and the reserved `_app`, `_document`, and `_error` pages skip
+/// page-data validation; a nested `_app` or `_error` is an ordinary page.
+pub(super) fn is_pages_router_data_page(
+    path: &str,
+    package_directory: &str,
+    extensions: Option<&BTreeSet<String>>,
+) -> bool {
+    classify_pages_router_page(path, package_directory, extensions)
+        .is_some_and(|page| !page.api && !page.reserved)
 }
 
 /// Whether a Pages Router file uses a page extension. A configured
@@ -388,6 +409,91 @@ fn pages_router_page_extension(file_name: &str, extensions: Option<&BTreeSet<Str
             .iter()
             .any(|extension| file_name.ends_with(&format!(".{extension}"))),
     }
+}
+
+/// The kind of dynamic segment in a Pages Router route.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PagesDynamicKind {
+    /// `[id]`
+    Regular,
+    /// `[...slug]`
+    CatchAll,
+    /// `[[...slug]]`
+    OptionalCatchAll,
+    /// `[[id]]`: Next.js parses it as an optional parameter but rejects
+    /// optional parameters that are not catch-alls.
+    InvalidOptional,
+}
+
+/// A parsed Pages Router dynamic segment.
+struct PagesDynamicSegment<'a> {
+    kind: PagesDynamicKind,
+    name: &'a str,
+}
+
+/// Parse a Pages Router dynamic segment. `None` means a static segment.
+fn pages_dynamic_segment(segment: &str) -> Option<PagesDynamicSegment<'_>> {
+    if let Some(inner) = segment.strip_prefix("[[...") {
+        return inner.strip_suffix("]]").map(|name| PagesDynamicSegment {
+            kind: PagesDynamicKind::OptionalCatchAll,
+            name,
+        });
+    }
+    let inner = segment.strip_prefix('[')?.strip_suffix(']')?;
+    if let Some(name) = inner.strip_prefix("...") {
+        return Some(PagesDynamicSegment {
+            kind: PagesDynamicKind::CatchAll,
+            name,
+        });
+    }
+    if let Some(inner) = inner.strip_prefix('[') {
+        return inner.strip_suffix(']').map(|name| PagesDynamicSegment {
+            kind: PagesDynamicKind::InvalidOptional,
+            name,
+        });
+    }
+    Some(PagesDynamicSegment {
+        kind: PagesDynamicKind::Regular,
+        name: inner,
+    })
+}
+
+/// One position in the Pages Router route tree.
+///
+/// Next.js keeps one child slot per dynamic kind (`[]`, `[...]`, `[[...]]`),
+/// so a regular and a catch-all sibling can coexist while two names in the
+/// same kind cannot. A static leaf at the position conflicts with an optional
+/// catch-all because both match the position itself.
+#[derive(Default)]
+struct PagesRouteNode {
+    /// Files whose route ends at this position.
+    leaves: BTreeSet<String>,
+    /// `[name]` children, keyed by the written name.
+    regular: BTreeMap<String, BTreeSet<String>>,
+    /// `[...name]` children.
+    catch_all: BTreeMap<String, BTreeSet<String>>,
+    /// `[[...name]]` children.
+    optional_catch_all: BTreeMap<String, BTreeSet<String>>,
+}
+
+/// Render a canonical Pages Router tree position for a diagnostic.
+fn pages_route_position(position: &str) -> String {
+    if position.is_empty() {
+        "/".to_string()
+    } else {
+        position
+            .replace("/[[...]]", "/[[...param]]")
+            .replace("/[...]", "/[...param]")
+            .replace("/[]", "/[param]")
+    }
+}
+
+/// Next.js compares slug names after removing every non-word symbol
+/// (`\W` in JavaScript: anything but ASCII letters, digits, and `_`).
+fn pages_router_name_without_punctuation(name: &str) -> String {
+    name.chars()
+        .filter(|character| character.is_ascii_alphanumeric() || *character == '_')
+        .collect()
 }
 
 /// The span of a value export Next.js sees on the page module namespace.
@@ -458,7 +564,7 @@ impl<'a> Builder<'a> {
     pub(super) fn build_files(&mut self) {
         let mut diagnostics = Vec::new();
         let summaries = self.summaries.clone();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             let package = self
                 .resolver
                 .package_for(&summary.path)
@@ -551,7 +657,7 @@ impl<'a> Builder<'a> {
     pub(super) fn detect_invalid_client_exports(&mut self) {
         let summaries = self.summaries.clone();
         let page_extensions = self.configured_page_extensions();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             if summary.parse_status != ParseStatus::Ok || !summary.has_directive("use client") {
                 continue;
             }
@@ -559,9 +665,7 @@ impl<'a> Builder<'a> {
                 .resolver
                 .package_for(&summary.path)
                 .map_or_else(String::new, |package| package.directory.clone());
-            if super::entries::package_declares_next(self.resolver.root(), &package_directory)
-                != Some(true)
-            {
+            if self.package_declares_next(&package_directory) != Some(true) {
                 continue;
             }
             let Some(route) = classify_app_route(
@@ -649,7 +753,7 @@ impl<'a> Builder<'a> {
             return;
         }
         let summaries = self.summaries.clone();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             if summary.parse_status != ParseStatus::Ok {
                 continue;
             }
@@ -675,14 +779,9 @@ impl<'a> Builder<'a> {
     /// package does not declare the bundler. The root manifest is checked
     /// directly because the resolver only records packages that have a name.
     pub(super) fn project_uses_rsc_directives(&self) -> bool {
-        super::entries::package_declares_any(self.resolver.root(), "", RSC_BUNDLER_PACKAGES)
-            == Some(true)
+        self.package_declares_any("", RSC_BUNDLER_PACKAGES) == Some(true)
             || self.resolver.packages().iter().any(|package| {
-                super::entries::package_declares_any(
-                    self.resolver.root(),
-                    &package.directory,
-                    RSC_BUNDLER_PACKAGES,
-                ) == Some(true)
+                self.package_declares_any(&package.directory, RSC_BUNDLER_PACKAGES) == Some(true)
             })
     }
 
@@ -694,7 +793,7 @@ impl<'a> Builder<'a> {
             return;
         }
         let summaries = self.summaries.clone();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             for site in &summary.misplaced_directives {
                 self.diagnostics.push(
                     Diagnostic::warning(
@@ -730,7 +829,7 @@ impl<'a> Builder<'a> {
             .iter()
             .map(|summary| (summary.path.as_str(), summary))
             .collect();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             if summary.parse_status != ParseStatus::Ok
                 || (summary.re_exports.is_empty() && summary.export_alls.is_empty())
             {
@@ -855,7 +954,7 @@ impl<'a> Builder<'a> {
             .map(|summary| summary.path.clone())
             .collect();
         let mut diagnostics = Vec::new();
-        for client in &summaries {
+        for client in summaries.iter() {
             if client.parse_status != ParseStatus::Ok || !client.has_directive("use client") {
                 continue;
             }
@@ -1004,7 +1103,7 @@ impl<'a> Builder<'a> {
     pub(super) fn detect_next_segment_config_conflicts(&mut self) {
         let summaries = self.summaries.clone();
         let page_extensions = self.configured_page_extensions();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             if summary.parse_status != ParseStatus::Ok {
                 continue;
             }
@@ -1012,9 +1111,7 @@ impl<'a> Builder<'a> {
                 .resolver
                 .package_for(&summary.path)
                 .map_or_else(String::new, |package| package.directory.clone());
-            if super::entries::package_declares_next(self.resolver.root(), &package_directory)
-                != Some(true)
-            {
+            if self.package_declares_next(&package_directory) != Some(true) {
                 continue;
             }
             let Some(route) = classify_app_route(
@@ -1184,7 +1281,7 @@ impl<'a> Builder<'a> {
     pub(super) fn detect_next_pages_router_exports(&mut self) {
         let summaries = self.summaries.clone();
         let page_extensions = self.configured_page_extensions();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             if summary.parse_status != ParseStatus::Ok {
                 continue;
             }
@@ -1192,9 +1289,7 @@ impl<'a> Builder<'a> {
                 .resolver
                 .package_for(&summary.path)
                 .map_or_else(String::new, |package| package.directory.clone());
-            if super::entries::package_declares_next(self.resolver.root(), &package_directory)
-                != Some(true)
-            {
+            if self.package_declares_next(&package_directory) != Some(true) {
                 continue;
             }
             let Some(page) = classify_pages_router_page(
@@ -1341,7 +1436,7 @@ impl<'a> Builder<'a> {
         let mut collisions: BTreeMap<(String, String, String), Vec<String>> = BTreeMap::new();
         let mut positions: BTreeMap<(String, String, String), BTreeMap<String, BTreeSet<String>>> =
             BTreeMap::new();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             let package_directory = self
                 .resolver
                 .package_for(&summary.path)
@@ -1349,9 +1444,7 @@ impl<'a> Builder<'a> {
             // A diagnostic should not claim a Next.js failure without positive
             // evidence. The entry rules fail open on a missing manifest; a
             // routing error must not.
-            if super::entries::package_declares_next(self.resolver.root(), &package_directory)
-                != Some(true)
-            {
+            if self.package_declares_next(&package_directory) != Some(true) {
                 continue;
             }
             let Some(route) = classify_app_route(
@@ -1436,6 +1529,234 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// Report Pages Router files that Next.js cannot sort into a route tree.
+    ///
+    /// Verified against Next.js 16.4.6 with real `next build` probes. The
+    /// Pages Router rejects:
+    /// * sibling dynamic segments with different names at one position
+    ///   (`[id]` vs `[slug]`, including `[...id]` vs `[...slug]` and
+    ///   `[[...id]]` vs `[[...slug]]`);
+    /// * a required and an optional catch-all at the same position;
+    /// * a slug name repeated within one route path (`[id]/[id]`);
+    /// * an optional catch-all sharing a position with a static page
+    ///   (`pages/index.tsx` with `pages/[[...slug]].tsx`).
+    ///
+    /// Static/static, API/API, same-name dynamic, and extension duplicates
+    /// build successfully and are not reported. Reserved `_app`, `_document`,
+    /// and `_error` pages are not route-tree participants. Both routers share
+    /// `dynamic_segment_name_conflict`; the catch-all and specificity failures
+    /// use `pages_router_route_conflict`.
+    pub(super) fn detect_next_pages_router_route_conflicts(&mut self) {
+        let summaries = self.summaries.clone();
+        let page_extensions = self.configured_page_extensions();
+        let mut nodes: BTreeMap<(String, &'static str, String), PagesRouteNode> = BTreeMap::new();
+        for summary in summaries.iter() {
+            if summary.parse_status != ParseStatus::Ok {
+                continue;
+            }
+            let package_directory = self
+                .resolver
+                .package_for(&summary.path)
+                .map_or_else(String::new, |package| package.directory.clone());
+            // A routing error must not claim a Next.js failure without positive
+            // evidence, matching the App Router checks.
+            if self.package_declares_next(&package_directory) != Some(true) {
+                continue;
+            }
+            let Some(page) = classify_pages_router_page(
+                &summary.path,
+                &package_directory,
+                page_extensions.get(&package_directory),
+            ) else {
+                continue;
+            };
+            // `_app`, `_document`, and `_error` are reserved pages, not sorted
+            // routes. A nested `_app`/`_error` is an ordinary page and stays in.
+            if page.reserved {
+                continue;
+            }
+            let path = &summary.path;
+            let mut position = String::new();
+            let mut seen_names: Vec<String> = Vec::new();
+            let mut valid = true;
+            for (index, segment) in page.segments.iter().enumerate() {
+                let Some(dynamic) = pages_dynamic_segment(segment) else {
+                    position.push('/');
+                    position.push_str(segment);
+                    continue;
+                };
+                if dynamic.kind == PagesDynamicKind::InvalidOptional {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "pages_router_route_conflict",
+                            format!(
+                                "`{path}` uses `{segment}`; Next.js fails the build because optional route parameters are not supported outside a catch-all"
+                            ),
+                        )
+                        .in_file(path),
+                    );
+                    valid = false;
+                    break;
+                }
+                if matches!(
+                    dynamic.kind,
+                    PagesDynamicKind::CatchAll | PagesDynamicKind::OptionalCatchAll
+                ) && index + 1 != page.segments.len()
+                {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "pages_router_route_conflict",
+                            format!(
+                                "`{path}` has the catch-all segment `{segment}` before the end of the route; Next.js fails the build because a catch-all must be the last part of the URL"
+                            ),
+                        )
+                        .in_file(path),
+                    );
+                    valid = false;
+                    break;
+                }
+                if let Some(previous) = seen_names.iter().find(|name| {
+                    *name == dynamic.name
+                        || pages_router_name_without_punctuation(name)
+                            == pages_router_name_without_punctuation(dynamic.name)
+                }) {
+                    let message = if previous == dynamic.name {
+                        format!(
+                            "`{path}` repeats the dynamic segment name `{}`; Next.js fails the build because a slug name may not repeat within one route",
+                            dynamic.name
+                        )
+                    } else {
+                        format!(
+                            "`{path}` uses the dynamic segment names `{previous}` and `{}`, which differ only by non-word symbols; Next.js fails the build because the names would address the same parameter",
+                            dynamic.name
+                        )
+                    };
+                    self.diagnostics.push(
+                        Diagnostic::error("dynamic_segment_name_conflict", message).in_file(path),
+                    );
+                    valid = false;
+                    break;
+                }
+                seen_names.push(dynamic.name.to_string());
+                let node = nodes
+                    .entry((package_directory.clone(), page.root, position.clone()))
+                    .or_default();
+                let files = match dynamic.kind {
+                    PagesDynamicKind::Regular => {
+                        node.regular.entry(dynamic.name.to_string()).or_default()
+                    }
+                    PagesDynamicKind::CatchAll => {
+                        node.catch_all.entry(dynamic.name.to_string()).or_default()
+                    }
+                    PagesDynamicKind::OptionalCatchAll => node
+                        .optional_catch_all
+                        .entry(dynamic.name.to_string())
+                        .or_default(),
+                    PagesDynamicKind::InvalidOptional => unreachable!(),
+                };
+                files.insert(path.clone());
+                let canonical = match dynamic.kind {
+                    PagesDynamicKind::Regular => "[]",
+                    PagesDynamicKind::CatchAll => "[...]",
+                    PagesDynamicKind::OptionalCatchAll => "[[...]]",
+                    PagesDynamicKind::InvalidOptional => unreachable!(),
+                };
+                position.push('/');
+                position.push_str(canonical);
+            }
+            if valid {
+                nodes
+                    .entry((package_directory, page.root, position))
+                    .or_default()
+                    .leaves
+                    .insert(path.clone());
+            }
+        }
+        for ((_, _, position), node) in nodes {
+            let display = pages_route_position(&position);
+            for names in [&node.regular, &node.catch_all, &node.optional_catch_all] {
+                if names.len() < 2 {
+                    continue;
+                }
+                let spellings: Vec<&str> = names.keys().map(String::as_str).collect();
+                let mut files: BTreeSet<&str> = BTreeSet::new();
+                for paths in names.values() {
+                    files.extend(paths.iter().map(String::as_str));
+                }
+                for file in files {
+                    let mut conflicting: Vec<&str> = names
+                        .values()
+                        .flat_map(|paths| paths.iter().map(String::as_str))
+                        .filter(|other| *other != file)
+                        .collect();
+                    conflicting.sort();
+                    conflicting.dedup();
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "dynamic_segment_name_conflict",
+                            format!(
+                                "sibling Pages Router dynamic segments at `{display}` use different names: {}; conflicting files: {}",
+                                spellings.join(", "),
+                                conflicting.join(", ")
+                            ),
+                        )
+                        .in_file(file),
+                    );
+                }
+            }
+            if !node.catch_all.is_empty() && !node.optional_catch_all.is_empty() {
+                let mut files: BTreeSet<&str> = BTreeSet::new();
+                for paths in node
+                    .catch_all
+                    .values()
+                    .chain(node.optional_catch_all.values())
+                {
+                    files.extend(paths.iter().map(String::as_str));
+                }
+                for file in &files {
+                    let mut conflicting: Vec<&str> = files
+                        .iter()
+                        .filter(|other| *other != file)
+                        .copied()
+                        .collect();
+                    conflicting.sort();
+                    conflicting.dedup();
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "pages_router_route_conflict",
+                            format!(
+                                "`{display}` has both required and optional catch-all routes; Next.js fails the build because only one catch-all kind is allowed at a level; conflicting files: {}",
+                                conflicting.join(", ")
+                            ),
+                        )
+                        .in_file(*file),
+                    );
+                }
+            }
+            if !node.optional_catch_all.is_empty() && !node.leaves.is_empty() {
+                let mut optional: BTreeSet<&str> = BTreeSet::new();
+                for paths in node.optional_catch_all.values() {
+                    optional.extend(paths.iter().map(String::as_str));
+                }
+                let mut static_pages: Vec<&str> = node.leaves.iter().map(String::as_str).collect();
+                static_pages.sort();
+                static_pages.dedup();
+                for file in optional {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "pages_router_route_conflict",
+                            format!(
+                                "`{display}` has an optional catch-all route and a static page; Next.js fails the build because the optional catch-all has the same specificity as the static route; conflicting files: {}",
+                                static_pages.join(", ")
+                            ),
+                        )
+                        .in_file(file),
+                    );
+                }
+            }
+        }
+    }
+
     fn add_symbol(
         &mut self,
         summary: &FileSummary,
@@ -1482,7 +1803,7 @@ impl<'a> Builder<'a> {
 
     pub(super) fn build_symbols(&mut self) {
         let summaries = self.summaries.clone();
-        for summary in &summaries {
+        for summary in summaries.iter() {
             if summary.parse_status != ParseStatus::Ok {
                 // Framework files with their own compilers (Svelte, Astro, Vue)
                 // are still entries. They have no parsed symbols, so only the

@@ -315,6 +315,73 @@ export { destructured as generateStaticParams };
 }
 
 #[test]
+fn extracts_unused_pages_router_data_keys() {
+    for (source, expected) in [
+        (
+            "export async function getStaticProps() { return { props: { used: 1, unused: 2 } }; }\nexport default function Page({ used }: { used: number }) { return <div>{used}</div>; }\n",
+            vec![("getStaticProps", "unused")],
+        ),
+        (
+            "export const getServerSideProps = async () => ({ props: { unused: 1 } });\nexport default function Page() { return <div />; }\n",
+            vec![("getServerSideProps", "unused")],
+        ),
+        (
+            "interface Props { used: number; unused: string; }\nfunction Page(props: Props) { return <div>{props.used}</div>; }\nPage.getInitialProps = async () => ({ used: 1, unused: 'x' });\nexport default Page;\n",
+            vec![("getInitialProps", "unused")],
+        ),
+        (
+            "export async function getStaticProps() { return { props: { used: 1 } }; }\nexport default function Page({ used }: { used: number }) { return <div>{used}</div>; }\n",
+            vec![],
+        ),
+        (
+            "export async function getStaticProps() { return { notFound: true }; }\nexport default function Page() { return <div />; }\n",
+            vec![],
+        ),
+    ] {
+        let parsed = summary(source, "pages/index.tsx");
+        let actual: Vec<(&str, &str)> = parsed
+            .unused_page_data_keys
+            .iter()
+            .map(|record| (record.function.as_str(), record.key.as_str()))
+            .collect();
+        assert_eq!(actual, expected, "data keys for {source:?}");
+    }
+
+    for source in [
+        // Opaque `props` value.
+        "const data = { used: 1, unused: 2 };\nexport async function getStaticProps() { return { props: data }; }\nexport default function Page({ used }: { used: number }) { return <div>{used}</div>; }\n",
+        // Spread and computed keys.
+        "export async function getStaticProps() { return { props: { ...base, unused: 2 } }; }\nexport default function Page({ used }: { used: number }) { return <div>{used}</div>; }\n",
+        "export async function getStaticProps() { return { props: { [key]: 2 } }; }\nexport default function Page({ used }: { used: number }) { return <div>{used}</div>; }\n",
+        // Multiple returns.
+        "export async function getStaticProps() { if (x) { return { props: { unused: 1 } }; } return { props: { used: 1 } }; }\nexport default function Page({ used }: { used: number }) { return <div>{used}</div>; }\n",
+        // Whole-object props use.
+        "export async function getStaticProps() { return { props: { used: 1, unused: 2 } }; }\nexport default function Page(props: { used: number; unused: number }) { return <pre>{JSON.stringify(props)}</pre>; }\n",
+        // Rest destructure.
+        "export async function getStaticProps() { return { props: { used: 1, unused: 2 } }; }\nexport default function Page({ used, ...rest }: { used: number; unused: number }) { return <pre>{JSON.stringify(rest)}</pre>; }\n",
+        // Imported/unknown props type.
+        "import type { Props } from './types';\nexport async function getStaticProps() { return { props: { unused: 2 } }; }\nexport default function Page(props: Props) { return <div>{props.used}</div>; }\n",
+        // Named getInitialProps export is not read by Next.js.
+        "export const getInitialProps = async () => ({ unused: 2 });\nexport default function Page() { return <div />; }\n",
+        // Not exported, so Next.js does not call it.
+        "async function getStaticProps() { return { props: { unused: 2 } }; }\nexport default function Page() { return <div />; }\n",
+        // Class component.
+        "export async function getStaticProps() { return { props: { unused: 2 } }; }\nexport default class Page extends React.Component { render() { return <div />; } }\n",
+        // HOC wrapper.
+        "export async function getStaticProps() { return { props: { unused: 2 } }; }\nfunction Page() { return <div />; }\nexport default withAuth(Page);\n",
+        // Re-exported data function.
+        "export { getStaticProps } from './data';\nexport default function Page() { return <div />; }\n",
+    ] {
+        let parsed = summary(source, "pages/index.tsx");
+        assert!(
+            parsed.unused_page_data_keys.is_empty(),
+            "expected abstention for {source:?}, got {:?}",
+            parsed.unused_page_data_keys
+        );
+    }
+}
+
+#[test]
 fn extracts_pages_router_component_metadata() {
     for (source, expected) in [
         ("export default function Page() {}\n", Some("Page")),
@@ -841,7 +908,7 @@ const unused = await import("./unused");
     assert_eq!(imported("./computed"), None);
     assert_eq!(imported("./reassigned"), None);
     assert_eq!(imported("./exported"), None);
-    assert_eq!(imported("./unused"), None);
+    assert_eq!(imported("./unused"), Some(Vec::new()));
     assert_eq!(
         parsed
             .dynamic
@@ -853,6 +920,177 @@ const unused = await import("./unused");
         1,
         "a narrowed namespace binding must not also produce a widening record"
     );
+}
+
+#[test]
+fn narrows_dynamic_imports_returned_from_local_loaders() {
+    let source = r#"
+async function loadDeployment(mode: string) {
+  reset(mode);
+  return import("./deployment");
+}
+async function loadRealtime(overrides: Record<string, string>) {
+  return import("./env");
+}
+const { resolveDeploymentPlan } = await loadDeployment("cloud");
+const realtime = await loadRealtime({});
+realtime.isRealtimeConfigured;
+const { named } = await loadDeployment("self-hosted");
+
+function opaque() {
+  return import("./opaque");
+}
+consume(opaque);
+
+async function discarded() {
+  return import("./discarded");
+}
+await discarded();
+
+async function unknown() {
+  return import("./unknown");
+}
+const anything = await unknown();
+consume(anything);
+
+async function mixed() {
+  if (flag) return import("./mixed");
+  return null;
+}
+const { used } = await mixed();
+"#;
+    let parsed = summary(source, "src/loaders.ts");
+    let imported = |specifier: &str| {
+        parsed
+            .dynamic
+            .iter()
+            .find(|record| {
+                matches!(&record.specifier, DynamicSpecifier::Literal(value) if value == specifier)
+            })
+            .and_then(|record| record.imported.clone())
+    };
+    assert_eq!(
+        imported("./deployment"),
+        Some(vec![
+            "named".to_string(),
+            "resolveDeploymentPlan".to_string()
+        ])
+    );
+    assert_eq!(
+        imported("./env"),
+        Some(vec!["isRealtimeConfigured".to_string()])
+    );
+    assert_eq!(imported("./opaque"), None);
+    assert_eq!(imported("./discarded"), Some(Vec::new()));
+    assert_eq!(imported("./unknown"), None);
+    assert_eq!(imported("./mixed"), None);
+}
+
+#[test]
+fn abstains_when_a_loader_name_is_shadowed() {
+    let source = r#"
+async function load() {
+  return import("./mod");
+}
+function consume(load: () => Promise<unknown>) {
+  return load();
+}
+const { used } = await load();
+
+async function other() {
+  return import("./other");
+}
+function local() {
+  const other = () => null;
+  return other();
+}
+const { alpha } = await other();
+
+async function duplicate() {
+  return import("./duplicate");
+}
+function scope() {
+  function duplicate() {
+    return null;
+  }
+  return duplicate();
+}
+const { beta } = await duplicate();
+"#;
+    let parsed = summary(source, "src/shadowed-loaders.ts");
+    let imported = |specifier: &str| {
+        parsed
+            .dynamic
+            .iter()
+            .find(|record| {
+                matches!(&record.specifier, DynamicSpecifier::Literal(value) if value == specifier)
+            })
+            .and_then(|record| record.imported.clone())
+    };
+    assert_eq!(imported("./mod"), None);
+    assert_eq!(imported("./other"), None);
+    assert_eq!(imported("./duplicate"), None);
+}
+
+#[test]
+fn narrows_assertion_only_namespace_bindings() {
+    let source = r#"
+const mod = await import("./actions");
+expect(mod).not.toHaveProperty("removedAction");
+expect(mod).not.toHaveProperty("otherAction");
+
+const positive = await import("./positive");
+expect(positive).toHaveProperty("kept");
+positive.extra;
+
+const opaque = await import("./opaque");
+expect(opaque).toBeDefined();
+
+const read = await import("./read");
+expect(read.used).toBe(true);
+"#;
+    let parsed = summary(source, "src/assertions.ts");
+    let imported = |specifier: &str| {
+        parsed
+            .dynamic
+            .iter()
+            .find(|record| {
+                matches!(&record.specifier, DynamicSpecifier::Literal(value) if value == specifier)
+            })
+            .and_then(|record| record.imported.clone())
+    };
+    assert_eq!(imported("./actions"), Some(Vec::new()));
+    assert_eq!(
+        imported("./positive"),
+        Some(vec!["extra".to_string(), "kept".to_string()])
+    );
+    assert_eq!(imported("./opaque"), None);
+    assert_eq!(imported("./read"), Some(vec!["used".to_string()]));
+}
+
+#[test]
+fn narrows_side_effect_only_dynamic_imports() {
+    let source = r#"
+await import("./side-effect");
+import("./promise");
+void import("./void");
+const used = await import("./used");
+used.alpha;
+"#;
+    let parsed = summary(source, "src/side-effects.ts");
+    let imported = |specifier: &str| {
+        parsed
+            .dynamic
+            .iter()
+            .find(|record| {
+                matches!(&record.specifier, DynamicSpecifier::Literal(value) if value == specifier)
+            })
+            .and_then(|record| record.imported.clone())
+    };
+    assert_eq!(imported("./side-effect"), Some(Vec::new()));
+    assert_eq!(imported("./promise"), Some(Vec::new()));
+    assert_eq!(imported("./void"), None);
+    assert_eq!(imported("./used"), Some(vec!["alpha".to_string()]));
 }
 
 #[test]
@@ -907,7 +1145,7 @@ const unusedThen = import("./unused-then").then(() => 1);
     assert_eq!(imported("./editor"), Some(vec!["default".to_string()]));
     assert_eq!(imported("./config"), Some(vec!["config".to_string()]));
     assert_eq!(imported("./rest"), None);
-    assert_eq!(imported("./namespace"), None);
+    assert_eq!(imported("./namespace"), Some(Vec::new()));
     assert_eq!(imported("./promise"), None);
     assert_eq!(imported("./thenable"), Some(vec!["used".to_string()]));
     assert_eq!(imported("./one"), Some(vec!["first".to_string()]));
@@ -959,6 +1197,167 @@ const unusedThen = import("./unused-then").then(() => 1);
 }
 
 #[test]
+fn narrows_react_lazy_and_next_dynamic_loaders_to_default() {
+    let source = r#"
+import React from "react";
+import * as ReactNamespace from "react";
+import { lazy as component } from "react";
+import dynamic from "next/dynamic";
+import { default as nextComponent } from "next/dynamic";
+const A = React.lazy(() => import("./a"));
+const B = ReactNamespace.lazy(() => { return import("./b"); });
+const C = component(async () => await import("./c"));
+const D = dynamic(() => import("./d"), { ssr: false });
+const E = nextComponent(() => {
+  if (flag) { return import("./e1"); }
+  return import("./e2");
+});
+const F = component(() => flag ? import("./f1") : import("./f2"));
+const G = component(() => import("./g").then((module) => module.Named));
+"#;
+    let parsed = summary(source, "src/components.tsx");
+    assert_eq!(parsed.parse_status, ParseStatus::Ok);
+    let imported = |specifier: &str| {
+        parsed
+            .dynamic
+            .iter()
+            .find(|record| {
+                matches!(&record.specifier, DynamicSpecifier::Literal(value) if value == specifier)
+            })
+            .and_then(|record| record.imported.clone())
+    };
+    for specifier in ["./a", "./b", "./c", "./d", "./e1", "./e2", "./f1", "./f2"] {
+        assert_eq!(
+            imported(specifier),
+            Some(vec!["default".to_string()]),
+            "{specifier}"
+        );
+    }
+    assert_eq!(imported("./g"), Some(vec!["Named".to_string()]));
+}
+
+#[test]
+fn component_loader_narrowing_requires_unshadowed_import_provenance() {
+    for source in [
+        "const lazy = (load) => load(); lazy(() => import('./target'));",
+        "import { lazy } from './local-wrapper'; lazy(() => import('./target'));",
+        "import type { lazy } from 'react'; lazy(() => import('./target'));",
+        "import { type lazy } from 'react'; lazy(() => import('./target'));",
+        "import type * as React from 'react'; React.lazy(() => import('./target'));",
+        "import { lazy } from 'react'; function run(lazy) { return lazy(() => import('./target')); }",
+        "import * as React from 'react'; function run(React) { return React.lazy(() => import('./target')); }",
+        "import { lazy } from 'react'; lazy(null, () => import('./target'));",
+        "import { lazy } from 'react'; { const lazy = (load) => load(); lazy(() => import('./target')); }",
+        "import * as React from 'react'; try {} catch (React) { React.lazy(() => import('./target')); }",
+        "import dynamic from 'next/dynamic'; { const dynamic = (load) => load(); dynamic(() => import('./target')); }",
+        "import { lazy } from 'react'; namespace N { const lazy = (load) => load(); export const result = lazy(() => import('./target')); }",
+        "import { lazy } from 'react'; const wrapper = { lazy: (load) => load() }; wrapper.lazy(() => import('./target'));",
+        "import { dynamic } from 'next/dynamic'; dynamic(() => import('./target'));",
+        "import * as dynamic from 'next/dynamic'; dynamic(() => import('./target'));",
+    ] {
+        let parsed = summary(source, "src/components.tsx");
+        let record = parsed.dynamic.iter().find(|record| {
+            matches!(&record.specifier, DynamicSpecifier::Literal(value) if value == "./target")
+        });
+        assert_eq!(
+            record.and_then(|record| record.imported.clone()),
+            None,
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn component_loader_narrowing_ignores_non_direct_namespace_returns() {
+    for source in [
+        "import { lazy } from 'react'; lazy(() => use(import('./target')));",
+        "import { lazy } from 'react'; lazy(() => import('./target').then((module) => module.Named));",
+        "import { lazy } from 'react'; lazy(() => (await import('./target')).Named);",
+        "import { lazy } from 'react'; lazy(() => { const module = import('./target'); return module; });",
+    ] {
+        let parsed = summary(source, "src/components.tsx");
+        let record = parsed.dynamic.iter().find(|record| {
+            matches!(&record.specifier, DynamicSpecifier::Literal(value) if value == "./target")
+        });
+        let imported = record.and_then(|record| record.imported.clone());
+        if source.contains("import('./target').then(") {
+            assert_eq!(imported, Some(vec!["Named".to_string()]), "{source}");
+        } else {
+            assert_eq!(imported, None, "{source}");
+        }
+    }
+}
+
+#[test]
+fn narrows_local_component_loaders_to_default() {
+    let source = r#"
+import { lazy } from "react";
+import dynamic from "next/dynamic";
+const loadA = () => import("./a");
+const A = lazy(loadA);
+function loadB() { return import("./b"); }
+const B = dynamic(loadB);
+const loadC = async () => { return await import("./c"); };
+lazy(loadC);
+const loadD = () => flag ? import("./d1") : import("./d2");
+lazy(loadD);
+const loadE = function () { return import("./e"); };
+lazy(loadE);
+const loadF = () => import("./f");
+function shadow(loadF) { return loadF(); }
+lazy(loadF);
+"#;
+    let parsed = summary(source, "src/components.tsx");
+    assert_eq!(parsed.parse_status, ParseStatus::Ok);
+    let imported = |specifier: &str| {
+        parsed
+            .dynamic
+            .iter()
+            .find(|record| {
+                matches!(&record.specifier, DynamicSpecifier::Literal(value) if value == specifier)
+            })
+            .and_then(|record| record.imported.clone())
+    };
+    for specifier in ["./a", "./b", "./c", "./d1", "./d2", "./e", "./f"] {
+        assert_eq!(
+            imported(specifier),
+            Some(vec!["default".to_string()]),
+            "{specifier}"
+        );
+    }
+}
+
+#[test]
+fn local_component_loader_narrowing_requires_exclusive_loader_references() {
+    for source in [
+        "import { lazy } from 'react'; const load = () => import('./target'); lazy(load); load().then((m) => m.Named);",
+        "import { lazy } from 'react'; const load = () => import('./target'); export { load }; lazy(load);",
+        "import { lazy } from 'react'; export const load = () => import('./target'); lazy(load);",
+        "import { lazy } from 'react'; const load = () => import('./target'); export default load; lazy(load);",
+        "import { lazy } from 'react'; let load = () => import('./target'); lazy(load);",
+        "import { lazy } from 'react'; var load = () => import('./target'); lazy(load);",
+        "import { lazy } from 'react'; const load = () => import(`./${name}`); lazy(load);",
+        "import { lazy } from 'react'; const load = () => import('./target'); function run(load) { return lazy(load); }",
+        "import { lazy } from 'react'; const load = () => import('./target'); function run() { return load(); } lazy(load);",
+        "import { lazy } from 'react'; const load = () => import('./target'); wrap(load);",
+        "import { lazy } from 'react'; const load = () => import('./target'); lazy(null, load);",
+        "import { lazy } from 'react'; const load = () => { const module = import('./target'); return module; }; lazy(load);",
+        "import { lazy } from 'react'; const load = () => import('./target').then((m) => ({ default: m.Named })); lazy(load);",
+    ] {
+        let parsed = summary(source, "src/components.tsx");
+        let record = parsed.dynamic.iter().find(|record| {
+            matches!(&record.specifier, DynamicSpecifier::Literal(value) if value == "./target")
+        });
+        let imported = record.and_then(|record| record.imported.clone());
+        if source.contains("import('./target').then(") {
+            assert_eq!(imported, Some(vec!["Named".to_string()]), "{source}");
+        } else {
+            assert_eq!(imported, None, "{source}");
+        }
+    }
+}
+
+#[test]
 fn collects_type_position_references() {
     let source = r#"
 type Config = import("postcss-load-config").Config;
@@ -995,5 +1394,653 @@ fn collects_jsdoc_import_types_with_a_qualifier() {
         parsed.type_imports.iter().any(|item| {
             item.source == "./types" && item.imported.as_deref() == Some("JSDocType")
         })
+    );
+}
+
+#[test]
+fn harvests_enum_members_and_initializer_reads() {
+    let parsed = summary(
+        r#"
+export enum Status { Active = "active", Inactive = "inactive" }
+export enum Initializer { A = 1, B = A, C = A | 4 }
+declare enum Ambient { X, Y }
+enum Opaque { [`dynamic`] = 1, Other = 2 }
+"#,
+        "src/status.ts",
+    );
+    assert_eq!(parsed.parse_status, ParseStatus::Ok);
+    let status = parsed
+        .enums
+        .iter()
+        .find(|enumeration| enumeration.name == "Status")
+        .expect("Status");
+    assert_eq!(
+        status
+            .members
+            .iter()
+            .map(|member| member.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Active", "Inactive"]
+    );
+    let initializer = parsed
+        .enums
+        .iter()
+        .find(|enumeration| enumeration.name == "Initializer")
+        .expect("Initializer");
+    let b = initializer
+        .members
+        .iter()
+        .find(|member| member.name == "B")
+        .expect("B");
+    assert_eq!(b.initializer_members, vec!["A"]);
+    let c = initializer
+        .members
+        .iter()
+        .find(|member| member.name == "C")
+        .expect("C");
+    assert_eq!(c.initializer_members, vec!["A"]);
+
+    let ambient = parsed
+        .enums
+        .iter()
+        .find(|enumeration| enumeration.name == "Ambient")
+        .expect("Ambient");
+    assert!(ambient.ambient);
+    let opaque = parsed
+        .enums
+        .iter()
+        .find(|enumeration| enumeration.name == "Opaque")
+        .expect("Opaque");
+    assert!(opaque.opaque);
+}
+
+#[test]
+fn records_qualified_type_names_as_member_accesses() {
+    let parsed = summary(
+        "import { Status } from \"./status\";\ntype Active = Status.Active;\nconst value = Status.Inactive;\n",
+        "src/use.ts",
+    );
+    let declaration = parsed
+        .declarations
+        .iter()
+        .find(|declaration| declaration.name == "Active")
+        .expect("type alias");
+    assert!(
+        declaration
+            .references
+            .members
+            .iter()
+            .any(|member| member.object == "Status" && member.property.as_deref() == Some("Active")),
+        "{:?}",
+        declaration.references
+    );
+    assert!(
+        !declaration.references.free.contains(&"Status".to_string()),
+        "the qualified root is a member access, not a whole-object use: {:?}",
+        declaration.references
+    );
+}
+
+#[test]
+fn harvests_unused_react_component_props() {
+    let parsed = summary(
+        r#"
+function Card({ tone, title, children }) {
+  return <div className={title}>{children}</div>;
+}
+const Badge = ({ count }) => <span>{count}</span>;
+"#,
+        "src/components/card.tsx",
+    );
+    assert_eq!(parsed.parse_status, ParseStatus::Ok);
+    let prop = |component: &str, name: &str| {
+        parsed
+            .component_props
+            .iter()
+            .find(|record| record.component == component && record.prop == name)
+            .unwrap_or_else(|| panic!("missing {component}.{name}: {:?}", parsed.component_props))
+    };
+    assert!(!prop("Card", "tone").used);
+    assert!(prop("Card", "title").used);
+    assert!(prop("Card", "children").used);
+    assert!(prop("Badge", "count").used);
+    assert_eq!(prop("Card", "tone").local, "tone");
+    assert_eq!(prop("Card", "tone").span.line, 2);
+}
+
+#[test]
+fn tracks_aliases_and_defaults_in_component_props() {
+    let parsed = summary(
+        r#"
+const Card = ({ tone: shade = "red", title }) => (
+  <div className={shade}>{title}</div>
+);
+"#,
+        "src/components/card.tsx",
+    );
+    let tone = parsed
+        .component_props
+        .iter()
+        .find(|record| record.prop == "tone")
+        .expect("tone");
+    assert_eq!(tone.local, "shade");
+    assert!(tone.used);
+    let title = parsed
+        .component_props
+        .iter()
+        .find(|record| record.prop == "title")
+        .expect("title");
+    assert!(title.used);
+}
+
+#[test]
+fn abstains_from_unharvestable_or_escaped_react_components() {
+    for source in [
+        // Exported declaration.
+        "export function Card({ tone }) { return <div />; }\n",
+        // Local export alias.
+        "function Card({ tone }) { return <div />; }\nexport { Card };\n",
+        // Default-export wrapper.
+        "function Card({ tone }) { return <div />; }\nexport default memo(Card);\n",
+        // Module registry.
+        "function Card({ tone }) { return <div />; }\nconst registry = { Card };\nexport { registry };\n",
+        // Rest parameter.
+        "function Card({ tone, ...rest }) { return <div />; }\n",
+        // Bare props parameter.
+        "function Card(props) { return <div>{props.tone}</div>; }\n",
+        // Nested destructure.
+        "function Card({ user: { name } }) { return <div>{name}</div>; }\n",
+        // Computed key.
+        "function Card({ [key]: value }) { return <div>{value}</div>; }\n",
+        // Not a renderer.
+        "function Card({ tone }) { return 1; }\n",
+        // Not a component name.
+        "function helper({ tone }) { return <div>{tone}</div>; }\n",
+    ] {
+        let parsed = summary(source, "src/components/card.tsx");
+        assert!(
+            parsed.component_props.is_empty(),
+            "unexpected props for {source}: {:?}",
+            parsed.component_props
+        );
+    }
+}
+
+#[test]
+fn reports_local_components_rendered_by_exported_components() {
+    let source = r#"
+type BadgeProps = {
+  label: string;
+  tone: string;
+  size?: "sm" | "md";
+};
+
+function Badge({ label, tone, size = "md" }: BadgeProps) {
+  return (
+    <span className={size}>
+      {label}
+    </span>
+  );
+}
+
+export function Widget() {
+  return <Badge label="hello" tone="danger" size="sm" />;
+}
+"#;
+    let parsed = summary(source, "components/Internal.tsx");
+    let prop = |name: &str| {
+        parsed
+            .component_props
+            .iter()
+            .find(|record| record.component == "Badge" && record.prop == name)
+            .unwrap_or_else(|| panic!("missing Badge.{name}: {:?}", parsed.component_props))
+    };
+    assert!(!prop("tone").used);
+    assert!(prop("label").used);
+    assert!(prop("size").used);
+}
+
+#[test]
+fn harvests_same_file_typed_react_props() {
+    let parsed = summary(
+        r#"
+function Card(props: CardProps) {
+  return <div>{props.title}</div>;
+}
+interface CardProps {
+  title: string;
+  tone: string;
+}
+"#,
+        "src/components/card.tsx",
+    );
+    let prop = |name: &str| {
+        parsed
+            .component_props
+            .iter()
+            .find(|record| record.component == "Card" && record.prop == name)
+            .unwrap_or_else(|| panic!("missing Card.{name}: {:?}", parsed.component_props))
+    };
+    assert!(prop("title").used);
+    assert!(!prop("tone").used);
+    assert!(!prop("tone").destructured);
+    assert_eq!(prop("tone").local, "props");
+    assert_eq!(prop("tone").span.line, 7);
+}
+
+#[test]
+fn harvests_typed_react_props_from_type_alias() {
+    let parsed = summary(
+        r#"
+type BadgeProps = {
+  label: string;
+  count?: number;
+};
+
+const Badge = (props: BadgeProps) => <span>{props.label}</span>;
+"#,
+        "src/components/badge.tsx",
+    );
+    let label = parsed
+        .component_props
+        .iter()
+        .find(|record| record.prop == "label")
+        .expect("label");
+    assert!(label.used);
+    let count = parsed
+        .component_props
+        .iter()
+        .find(|record| record.prop == "count")
+        .expect("count");
+    assert!(!count.used);
+}
+
+#[test]
+fn credits_typed_props_destructured_from_the_binding() {
+    let parsed = summary(
+        r#"
+interface Props {
+  title: string;
+  tone: string;
+}
+
+function Card(props: Props) {
+  const { title } = props;
+  return <div>{title}</div>;
+}
+"#,
+        "src/components/card.tsx",
+    );
+    let prop = |name: &str| {
+        parsed
+            .component_props
+            .iter()
+            .find(|record| record.component == "Card" && record.prop == name)
+            .unwrap_or_else(|| panic!("missing Card.{name}: {:?}", parsed.component_props))
+    };
+    assert!(prop("title").used);
+    assert!(!prop("tone").used);
+}
+
+#[test]
+fn abstains_on_whole_object_typed_props_use() {
+    for source in [
+        // Spread into a child.
+        "interface Props { title: string; tone: string }\nfunction Card(props: Props) { return <Widget {...props} />; }\n",
+        // Passed to a helper.
+        "interface Props { title: string; tone: string }\nfunction Card(props: Props) { log(props); return <div />; }\n",
+        // Returned.
+        "interface Props { title: string; tone: string }\nfunction Card(props: Props) { use(props); return <div />; }\n",
+        // Computed access.
+        "interface Props { title: string; tone: string }\nfunction Card(props: Props) { return <div>{props[key]}</div>; }\n",
+        // Rest destructure leaves the set opaque.
+        "interface Props { title: string; tone: string }\nfunction Card(props: Props) { const { title, ...rest } = props; return <div>{title}{rest.tone}</div>; }\n",
+    ] {
+        let parsed = summary(source, "src/components/card.tsx");
+        assert!(
+            parsed.component_props.is_empty(),
+            "unexpected props for {source}: {:?}",
+            parsed.component_props
+        );
+    }
+}
+
+#[test]
+fn abstains_on_unresolvable_typed_props() {
+    for source in [
+        // Imported type.
+        "import type { Props } from \"./types\";\nfunction Card(props: Props) { return <div>{props.title}</div>; }\n",
+        // Generic type reference.
+        "type Props<T> = { value: T };\nfunction Card(props: Props<string>) { return <div>{props.value}</div>; }\n",
+        // Inherited interface.
+        "interface Base { tone: string }\ninterface Props extends Base { title: string }\nfunction Card(props: Props) { return <div>{props.title}</div>; }\n",
+        // Intersection alias.
+        "type Base = { tone: string };\ntype Props = Base & { title: string };\nfunction Card(props: Props) { return <div>{props.title}</div>; }\n",
+        // Alias to another name.
+        "interface Base { title: string }\ntype Props = Base;\nfunction Card(props: Props) { return <div>{props.title}</div>; }\n",
+        // Index-only interface.
+        "interface Props { [key: string]: string }\nfunction Card(props: Props) { return <div>{props.title}</div>; }\n",
+        // Merged interface declarations.
+        "interface Props { title: string }\ninterface Props { tone: string }\nfunction Card(props: Props) { return <div>{props.title}</div>; }\n",
+        // Qualified annotation.
+        "namespace Types { export interface Props { title: string } }\nfunction Card(props: Types.Props) { return <div>{props.title}</div>; }\n",
+        // Inline type literal.
+        "function Card(props: { title: string }) { return <div>{props.title}</div>; }\n",
+        // Union with undefined.
+        "interface Props { title: string }\nfunction Card(props: Props | undefined) { return <div>{props?.title}</div>; }\n",
+    ] {
+        let parsed = summary(source, "src/components/card.tsx");
+        assert!(
+            parsed.component_props.is_empty(),
+            "unexpected props for {source}: {:?}",
+            parsed.component_props
+        );
+    }
+}
+
+#[test]
+fn harvests_local_memo_and_forward_ref_typed_props() {
+    let parsed = summary(
+        r#"
+import { forwardRef, memo } from "react";
+
+interface Props {
+  title: string;
+  tone: string;
+}
+
+const MemoCard = memo((props: Props) => <div>{props.title}</div>);
+const ForwardCard = forwardRef<HTMLDivElement, Props>((props, ref) => (
+  <div ref={ref}>{props.title}</div>
+));
+"#,
+        "src/components/card.tsx",
+    );
+    let prop = |component: &str, name: &str| {
+        parsed
+            .component_props
+            .iter()
+            .find(|record| record.component == component && record.prop == name)
+            .unwrap_or_else(|| panic!("missing {component}.{name}: {:?}", parsed.component_props))
+    };
+    assert!(prop("MemoCard", "title").used);
+    assert!(!prop("MemoCard", "tone").used);
+    assert!(prop("ForwardCard", "title").used);
+    assert!(!prop("ForwardCard", "tone").used);
+}
+
+#[test]
+fn forward_ref_inner_annotation_wins_over_wrapper_type() {
+    let parsed = summary(
+        r#"
+import { forwardRef } from "react";
+
+interface WrapperProps { wrapperOnly: string }
+interface Props { title: string; tone: string }
+
+const Card = forwardRef<HTMLDivElement, WrapperProps>((props: Props, ref) => (
+  <div ref={ref}>{props.title}</div>
+));
+"#,
+        "src/components/card.tsx",
+    );
+    assert!(
+        parsed
+            .component_props
+            .iter()
+            .any(|record| record.prop == "tone"),
+        "{:?}",
+        parsed.component_props
+    );
+    assert!(
+        parsed
+            .component_props
+            .iter()
+            .all(|record| record.prop != "wrapperOnly"),
+        "{:?}",
+        parsed.component_props
+    );
+}
+
+#[test]
+fn abstains_on_exported_or_comparator_wrapped_components() {
+    for source in [
+        // Exported wrapper binding.
+        "import { memo } from \"react\";\ninterface Props { title: string; tone: string }\nexport const Card = memo((props: Props) => <div>{props.title}</div>);\n",
+        // Memo comparator can read a prop the body does not.
+        "import { memo } from \"react\";\ninterface Props { title: string; tone: string }\nconst Card = memo((props: Props) => <div>{props.title}</div>, (a, b) => a.tone === b.tone);\n",
+        // forwardRef with no props type.
+        "import { forwardRef } from \"react\";\nconst Card = forwardRef<HTMLDivElement>((props, ref) => <div ref={ref} />);\n",
+    ] {
+        let parsed = summary(source, "src/components/card.tsx");
+        assert!(
+            parsed.component_props.is_empty(),
+            "unexpected props for {source}: {:?}",
+            parsed.component_props
+        );
+    }
+}
+
+#[test]
+fn harvests_component_contracts_with_optionality_and_defaults() {
+    let parsed = summary(
+        r#"
+export function Card({ title, flag = false, tone }: { title: string; flag?: boolean; tone?: string }) {
+  return <p>{title}{flag}{tone}</p>;
+}
+
+interface Props {
+  title: string;
+  size?: number;
+  active?: boolean;
+}
+
+function Typed(props: Props) {
+  return <p>{props.title}{props.size}{props.active}</p>;
+}
+export { Typed };
+"#,
+        "src/components/card.tsx",
+    );
+    assert_eq!(parsed.parse_status, ParseStatus::Ok);
+    let contract = |component: &str| {
+        parsed
+            .component_contracts
+            .iter()
+            .find(|record| record.component == component)
+            .unwrap_or_else(|| panic!("missing {component}: {:?}", parsed.component_contracts))
+    };
+    let prop = |component: &str, name: &str| {
+        contract(component)
+            .props
+            .iter()
+            .find(|prop| prop.name == name)
+            .unwrap_or_else(|| panic!("missing {component}.{name}"))
+    };
+    assert!(!contract("Card").escaped);
+    assert!(!contract("Typed").escaped);
+    assert!(!prop("Card", "title").optional);
+    assert!(prop("Card", "flag").optional);
+    assert!(prop("Card", "flag").has_default);
+    assert!(prop("Card", "tone").optional);
+    assert!(!prop("Card", "tone").has_default);
+    assert!(prop("Card", "flag").used);
+    assert!(!prop("Typed", "title").optional);
+    assert!(prop("Typed", "size").optional);
+    assert!(prop("Typed", "active").optional);
+    assert!(prop("Typed", "active").used);
+}
+
+#[test]
+fn marks_component_contracts_escaped_only_for_value_uses() {
+    let direct = summary(
+        "export function Card({ flag }: { flag?: boolean }) { return <p>{flag}</p>; }\n",
+        "src/components/card.tsx",
+    );
+    assert!(!direct.component_contracts[0].escaped);
+
+    let default_export = summary(
+        "function Card({ flag }: { flag?: boolean }) { return <p>{flag}</p>; }\nexport default Card;\n",
+        "src/components/card.tsx",
+    );
+    assert!(!default_export.component_contracts[0].escaped);
+
+    let rendered = summary(
+        "function Card({ flag }: { flag?: boolean }) { return <p>{flag}</p>; }\nexport function App() { return <Card />; }\n",
+        "src/components/card.tsx",
+    );
+    assert!(!rendered.component_contracts[0].escaped);
+
+    for source in [
+        "function Card({ flag }: { flag?: boolean }) { return <p>{flag}</p>; }\nconst registry = { Card };\nexport { registry };\n",
+        "import { memo } from \"react\";\nfunction Card({ flag }: { flag?: boolean }) { return <p>{flag}</p>; }\nexport default memo(Card);\n",
+        "function Card({ flag }: { flag?: boolean }) { return <p>{flag}</p>; }\nconst Alias = Card;\nexport { Alias };\n",
+    ] {
+        let parsed = summary(source, "src/components/card.tsx");
+        assert!(
+            parsed
+                .component_contracts
+                .iter()
+                .find(|record| record.component == "Card")
+                .is_some_and(|record| record.escaped),
+            "expected an escaped Card for {source}: {:?}",
+            parsed.component_contracts
+        );
+    }
+}
+
+#[test]
+fn collects_jsx_uses_with_supplied_and_opaque_attributes() {
+    let parsed = summary(
+        r#"
+export function App({ rest }: { rest: object }) {
+  return (
+    <>
+      <Card title="a" flag />
+      <Card {...rest} />
+      <UI.Card />
+      <svg:path />
+      <div />
+    </>
+  );
+}
+"#,
+        "src/app.tsx",
+    );
+    let cards: Vec<_> = parsed
+        .jsx_uses
+        .iter()
+        .filter(|use_| use_.component == "Card")
+        .collect();
+    assert_eq!(cards.len(), 2, "{:?}", parsed.jsx_uses);
+    assert_eq!(
+        cards[0].supplied,
+        vec!["title".to_string(), "flag".to_string()]
+    );
+    assert!(!cards[0].opaque);
+    assert!(cards[1].opaque);
+    assert!(
+        parsed
+            .jsx_uses
+            .iter()
+            .any(|use_| use_.component == "div" && !use_.opaque),
+        "{:?}",
+        parsed.jsx_uses
+    );
+    assert_eq!(
+        parsed.jsx_namespace_uses.len(),
+        1,
+        "{:?}",
+        parsed.jsx_namespace_uses
+    );
+    assert_eq!(parsed.jsx_namespace_uses[0].root, "UI");
+}
+
+#[test]
+fn collects_component_value_uses_but_not_jsx_tags_or_direct_exports() {
+    let rendered = summary(
+        "function Card({ flag }: { flag?: boolean }) { return <p>{flag}</p>; }\nexport function App() { return <Card />; }\n",
+        "src/app.tsx",
+    );
+    assert!(
+        !rendered
+            .component_value_uses
+            .iter()
+            .any(|name| name == "Card"),
+        "a JSX tag is a render site, not a value escape: {:?}",
+        rendered.component_value_uses
+    );
+
+    let escaped = summary(
+        r#"
+import { memo } from "react";
+function Card({ flag }: { flag?: boolean }) { return <p>{flag}</p>; }
+const registry = { Card };
+export default memo(Card);
+export { Card as Public };
+"#,
+        "src/app.tsx",
+    );
+    assert!(
+        escaped
+            .component_value_uses
+            .iter()
+            .any(|name| name == "Card"),
+        "{:?}",
+        escaped.component_value_uses
+    );
+    assert!(
+        escaped
+            .component_value_uses
+            .iter()
+            .any(|name| name == "memo"),
+        "wrapper arguments are value uses: {:?}",
+        escaped.component_value_uses
+    );
+}
+
+#[test]
+fn shadowed_jsx_tags_and_value_uses_are_not_collected() {
+    let parsed = summary(
+        r#"
+import { Card } from "./Card";
+
+function Shadow(Card: () => unknown) {
+  return <Card />;
+}
+
+function Values(Card: unknown) {
+  return <div title={String(Card)} />;
+}
+
+function Local() {
+  const Card = () => null;
+  return <Card />;
+}
+
+export const app = <Shadow />;
+"#,
+        "src/app.tsx",
+    );
+    assert!(
+        parsed.jsx_uses.iter().all(|use_| use_.component != "Card"),
+        "a shadowed JSX tag is not a render site of the import: {:?}",
+        parsed.jsx_uses
+    );
+    assert!(
+        !parsed
+            .component_value_uses
+            .iter()
+            .any(|name| name == "Card"),
+        "a shadowed value reference is not a use of the import: {:?}",
+        parsed.component_value_uses
+    );
+    assert!(
+        parsed
+            .jsx_uses
+            .iter()
+            .any(|use_| use_.component == "Shadow"),
+        "the outer render site is still recorded: {:?}",
+        parsed.jsx_uses
     );
 }

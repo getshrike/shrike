@@ -478,6 +478,139 @@ real `next build` probes:
   gate, emits one warning per client root, anchors on the first import of the
   shortest path, and names the sink plus the full path. It follows fallow
   3.45.0's `client_server_leak` detector;
+- a live local React component that destructures a prop but never reads the
+  bound local, or declares a prop on a same-file props type but never reads it
+  through `props.<name>` or `const { <name> } = props`, produces an
+  `unused_component_prop` warning, not a finding. Removing a prop changes the
+  component contract, so it is outside the batch deletion model. The parser
+  harvests a top-level uppercase function declaration or `const`
+  arrow/function expression that returns JSX, including a local `memo(...)` or
+  `forwardRef(...)` wrapper whose first argument is an inline component. Props
+  come from an inline object destructure with no rest, computed key, or nested
+  pattern, or from a bare `props` parameter annotated with a bare same-file
+  `interface` or `type X = { ... }` object type. Imported, generic, inherited,
+  union, intersection, qualified, and inline-literal types abstain, as does any
+  whole-object use of the typed props binding (`{...props}`, `fn(props)`,
+  `props[key]`, a rest destructure). A component whose value escapes the module
+  is skipped: direct export, `export default Card`, `memo(Card)`, a registry
+  object, or a `displayName` assignment. Rendering `<Card />` is not an escape.
+  The rule is gated project-wide on `react`, `react-dom`, `next`, or `preact`,
+  skips generated files, and only reports props on live symbols. This follows
+  fallow 3.45.0's unused-prop detector, including its same-file typed-interface
+  and wrapper support; fallow only checks whether the component binding is
+  exported and therefore reports a component wrapped by
+  `export default memo(Card)`, while knip 5.88.1 does not detect unused props;
+- an optional prop that a live local React component reads but every statically
+  known JSX render site omits produces an `absent_component_prop` warning, not
+  a finding. Removing the prop or adding a call-site value is a manual contract
+  change. The parser records a contract for top-level uppercase function and
+  `const` components, including exported ones, with each prop's optionality
+  (a destructuring default or `?` on a same-file type member) and read status.
+  The graph resolves JSX tags through local bindings, imports, re-export
+  aliases, and barrels, and reports only when every resolved site is a plain
+  JSX element that names the other attributes statically and omits the prop.
+  The rule abstains when the component value escapes (a same-file or cross-file
+  value use such as `memo(Card)`, a registry, or `const Alias = Card`), when a
+  namespace import renders `<UI.Card />` or escapes as a value, when a
+  runtime-reachable dynamic import targets the component's module, when any
+  site spreads props or uses a namespaced attribute, when the component is
+  dead, entry, public API, or generated, and when there is no known render
+  site. A direct export is not an escape. A default export of a local binding
+  (`const Card = ...; export default Card;`) resolves through the `#default`
+  symbol's reference edge, so the contract is checked under both keys. Only
+  props the component actually reads are reported, so an unread
+  prop stays the `unused_component_prop` case. The rule is project-wide and
+  gated on the same React runtime packages. This follows fallow 3.45.0's
+  `absent_component_props` rule, with stricter abstention on open consumer sets;
+- a member of a live, exported TypeScript enum that no project reference reads
+  produces an `unused_enum_member` warning, not a finding. Removing a member
+  changes a serialized value or a public contract, so it is outside the batch
+  deletion model. The parser harvests only top-level, non-ambient enums in
+  non-declaration source files; duplicate merged declarations, opaque member
+  names, and generated files are skipped, as are public-API and entry symbols.
+  Crediting is deliberately liberal: a whole-object use (`Object.values`, a
+  spread, a bare enum value), a computed access (`Status[key]`), a numeric
+  reverse lookup (`Status[0]`), a namespace alias, a local or re-export alias,
+  and a literal dynamic import credit every member. A member initializer
+  (`B = A`) credits the referenced member, and object destructuring credits
+  every member. This follows fallow 3.45.0's and knip 5.88.1's `enumMembers`
+  detectors. On `/tmp/opencode/enum-probe` all three report the same seven
+  unused members; Shrike deliberately over-credits `Destructured.Second`
+  because whole-object destructuring is not attributable, and credits
+  `Initializer.A` through `B = A` while fallow reports it as unused;
+- a member of a live, exported class that no project reference reads produces
+  an `unused_class_member` warning, not a finding. Removing a member changes
+  the class contract, so it is outside the batch deletion model. The parser
+  harvests top-level class declarations and `const` class expressions and
+  abstains on ambient, abstract, decorated, computed-name, index-signature,
+  and otherwise opaque classes. A class or instance value that escapes the
+  module (`console.log(Widget)`, a returned instance, a registry) abstains,
+  including cross-file escapes resolved through `class_value_escapes`. The
+  graph reports only when the class is live, exported, non-public, non-entry,
+  non-generated, and not shadowed by a duplicate declaration. Crediting covers
+  `this.x`, `super.x`, `ClassName.x`, `new C().x`, `C.prototype.x`, instance
+  bindings (`const x = new C()`, `x: C`), destructuring, namespace, local and
+  re-export aliases, literal dynamic imports, and member names shared with an
+  ancestor. In React projects the lifecycle allowlist and runtime fields
+  (`state`, `props`, `context`, `refs`, `contextType`, `defaultProps`,
+  `propTypes`) are credited; Next.js additionally credits `getInitialProps`.
+  This follows fallow 3.45.0's class-member detector; knip 5.88.1 only runs it
+  with `--include classMembers`. On `/tmp/opencode/class-member-probe-2`
+  fallow reports 11 unused members and Shrike reports 10: Shrike abstains on
+  two members of a class logged with `console.log(Widget)` (fallow reports
+  them) and reports `Base.baseDead`, which fallow misses because it treats
+  `Base` as an unused export even though `Sub extends Base` keeps it live;
+- an exported member of a live, exported TypeScript namespace that no project
+  reference reads produces an `unused_namespace_member` warning, not a
+  finding. Removing a member changes the namespace contract, so it is outside
+  the batch deletion model. The parser harvests only top-level exported
+  namespaces in non-declaration source files; local namespaces (even when a
+  later `export { Ns }` exposes the object), `declare global`, and
+  `declare module "..."` abstain. Members are exported functions, variables
+  (including destructured binding names), classes, enums, interfaces, type
+  aliases, `import x = ...` declarations, and nested namespaces; a dotted
+  `export namespace A.B {}` records `B` as a member of `A` with its own
+  descendants under `B.`. Merged declarations union their members. Crediting
+  is deliberately liberal: a dotted read (`Outer.Inner.deep`), a destructuring
+  key, `import x = Ns.member`, a bare nested-namespace read (which credits all
+  of its descendants), `typeof Ns`, a computed access (`Ns[key]`), a
+  whole-object use (`Object.keys(Ns)`, a spread, a bare value, `export default
+  Ns`), a namespace import, an inline import type
+  (`import("./m").Ns.Member`), a local or re-export alias, a literal dynamic
+  import, and any unqualified reference inside the namespace body credit the
+  member. A bare type reference (`: Color`) names the namespace's type side and
+  does not credit every member; qualified type names still credit their paths,
+  and `typeof Ns` credits the whole object. When a nested namespace is unused,
+  only the nested namespace is reported and its descendants are suppressed.
+  The graph skips dead namespaces (already one deletion candidate), public API,
+  generated files, non-ambient entry namespaces, and namespaces re-exported
+  from a public package entry. An exported ambient namespace in a `.ts` file is
+  an entry because its declarations are program-visible, but its exported
+  members are still checked. This follows fallow 3.45.0's
+  `unused-namespace-member` rule; knip 5.88.1 has no equivalent. On fallow's
+  `unused-namespace-members` fixture Shrike reports the same ten members,
+  including `Outer.Inner.unusedDeep`, `Outer.UnusedNested`, and
+  `Api.Types.UnusedResponse`, plus `Api.suppressed`, which fallow's
+  `fallow-ignore-next-line` comment hides and Shrike does not yet support;
+- a Pages Router data function that statically returns a prop key the page
+  component never reads produces an `unused_page_data_key` warning, not a
+  finding. Removing a returned key changes the page's data contract and is a
+  manual edit. The parser requires a live Pages Router route, an exported
+  `getStaticProps`/`getServerSideProps` function, or a
+  `Page.getInitialProps = ...` assignment on the default-exported component.
+  It reads `{ props: { ... } }` for the static functions and the returned
+  object directly for `getInitialProps`, and abstains on a non-literal
+  `props` value, a spread, a computed or duplicate key, an accessor, multiple
+  or bare returns, and a non-function data export. The page component must be a
+  default-exported function or a local function/arrow binding; class
+  components, HOCs, `memo`/`forwardRef` wrappers, imported props types, rest
+  destructures, and whole-object props use abstain. A key is consumed only
+  when the component actually reads it, including `props.<name>` and
+  `const { <name> } = props` for same-file typed props. API routes and the
+  root-reserved `_app`/`_document`/`_error` pages abstain; a nested reserved
+  name is an ordinary page. This complements
+  fallow 3.45.0's `unused_load_data_key` rule, which covers SvelteKit, React
+  Router, and Remix but not Next.js; knip 5.88.1 has no equivalent;
 - a root `server.{js,mjs,cjs,ts,mts,cts}` in a package that declares `next` is
   the custom HTTP server that replaces `next start`. Its module is an entry, so
   top-level work and imports stay live, but its named exports are not read by
@@ -536,6 +669,21 @@ real `next build` probes:
   function, and `export * as`), `getInitialProps` on the default component
   (ignoring statically falsy assignments), and `config.runtime`. The rule is
   gated per package on `next` and never changes candidates or entries.
+- Pages Router files that Next.js cannot sort into a route tree produce error
+  diagnostics, not findings. `dynamic_segment_name_conflict` fires when sibling
+  dynamic segments at one position use different names (`[id]` vs `[slug]`,
+  including catch-all and optional catch-all siblings) and when a slug name
+  repeats within one route, including names that differ only by non-word
+  symbols. `pages_router_route_conflict` fires when a required and an optional
+  catch-all share a level, when an optional catch-all shares a position with a
+  static page (`pages/index.tsx` with `pages/[[...slug]].tsx`), when a
+  catch-all is not the final segment, and when `[[name]]` is used as an
+  optional non-catch-all. The checks mirror Next.js's `sorted-routes` tree:
+  static/static, API/API, same-name dynamic, and extension duplicates build
+  successfully and are not reported. API routes are route-tree participants;
+  the root-reserved `_app`, `_document`, and `_error` pages are not. `pages`
+  and `src/pages` are separate roots because Next.js uses one per package.
+  Both checks require the owning package to declare `next`.
 
 ### 9.3 React
 
@@ -940,8 +1088,46 @@ names are statically visible:
 | `import('./m').then(({ a, b }) => ...)` | `a` and `b` only |
 | `const [{ a }, { b }] = await Promise.all([import('./a'), import('./b')])` | `a` and `b` only; a bare identifier element binds the namespace and widens its module |
 | `const ns = await import('./m'); ns.a(); ns.b;` | `a` and `b` only |
+| `async function load() { return import('./m'); } const { a } = await load();` when every call site consumes names | `a` only |
+| `async function load() { return import('./m'); } await load();` | no exports; side-effect only |
+| `await import('./m');` as an expression statement | no exports; side-effect only |
+| `const ns = await import('./m'); expect(ns).not.toHaveProperty('a');` | no exports |
+| `const ns = await import('./m'); expect(ns).toHaveProperty('a');` | `a` only |
 | `const ns = await import('./m')` with a bare, computed, exported, or missing use of `ns`; a `let`/`var` binding; a `.then` callback that uses the namespace as a value; rest/spread destructuring; or an empty pattern | every export |
 | a name that does not resolve through the target's re-exports | every export |
+
+An inline component loader passed to `React.lazy` or `next/dynamic` consumes
+only the target's `default` export:
+
+| Form | Live exports |
+|---|---|
+| `React.lazy(() => import('./Widget'))` | `default` only |
+| `import { lazy } from 'react'; lazy(() => { return import('./Widget'); })` | `default` only |
+| `import * as React from 'react'; React.lazy(() => import('./Widget'))` | `default` only |
+| `import dynamic from 'next/dynamic'; dynamic(() => import('./Widget'))` | `default` only |
+| `React.lazy(() => import('./Widget').then((m) => ({ default: m.Named })))` | `Named` only |
+| `const load = () => import('./Widget'); React.lazy(load)` when every reference to `load` is a loader argument | `default` only |
+| `function load() { return import('./Widget'); } dynamic(load)` under the same exclusive-reference rule | `default` only |
+| an unknown local wrapper, a shadowed loader binding, a type-only import, or a TypeScript namespace body | every export |
+| an exported or `let`/`var` loader, a non-static import source, or a loader with any other unshadowed reference | every export |
+
+The loader provenance must be an unshadowed React `lazy` named import, a React
+default or namespace import used as `.lazy`, or a `next/dynamic` default
+import. Aliases and parenthesized callees are accepted. The callback may return
+the import directly, under `await` or TypeScript wrappers, from a conditional
+or logical branch, or from a nested block; nested functions do not contribute
+because their `return` statements belong to them. A callback that passes the
+namespace to another call keeps the widening record, and a `.then` callback
+keeps the named credit it already recorded.
+
+A top-level `const` arrow or function expression, or a function declaration,
+whose body directly returns a static `import()` is also a loader. It narrows
+only when at least one unshadowed reference is the first argument of a proven
+loader call and every other unshadowed reference is another such argument.
+Exporting the loader, declaring it with `let`/`var`, using a computed import
+specifier, or referencing it anywhere else keeps every export live. Shadowed
+references do not count, so a parameter with the loader's name inside another
+function neither proves nor blocks narrowing.
 
 A `.then` callback narrows only when it is the first argument and the import is
 the direct receiver. Every use of its namespace parameter must be a static
@@ -956,6 +1142,25 @@ can be reassigned, so later member reads do not prove which value is read. A
 bare reference, computed access, export of the binding, or no member read at all
 widens. The post-visit scan is name-based; a shadowing local can add names but
 cannot hide a real bare or computed use, so collisions stay conservative.
+
+A top-level function declaration whose every return is the same literal
+`import('./m')` narrows to the names its call sites consume. An awaited
+destructure, an awaited static member read, or an awaited binding later read
+through static members contributes names; an awaited call whose result is
+discarded consumes no names. A bare or opaque call, a computed read, a
+non-awaited call, a `.then`/`.catch`/`.finally` on the returned namespace, an
+exported loader, a duplicate or shadowed declaration, or a mixed return keeps
+every export live. A bare `await import('./m');` or `import('./m');` expression
+statement is also side-effect-only; `void import('./m')` and any other value use
+still widen.
+
+A namespace binding whose only uses are `expect(ns).not.toHaveProperty('a')`
+or `expect(ns).toHaveProperty('a')` assertions and static member reads narrows
+to the positively asserted names plus the member-read names. A negative
+assertion credits nothing because it proves the export is absent; a positive
+assertion credits each string-literal name. A bare reference, a computed
+member, a different matcher, a non-literal name, or a call argument keeps the
+whole namespace live.
 
 **Rule G5:** export narrowing fails closed. Any shape that could use the
 namespace as a value, including `let`/`var` namespace bindings, a `.then`

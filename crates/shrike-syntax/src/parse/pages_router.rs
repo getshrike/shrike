@@ -14,17 +14,21 @@
 //! This module records exactly those shapes. The graph decides whether the
 //! file is a Pages Router page and whether a combination fails the build.
 
+use std::collections::BTreeSet;
+
 use oxc_ast::ast::{
-    AssignmentTarget, BindingPatternKind, Class, ClassElement, Declaration,
-    ExportDefaultDeclarationKind, Expression, ObjectPropertyKind, Program, PropertyKey,
-    PropertyKind, Statement, VariableDeclarationKind,
+    ArrowFunctionExpression, AssignmentTarget, BindingPatternKind, Class, ClassElement,
+    Declaration, ExportDefaultDeclarationKind, Expression, FormalParameters, Function,
+    FunctionBody, ObjectExpression, ObjectPropertyKind, Program, PropertyKey, PropertyKind,
+    Statement, VariableDeclarationKind,
 };
 use oxc_syntax::operator::UnaryOperator;
 use shrike_core::LineIndex;
 
+use super::component_props::{consumed_prop_names, same_file_props_types};
 use super::next_segment::const_value;
 use super::refs::{export_name, span_of};
-use crate::summary::{ExportedConstValueRecord, PagesRouterInfo};
+use crate::summary::{ExportedConstValueRecord, PageDataKeyRecord, PagesRouterInfo};
 
 pub(super) fn pages_router_info(
     program: &Program<'_>,
@@ -32,13 +36,481 @@ pub(super) fn pages_router_info(
     line_index: &LineIndex,
 ) -> PagesRouterInfo {
     let default_export_local = default_export_local(program);
+    let object_types = same_file_props_types(program, source, line_index);
+    let consumed = page_component(program, default_export_local.as_deref()).and_then(|component| {
+        consumed_prop_names(
+            component.params,
+            component.body,
+            &object_types,
+            source,
+            line_index,
+        )
+    });
+    let unused_page_data_keys = consumed.map_or_else(Vec::new, |consumed| {
+        unused_page_data_keys(
+            program,
+            source,
+            line_index,
+            default_export_local.as_deref(),
+            &consumed,
+        )
+    });
     PagesRouterInfo {
         default_export_has_get_initial_props: default_export_local
             .as_deref()
             .is_some_and(|name| component_has_get_initial_props(program, name))
             || anonymous_default_class_has_get_initial_props(program),
         pages_config_runtime: config_runtime(program, source, line_index),
+        unused_page_data_keys,
         default_export_local,
+    }
+}
+
+/// A Pages Router page component whose props can be read from its signature.
+struct PageComponent<'a> {
+    params: &'a FormalParameters<'a>,
+    body: Option<&'a FunctionBody<'a>>,
+}
+
+/// The default-exported function component, either declared inline or through
+/// a local binding. Class components, HOCs, `memo`/`forwardRef` wrappers, and
+/// re-exports abstain.
+fn page_component<'a>(
+    program: &'a Program<'a>,
+    default_local: Option<&str>,
+) -> Option<PageComponent<'a>> {
+    for statement in &program.body {
+        let Statement::ExportDefaultDeclaration(export) = statement else {
+            continue;
+        };
+        match &export.declaration {
+            ExportDefaultDeclarationKind::FunctionDeclaration(function) => {
+                return Some(PageComponent {
+                    params: function.params.as_ref(),
+                    body: function.body.as_deref(),
+                });
+            }
+            ExportDefaultDeclarationKind::ClassDeclaration(_) => return None,
+            other => {
+                if let Some(component) = other.as_expression().and_then(component_from_expression) {
+                    return Some(component);
+                }
+                break;
+            }
+        }
+    }
+    let local = default_local?;
+    for statement in &program.body {
+        match statement {
+            Statement::FunctionDeclaration(function) => {
+                if function.id.as_ref().is_some_and(|id| id.name == local) {
+                    return Some(PageComponent {
+                        params: function.params.as_ref(),
+                        body: function.body.as_deref(),
+                    });
+                }
+            }
+            Statement::VariableDeclaration(variable) => {
+                for declarator in &variable.declarations {
+                    let BindingPatternKind::BindingIdentifier(id) = &declarator.id.kind else {
+                        continue;
+                    };
+                    if id.name != local {
+                        continue;
+                    }
+                    return declarator.init.as_ref().and_then(component_from_expression);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn component_from_expression<'a>(expression: &'a Expression<'a>) -> Option<PageComponent<'a>> {
+    match expression {
+        Expression::ArrowFunctionExpression(arrow) => Some(PageComponent {
+            params: arrow.params.as_ref(),
+            body: Some(&arrow.body),
+        }),
+        Expression::FunctionExpression(function) => Some(PageComponent {
+            params: function.params.as_ref(),
+            body: function.body.as_deref(),
+        }),
+        Expression::ParenthesizedExpression(inner) => component_from_expression(&inner.expression),
+        Expression::TSAsExpression(inner) => component_from_expression(&inner.expression),
+        Expression::TSSatisfiesExpression(inner) => component_from_expression(&inner.expression),
+        Expression::TSNonNullExpression(inner) => component_from_expression(&inner.expression),
+        _ => None,
+    }
+}
+
+/// Compare the keys returned by Pages Router data functions with the props the
+/// page component declares. The comparison abstains unless both sides are
+/// statically readable.
+fn unused_page_data_keys(
+    program: &Program<'_>,
+    source: &str,
+    line_index: &LineIndex,
+    default_local: Option<&str>,
+    consumed: &BTreeSet<String>,
+) -> Vec<PageDataKeyRecord> {
+    let exported = exported_names(program);
+    let mut records = Vec::new();
+    for function in ["getStaticProps", "getServerSideProps"] {
+        if !exported.contains(function) {
+            continue;
+        }
+        let Some(value) = top_level_function(program, function) else {
+            continue;
+        };
+        let Some(returned) = returned_expression(&value) else {
+            continue;
+        };
+        let Some(keys) = static_props_keys(returned, false, source, line_index) else {
+            continue;
+        };
+        for (key, span) in keys {
+            if !consumed.contains(&key) {
+                records.push(PageDataKeyRecord {
+                    function: function.to_string(),
+                    key,
+                    span,
+                });
+            }
+        }
+    }
+    if let Some(local) = default_local {
+        if let Some(value) = get_initial_props_value(program, local) {
+            if let Some(returned) = returned_expression(&value) {
+                if let Some(keys) = static_props_keys(returned, true, source, line_index) {
+                    for (key, span) in keys {
+                        if !consumed.contains(&key) {
+                            records.push(PageDataKeyRecord {
+                                function: "getInitialProps".to_string(),
+                                key,
+                                span,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    records
+}
+
+/// Names exported from the module, including `export { name }` specifiers and
+/// declarations. A data function must be exported for Next.js to call it.
+fn exported_names(program: &Program<'_>) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    for statement in &program.body {
+        match statement {
+            Statement::ExportDefaultDeclaration(_) => {
+                names.insert("default".to_string());
+            }
+            Statement::ExportNamedDeclaration(export) => {
+                if let Some(declaration) = &export.declaration {
+                    match declaration {
+                        Declaration::FunctionDeclaration(function) => {
+                            if let Some(id) = &function.id {
+                                names.insert(id.name.to_string());
+                            }
+                        }
+                        Declaration::VariableDeclaration(variable) => {
+                            for declarator in &variable.declarations {
+                                if let BindingPatternKind::BindingIdentifier(id) =
+                                    &declarator.id.kind
+                                {
+                                    names.insert(id.name.to_string());
+                                }
+                            }
+                        }
+                        Declaration::ClassDeclaration(class) => {
+                            if let Some(id) = &class.id {
+                                names.insert(id.name.to_string());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                for specifier in &export.specifiers {
+                    names.insert(export_name(&specifier.exported));
+                }
+            }
+            _ => {}
+        }
+    }
+    names
+}
+
+enum FunctionValue<'a> {
+    Function(&'a Function<'a>),
+    Arrow(&'a ArrowFunctionExpression<'a>),
+}
+
+impl<'a> FunctionValue<'a> {
+    fn body(&self) -> Option<&'a FunctionBody<'a>> {
+        match self {
+            Self::Function(function) => function.body.as_deref(),
+            Self::Arrow(arrow) => Some(&arrow.body),
+        }
+    }
+
+    fn expression_body(&self) -> Option<&'a Expression<'a>> {
+        match self {
+            Self::Function(_) => None,
+            Self::Arrow(arrow) if arrow.expression => arrow.get_expression(),
+            Self::Arrow(_) => None,
+        }
+    }
+}
+
+fn top_level_function<'a>(program: &'a Program<'a>, name: &str) -> Option<FunctionValue<'a>> {
+    for statement in &program.body {
+        match statement {
+            Statement::FunctionDeclaration(function) => {
+                if function.id.as_ref().is_some_and(|id| id.name == name) {
+                    return Some(FunctionValue::Function(function));
+                }
+            }
+            Statement::VariableDeclaration(variable) => {
+                for declarator in &variable.declarations {
+                    if let BindingPatternKind::BindingIdentifier(id) = &declarator.id.kind
+                        && id.name == name
+                    {
+                        return declarator
+                            .init
+                            .as_ref()
+                            .and_then(function_value_from_expression);
+                    }
+                }
+            }
+            Statement::ExportNamedDeclaration(export) => {
+                let Some(declaration) = &export.declaration else {
+                    continue;
+                };
+                match declaration {
+                    Declaration::FunctionDeclaration(function) => {
+                        if function.id.as_ref().is_some_and(|id| id.name == name) {
+                            return Some(FunctionValue::Function(function));
+                        }
+                    }
+                    Declaration::VariableDeclaration(variable) => {
+                        for declarator in &variable.declarations {
+                            if let BindingPatternKind::BindingIdentifier(id) = &declarator.id.kind
+                                && id.name == name
+                            {
+                                return declarator
+                                    .init
+                                    .as_ref()
+                                    .and_then(function_value_from_expression);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn function_value_from_expression<'a>(expression: &'a Expression<'a>) -> Option<FunctionValue<'a>> {
+    match expression {
+        Expression::ArrowFunctionExpression(arrow) => Some(FunctionValue::Arrow(arrow)),
+        Expression::FunctionExpression(function) => Some(FunctionValue::Function(function)),
+        Expression::ParenthesizedExpression(inner) => {
+            function_value_from_expression(&inner.expression)
+        }
+        Expression::TSAsExpression(inner) => function_value_from_expression(&inner.expression),
+        Expression::TSSatisfiesExpression(inner) => {
+            function_value_from_expression(&inner.expression)
+        }
+        Expression::TSNonNullExpression(inner) => function_value_from_expression(&inner.expression),
+        _ => None,
+    }
+}
+
+/// `Page.getInitialProps = ...` on the default-exported component. Next.js
+/// reads the property from the loaded component; a named `getInitialProps`
+/// export is not consulted.
+fn get_initial_props_value<'a>(
+    program: &'a Program<'a>,
+    default_local: &str,
+) -> Option<FunctionValue<'a>> {
+    for statement in &program.body {
+        let Statement::ExpressionStatement(expression) = statement else {
+            continue;
+        };
+        let Expression::AssignmentExpression(assignment) = &expression.expression else {
+            continue;
+        };
+        let AssignmentTarget::StaticMemberExpression(member) = &assignment.left else {
+            continue;
+        };
+        if member.property.name != "getInitialProps" {
+            continue;
+        }
+        if !matches!(&member.object, Expression::Identifier(object) if object.name == default_local)
+        {
+            continue;
+        }
+        return function_value_from_expression(&assignment.right);
+    }
+    None
+}
+
+/// The single statically returned expression of a function. A block body may
+/// contain control flow, but every return outside a nested function must be
+/// the same single return; multiple or bare returns abstain.
+fn returned_expression<'a>(value: &FunctionValue<'a>) -> Option<&'a Expression<'a>> {
+    if let Some(expression) = value.expression_body() {
+        return Some(expression);
+    }
+    let mut returns = Vec::new();
+    let mut opaque = false;
+    collect_returns(&value.body()?.statements, &mut returns, &mut opaque);
+    if opaque || returns.len() != 1 {
+        return None;
+    }
+    Some(returns[0])
+}
+
+/// Collect `return` arguments outside nested functions and classes. The caller
+/// requires exactly one, so a conditional return path abstains.
+fn collect_returns<'a>(
+    statements: &'a [Statement<'a>],
+    returns: &mut Vec<&'a Expression<'a>>,
+    opaque: &mut bool,
+) {
+    for statement in statements {
+        match statement {
+            Statement::ReturnStatement(statement) => match &statement.argument {
+                Some(argument) => returns.push(argument),
+                None => *opaque = true,
+            },
+            Statement::BlockStatement(block) => {
+                collect_returns(&block.body, returns, opaque);
+            }
+            Statement::IfStatement(statement) => {
+                collect_returns(std::slice::from_ref(&statement.consequent), returns, opaque);
+                if let Some(alternate) = &statement.alternate {
+                    collect_returns(std::slice::from_ref(alternate), returns, opaque);
+                }
+            }
+            Statement::SwitchStatement(statement) => {
+                for case in &statement.cases {
+                    collect_returns(&case.consequent, returns, opaque);
+                }
+            }
+            Statement::TryStatement(statement) => {
+                collect_returns(&statement.block.body, returns, opaque);
+                if let Some(handler) = &statement.handler {
+                    collect_returns(&handler.body.body, returns, opaque);
+                }
+                if let Some(finalizer) = &statement.finalizer {
+                    collect_returns(&finalizer.body, returns, opaque);
+                }
+            }
+            Statement::ForStatement(statement) => {
+                collect_returns(std::slice::from_ref(&statement.body), returns, opaque);
+            }
+            Statement::ForInStatement(statement) => {
+                collect_returns(std::slice::from_ref(&statement.body), returns, opaque);
+            }
+            Statement::ForOfStatement(statement) => {
+                collect_returns(std::slice::from_ref(&statement.body), returns, opaque);
+            }
+            Statement::WhileStatement(statement) => {
+                collect_returns(std::slice::from_ref(&statement.body), returns, opaque);
+            }
+            Statement::DoWhileStatement(statement) => {
+                collect_returns(std::slice::from_ref(&statement.body), returns, opaque);
+            }
+            Statement::LabeledStatement(statement) => {
+                collect_returns(std::slice::from_ref(&statement.body), returns, opaque);
+            }
+            Statement::WithStatement(statement) => {
+                collect_returns(std::slice::from_ref(&statement.body), returns, opaque);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The statically known prop keys of a data-function return value.
+///
+/// `getStaticProps` and `getServerSideProps` return `{ props: { ... } }`;
+/// `getInitialProps` returns the props object directly. A spread, computed key,
+/// duplicate key, accessor, or non-literal `props` value makes the shape
+/// opaque. A missing `props` key returns an empty list: the function
+/// deliberately returns no page props (for example `notFound`).
+fn static_props_keys(
+    expression: &Expression<'_>,
+    initial: bool,
+    source: &str,
+    line_index: &LineIndex,
+) -> Option<Vec<(String, shrike_core::Span)>> {
+    let object = object_literal(expression)?;
+    if initial {
+        return object_keys(object, source, line_index);
+    }
+    let mut props_value = None;
+    for property in &object.properties {
+        let ObjectPropertyKind::ObjectProperty(property) = property else {
+            return None;
+        };
+        if property.computed || property.kind != PropertyKind::Init {
+            return None;
+        }
+        let name = property.key.static_name()?;
+        if name != "props" {
+            continue;
+        }
+        if props_value.is_some() {
+            return None;
+        }
+        props_value = Some(&property.value);
+    }
+    let Some(props_value) = props_value else {
+        return Some(Vec::new());
+    };
+    object_keys(object_literal(props_value)?, source, line_index)
+}
+
+fn object_keys(
+    object: &ObjectExpression<'_>,
+    source: &str,
+    line_index: &LineIndex,
+) -> Option<Vec<(String, shrike_core::Span)>> {
+    let mut keys = Vec::new();
+    let mut seen = BTreeSet::new();
+    for property in &object.properties {
+        let ObjectPropertyKind::ObjectProperty(property) = property else {
+            return None;
+        };
+        if property.computed || property.kind != PropertyKind::Init {
+            return None;
+        }
+        let name = property.key.static_name()?.into_owned();
+        if !seen.insert(name.clone()) {
+            return None;
+        }
+        keys.push((name, span_of(line_index, source, property.span)));
+    }
+    Some(keys)
+}
+
+fn object_literal<'a>(expression: &'a Expression<'a>) -> Option<&'a ObjectExpression<'a>> {
+    match expression {
+        Expression::ObjectExpression(object) => Some(object),
+        Expression::ParenthesizedExpression(inner) => object_literal(&inner.expression),
+        Expression::TSAsExpression(inner) => object_literal(&inner.expression),
+        Expression::TSSatisfiesExpression(inner) => object_literal(&inner.expression),
+        Expression::TSTypeAssertion(inner) => object_literal(&inner.expression),
+        _ => None,
     }
 }
 

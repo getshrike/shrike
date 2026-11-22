@@ -467,7 +467,32 @@ Each diagnostic is anchored on the offending data-function export, the
 `getStaticPaths` export, or the `runtime` property. These are build-failure
 errors, never findings, and never change candidates or entries.
 
-### 7.8 Route conflicts
+### 7.8 Unused Pages Router data keys
+
+A Pages Router data function can return a prop key the page never reads.
+Shrike reports an `unused_page_data_key` warning, never a finding, when both
+sides are statically readable:
+
+- `getStaticProps`/`getServerSideProps` return `{ props: { ... } }` with an
+  object-literal `props` value;
+- `Page.getInitialProps = ...` returns the props object directly;
+- the page component is a default-exported function, or a local function or
+  arrow binding exported as default.
+
+Returned keys are compared with the props the component actually reads: an
+inline destructure, or a same-file typed props parameter credited through
+`props.<name>` and `const { <name> } = props`. Abstentions: non-literal
+`props`, spreads, computed or duplicate keys, accessors, multiple or bare
+returns, class components, HOCs, `memo`/`forwardRef`, imported props types,
+rest destructures, and whole-object props use. The warning is anchored on the
+returned property key and only fires for a live Pages Router route. API routes
+(`pages/api.ts` and the `pages/api/` subtree) and the root-reserved `_app`,
+`_document`, and `_error` pages are excluded because Next.js does not run
+page-data validation there; a nested `_app` or `_error` is an ordinary page and
+remains eligible. Knip 5.88.1 has no equivalent; fallow 3.45.0's
+`unused_load_data_key` covers SvelteKit, React Router, and Remix, not Next.js.
+
+### 7.9 Route conflicts
 
 Two App Router files can make Next.js reject or crash a route without any dead
 code. Shrike reports both as error diagnostics, never as findings:
@@ -490,7 +515,42 @@ app-shaped directory is left alone. This is deliberately more precise than
 fallow 3.45.0's project-wide gate, which flags that package when a sibling
 declares Next.
 
-### 7.9 Misplaced directives
+### 7.9.1 Pages Router route-tree conflicts
+
+The Pages Router sorts its route files with `sorted-routes`. Shrike mirrors the
+tree that Next.js 16.4.6 builds and reports the shapes a real `next build`
+rejects, as error diagnostics rather than findings:
+
+- `dynamic_segment_name_conflict`: sibling dynamic segments at one position use
+  different names. This covers `[id]` vs `[slug]`, `[...id]` vs `[...slug]`, and
+  `[[...id]]` vs `[[...slug]]`. It also covers a slug name repeated within one
+  route (`[id]/[id]`, `[id]/[...id]`, `[id]/[[...id]]`) and names that differ
+  only by non-word symbols (`[id]/[i-d]`).
+- `pages_router_route_conflict`: a required and an optional catch-all share a
+  level (`[...id]` with `[[...id]]`); an optional catch-all shares a position
+  with a static page (`pages/index.tsx` with `pages/[[...slug]].tsx`, or
+  `pages/shop.tsx` with `pages/shop/[[...slug]].tsx`); a catch-all is not the
+  final segment (`pages/[...slug]/x.tsx`); or `[[name]]` is used as an optional
+  non-catch-all.
+
+The probes also confirm the shapes that build successfully and are deliberately
+not reported: two static pages resolving to the same URL (`foo.tsx` with
+`foo/index.tsx`), two API routes resolving to the same URL, two dynamic routes
+with the same name (`[id].tsx` with `[id]/index.tsx`), two page files that
+differ only by extension (`foo.tsx` with `foo.js`), a regular dynamic and a
+catch-all sibling (`[id]` with `[...slug]`), a regular dynamic and an optional
+catch-all sibling without a static leaf, a required catch-all with a static
+leaf, and a root optional catch-all without a root index. Next.js silently
+chooses one file for the static duplicates, but the build does not fail, so
+Shrike does not claim a failure.
+
+API routes participate in the same route tree. The root-reserved `_app`,
+`_document`, and `_error` pages do not. `pages` and `src/pages` are separate
+roots because Next.js uses one per package; a conflict across the two roots is
+not reported. The checks honor a configured `pageExtensions` list and are gated
+per package on `next`.
+
+### 7.10 Misplaced directives
 
 React Server Components bundlers honor `"use client"` and `"use server"` only
 in the leading prologue, before any other statement. A directive-looking
@@ -509,7 +569,7 @@ directives. One warning is emitted per misplaced occurrence. The predicate and
 the two recognized strings match fallow 3.45.0's `misplaced_directive`
 detector.
 
-### 7.10 Mixed client/server barrels
+### 7.11 Mixed client/server barrels
 
 A barrel that re-exports a `"use client"` origin alongside a server-only origin
 is the Next.js App Router footgun: importing either name from the barrel drags
@@ -538,7 +598,7 @@ is a deliberate precision improvement: a module whose only "server" signal is
 `import type { cookies } from "next/headers"` does not put server code in a
 client bundle, while fallow still reports it.
 
-### 7.11 Client/server leak cones
+### 7.12 Client/server leak cones
 
 A `"use client"` module may not reach server-only code through its runtime
 import cone: the client bundle would contain `node:fs`, `next/server`, or a
@@ -549,7 +609,7 @@ import of the shortest path, and is a warning rather than a finding.
 
 The cone follows runtime static imports, re-exports, export-alls, and
 non-worker dynamic imports. Type-only edges are erased and are not followed.
-The sink predicate matches §7.10. An all-action `"use server"` module stops the
+The sink predicate matches §7.11. An all-action `"use server"` module stops the
 cone: its exports become action references at the client boundary, so its
 server imports never enter the client bundle. A `"use server"` module with any
 non-action value export (a top-level constant, a default value, a re-export)
@@ -565,6 +625,18 @@ specifier has no runtime static edge in the module; a static import or
 re-export of the same specifier keeps the edge, because the target is still
 reached normally. The rule is project-wide and gated on the same seven RSC
 bundlers as `misplaced_directive`. It never changes candidates or entries.
+
+The same call also narrows which exports stay live: `next/dynamic` and
+`React.lazy` load a component's `default` export, so an inline
+`() => import("./chart")` credits `default` alone. The rule requires an
+unshadowed `next/dynamic` default import or a React `lazy` binding; an unknown
+wrapper, a shadowed binding, or a type-only import keeps the whole module
+namespace live. A top-level local loader function passed by identifier
+(`const load = () => import("./chart"); dynamic(load)`) gets the same credit
+only when every unshadowed reference to it is a proven loader argument. An
+exported or reassignable loader, a non-static import specifier, or any other
+reference keeps the whole namespace live. A `.then((m) => ({ default: m.Named
+}))` loader keeps the named credit that the `.then` collector records.
 
 ---
 
@@ -600,8 +672,12 @@ union:
   metadata/viewport; `global-not-found`, `template`, `loading`, `error`, and
   `global-error` read only `default`;
 - `sitemap` adds `generateSitemaps`; image routes read `size`, `contentType`,
-  `alt` (Open Graph and Twitter only), and `generateImageMetadata`. Every
-  metadata route reads `generateStaticParams` and route-level segment config.
+  `alt`, and `generateImageMetadata`. Every metadata route reads
+  `generateStaticParams` and route-level segment config. A 16.4.2 probe build
+  emits `alt` on the `<link rel="icon">` for `icon`/`apple-icon` even though
+  the docs list only `size` and `contentType`, because the metadata image
+  loader forwards every named export into the descriptor and Next.js spreads
+  the descriptor onto the link.
 
 Route-level segment config is `dynamic`, `dynamicParams`, `revalidate`,
 `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`; static-path
