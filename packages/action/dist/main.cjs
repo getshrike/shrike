@@ -47,9 +47,17 @@ function resolveCli(root) {
   }
   try {
     const require2 = (0, import_node_module.createRequire)((0, import_node_path.join)(root, "package.json"));
-    const manifest = require2.resolve("getshrike/package.json");
-    const launcher = (0, import_node_path.join)((0, import_node_path.dirname)(manifest), "bin", "shrike.mjs");
-    if ((0, import_node_fs2.existsSync)(launcher)) return { command: process.execPath, args: [launcher] };
+    const candidates = [];
+    for (const specifier of ["getshrike/package.json", "getshrike"]) {
+      try {
+        const resolved = require2.resolve(specifier);
+        const packageRoot = specifier.endsWith("package.json") ? (0, import_node_path.dirname)(resolved) : (0, import_node_path.dirname)((0, import_node_path.dirname)(resolved));
+        candidates.push((0, import_node_path.join)(packageRoot, "bin", "shrike.mjs"));
+      } catch {
+      }
+    }
+    const launcher = candidates.find((path) => (0, import_node_fs2.existsSync)(path));
+    if (launcher) return { command: process.execPath, args: [launcher] };
   } catch {
   }
   const probe = (0, import_node_child_process.spawnSync)(process.platform === "win32" ? "where" : "which", ["shrike"], {
