@@ -59,7 +59,7 @@
     "getshrike-linux-arm64": "workspace:*",
     "getshrike-darwin-x64": "workspace:*",
     "getshrike-darwin-arm64": "workspace:*",
-    "getshrike-win32-x64": "workspace:*"
+    "getshrike-windows-x64": "workspace:*"
   },
   "devDependencies": {
     "@shrike/agent": "workspace:*",

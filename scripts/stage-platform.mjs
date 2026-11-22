@@ -20,6 +20,9 @@ const PLATFORMS = {
   "darwin-arm64": { os: "darwin", cpu: "arm64", binary: "shrike-engine" },
   "win32-x64": { os: "win32", cpu: "x64", binary: "shrike-engine.exe" },
 };
+// npm's spam filter rejects the `getshrike-win32-x64` name. Keep the platform
+// key for Node's `win32` naming and publish the package as `windows`.
+const PACKAGE_NAMES = { "win32-x64": "getshrike-windows-x64" };
 
 const { values } = parseArgs({
   options: {
@@ -53,7 +56,7 @@ if (!existsSync(manifestPath)) {
   process.exit(1);
 }
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-const expectedName = `getshrike-${platform}`;
+const expectedName = PACKAGE_NAMES[platform] ?? `getshrike-${platform}`;
 if (manifest.name !== expectedName) {
   console.error(`FAIL stage-platform: expected ${expectedName}, found ${manifest.name}`);
   process.exit(1);
