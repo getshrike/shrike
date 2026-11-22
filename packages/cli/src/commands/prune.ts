@@ -250,7 +250,10 @@ export async function pruneCommand(root: string, args: ParsedArgs): Promise<numb
       }
       return ExitCode.REVERT_FAILED;
     }
-    if (booleanFlag(args, "pr")) openPullRequest(root, branch, plan, receipts, config);
+    if (booleanFlag(args, "pr") && !openPullRequest(root, branch, plan, receipts, config)) {
+      if (booleanFlag(args, "json")) writeJson({ plan, outcome, receipts, branch, worktree: worktreeDirectory });
+      return ExitCode.COULD_NOT_RUN;
+    }
     if (booleanFlag(args, "json")) writeJson({ plan, outcome, receipts, branch, worktree: worktreeDirectory });
     else {
       writeHuman(`Shrike: ${formatCount(plan.totals.symbols, "symbol")} removed on ${branch}.`);
@@ -268,7 +271,7 @@ export function openPullRequest(
   plan: Plan,
   receiptPaths: string[],
   config: ShrikeConfig,
-): void {
+): boolean {
   const base = pullRequestBase(config.pr.base ?? plan.base.ref ?? "main", listRemotes(root));
   const receipts = receiptPaths.map((path) => readReceipt(path));
   const batches = receipts.map((receipt) => ({
@@ -305,19 +308,20 @@ export function openPullRequest(
     const fetched = spawnSync("git", ["fetch", "--quiet", "origin", branch], { cwd: root, encoding: "utf8" });
     if (fetched.status !== 0) {
       writeStderr(`Could not fetch origin/${branch}; refusing to force-push. Push manually after review.`);
-      return;
+      return false;
     }
     const ancestor = spawnSync("git", ["merge-base", "--is-ancestor", "FETCH_HEAD", "HEAD"], { cwd: root, encoding: "utf8" });
     if (ancestor.status !== 0) {
       writeStderr(`Remote branch ${branch} diverged; refusing to force-push. Push manually after review.`);
-      return;
+      return false;
     }
   }
   const draft = config.pr.draft ? ["--draft"] : [];
   const push = spawnSync("git", ["push", "-u", "origin", branch], { cwd: root, encoding: "utf8" });
   if (push.status !== 0) {
-    writeStderr(`Could not push ${branch}; open the PR manually: gh pr create ${draft.join(" ")} --head ${branch} --base ${base}`);
-    return;
+    const detail = (push.stderr ?? "").trim();
+    writeStderr(`Could not push ${branch}${detail ? `: ${detail}` : ""}; open the PR manually: gh pr create ${draft.join(" ")} --head ${branch} --base ${base}`);
+    return false;
   }
   const gh = spawnSync(
     "gh",
@@ -325,8 +329,9 @@ export function openPullRequest(
     { cwd: root, encoding: "utf8" },
   );
   if (gh.status !== 0) {
-    writeStderr(`gh unavailable or failed; open the PR manually: gh pr create ${draft.join(" ")} --head ${branch} --base ${base}`);
-    return;
+    const detail = (gh.stderr ?? "").trim() || (gh.error?.message ?? "");
+    writeStderr(`gh pr create failed${detail ? `: ${detail}` : ""}; open the PR manually: gh pr create ${draft.join(" ")} --head ${branch} --base ${base}`);
+    return false;
   }
   const url = gh.stdout.trim();
   if (config.pr.labels.length > 0) {
@@ -336,9 +341,10 @@ export function openPullRequest(
     }
   }
   writeHuman(url);
-  if (!config.pr.commentReceipt) return;
+  if (!config.pr.commentReceipt) return true;
   for (const receipt of receipts) {
     const comment = spawnSync("gh", ["pr", "comment", url, "--body", renderReceiptComment(receipt)], { cwd: root, encoding: "utf8" });
     if (comment.status !== 0) writeStderr(`Could not post receipt ${receipt.id} to the PR.`);
   }
+  return true;
 }

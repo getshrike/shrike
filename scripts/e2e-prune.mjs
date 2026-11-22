@@ -9,7 +9,7 @@
  * Requires target/debug/shrike-engine or SHRIKE_ENGINE.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -290,8 +290,43 @@ scenario("cascade deletion", () => {
   }
 });
 
+scenario("pr creation failure is reported", () => {
+  const directory = makeRepo("pr-failure");
+  const remote = mkdtempSync(join(tmpdir(), "shrike-e2e-remote-"));
+  const bin = mkdtempSync(join(tmpdir(), "shrike-e2e-bin-"));
+  try {
+    git(remote, ["init", "-q", "--bare", "-b", "main"]);
+    baseFiles(directory, `import { readFileSync } from "node:fs";\nconst page = readFileSync("app/page.tsx", "utf8");\nif (page.includes("formatInvoice")) throw new Error("stale caller");\n`);
+    git(directory, ["add", "-A"]);
+    git(directory, ["commit", "-q", "-m", "base"]);
+    git(directory, ["remote", "add", "origin", remote]);
+    git(directory, ["push", "-q", "-u", "origin", "main"]);
+    git(directory, ["checkout", "-q", "-b", "feature"]);
+    write(directory, "app/page.tsx", `export default function Page() { return null; }\n`);
+    git(directory, ["add", "-A"]);
+    git(directory, ["commit", "-q", "-m", "remove caller"]);
+
+    const gh = join(bin, "gh");
+    writeFileSync(gh, "#!/bin/sh\necho 'GitHub Actions is not permitted to create or approve pull requests.' >&2\nexit 1\n");
+    chmodSync(gh, 0o755);
+
+    const result = runCli(directory, ["prune", "--base", "main", "--json", "--pr"], {
+      PATH: `${bin}:${process.env.PATH}`,
+    });
+    assert(result.status === 4, `expected exit 4, got ${result.status}: ${result.stderr}`);
+    assert(result.stderr.includes("gh pr create failed"), `missing failure context: ${result.stderr}`);
+    assert(result.stderr.includes("not permitted"), `gh stderr was not surfaced: ${result.stderr}`);
+    const output = JSON.parse(result.stdout);
+    assert(output.outcome === "verified", "the verified outcome should still be reported");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+    rmSync(remote, { recursive: true, force: true });
+    rmSync(bin, { recursive: true, force: true });
+  }
+});
+
 if (failures.length > 0) {
   console.error(`FAIL: ${failures.length} prune scenario(s) failed`);
   process.exit(1);
 }
-console.log("OK: prune e2e (verified + rejected + revert recovery)");
+console.log("OK: prune e2e (verified + rejected + revert recovery + pr failure)");
