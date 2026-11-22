@@ -4,11 +4,19 @@ All notable changes to Shrike are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The Action supplies the GitHub Actions bot git identity when the runner has
+  none, so prune can commit its verified batch.
+- `prune --pr` exits 4 with `gh`'s error when the pull request cannot be opened,
+  instead of reporting success with no PR.
+
 ## [1.0.0] — 2026-11-23
 
-The first Shrike release line. It is code-complete and locally gated; the
-registry publication and the external launch gates are tracked in
-[`TRACKER.md`](TRACKER.md).
+The first Shrike release line, published to npm and GitHub. External launch
+gates are tracked in [`TRACKER.md`](TRACKER.md).
 
 ### Added
 
@@ -62,14 +70,11 @@ registry publication and the external launch gates are tracked in
 - `prune --pr` strips a configured remote from the analyzed base ref before
   calling `gh pr create`, so the default `origin/main` opens a pull request
   against `main` instead of failing. It also checks the remote for an existing
-  cleanup branch instead of trusting a stale remote-tracking ref, and exits 4
-  with `gh`'s error when the pull request cannot be opened.
+  cleanup branch instead of trusting a stale remote-tracking ref.
 - The GitHub Action resolves a project-local `getshrike` through its main entry
   when the installed package does not export `./package.json`.
 - The release version setter is idempotent, so publishing the version already
   present in the source tree succeeds instead of failing the release.
-- The Action supplies the GitHub Actions bot git identity when the runner has
-  none, so prune can commit its verified batch.
 
 ### Security
 
@@ -93,10 +98,9 @@ registry publication and the external launch gates are tracked in
 
 ### Known limitations
 
-- The first npm publish and signed GitHub release have not run; they require npm
-  credentials and environment approval.
-- The GitHub Action has not opened a draft PR on an external test repository.
 - No independent audit or labeled real-repository precision set exists yet.
 - Receipt signing, reproducible release builds, and telemetry remain post-1.0.
+- The Windows arm64 target and a standalone single-binary distribution are
+  post-1.0; `win32-x64` is the only Windows platform package.
 
 [1.0.0]: https://github.com/getshrike/shrike/releases/tag/v1.0.0

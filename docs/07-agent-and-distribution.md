@@ -2,7 +2,7 @@
 
 > **Parent:** [MASTER_PROMPT.md](../MASTER_PROMPT.md) · **Tracker:** [TRACKER.md](../TRACKER.md)
 > **Status:** canonical · Authored 2026-11-20
-> **Implementation status (2026-11-23):** Claude Code, Cursor, and OpenCode hooks, the GitHub Action, the PR/receipt renderers, the four-tool read-only MCP server, the read-only [design-partner kit](../design-partner/README.md), and the npm release path are implemented. The hook runs fast-tier checks against a reused baseline inside its budget; the Action supports `fail-on: newly-dead`, resolves a project-local `getshrike` install, replaces/removes its delta artifact, and runs from a committed bundle. The `getshrike` tarball, five native platform packages, SHA-256 sidecars, GitHub attestations, keyless Sigstore signing, and npm provenance are implemented and locally gated. The first registry publish, a real test-repository Action run, landing tests, and design-partner trials are blocked on credentials or participants.
+> **Implementation status (2026-11-23):** Claude Code, Cursor, and OpenCode hooks, the GitHub Action, the PR/receipt renderers, the four-tool read-only MCP server, the read-only [design-partner kit](../design-partner/README.md), and the npm release path are implemented. The hook runs fast-tier checks against a reused baseline inside its budget; the Action supports `fail-on: newly-dead`, resolves a project-local `getshrike` install, replaces/removes its delta artifact, and runs from a committed bundle. `getshrike@1.0.0` and the five native platform packages are published with SHA-256 sidecars, GitHub attestations, keyless Sigstore signing, and npm provenance. External delta and prune runs passed on `getshrike/shrike-action-test`, including a draft cleanup PR with a verified receipt. Landing tests, design-partner trials, and the independent audit remain blocked on participants.
 
 ---
 
@@ -387,8 +387,8 @@ These are measured in design-partner trials, not inferred from downloads.
       delta-only.
 - [x] The hook never applies a deletion.
 - [x] The hook writes only under `.shrike/` and makes no network call.
-- [ ] The Action opens a draft PR on a test repository (release gate: needs an
-      external test repository).
+- [x] The Action opens a draft PR on a test repository (`getshrike/shrike-action-test`
+      run 45085138639, PR #5, verified receipt `rcpt_8e5c5060b59af8480afcab34`).
 - [x] The Action refuses `prune` on a fork.
 - [x] The Action resolves a project-local `getshrike` install, honors
       `SHRIKE_CLI`, and falls back to `shrike` on `PATH`.
