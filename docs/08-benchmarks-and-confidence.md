@@ -161,16 +161,25 @@ Record for every report:
 The corpora are generated from pinned public repositories, not synthetic
 single-file loops. A synthetic corpus can hide resolver and barrel costs.
 
+The 2026-11-23 competitor suite in §4.7 uses 12 fixtures: five local Next.js
+apps, five pinned OSS repositories (preact, fastify, zod, query, vite), and two
+synthetic projects (1,001 and 5,001 source files). The 315-case labeled corpus
+in `fixtures/must-not-report` is a separate accuracy gate, not a timing corpus.
+
 ### 4.3 Method
 
-- 3 warmups, 5 measured runs.
+- 3 warmups, 5 measured runs for the engine harness. The competitor suite
+  follows fallow's public protocol: 2 warmups and 5 measured runs.
 - Report median, p95, and peak RSS.
 - Cold: cache removed before each run.
 - Warm: cache present and valid.
 - No other workload on the machine.
 - Pin CPU frequency if possible; record if not.
 - Run the engine directly, not through a shell wrapper.
-- Measure wall time and peak RSS (`/usr/bin/time -v` or the harness).
+- Measure wall time and peak RSS with the harness. Sample the process tree only
+  after `/proc/<pid>/exe` shows the child has called `exec`, and do not use
+  `wait4`'s `ru_maxrss` for the reported peak: before `exec` the child is a fork
+  of the harness, so both readings can include the harness's own memory.
 
 ### 4.4 Budgets
 
@@ -203,6 +212,92 @@ the measurement and the optimization attempt before the target changes.
 - a warm run presented as cold;
 - a scan without resolution or entry detection;
 - a benchmark on a machine that cannot be reproduced.
+
+### 4.7 Competitor comparison
+
+**2026-11-23 labeled accuracy.** The 315-case
+[`competitor-accuracy-2026-11-23.md`](../benchmarks/competitor-accuracy-2026-11-23.md)
+run scores findings against framework-derived labels rather than against
+another tool's output. Shrike scored 196 TP / 0 FP / 0 FN (315/315 cases clean);
+fallow 180/68/16 (278/315); knip 143/82/47 (257/314); ts-prune 94/183/96
+(131/315); ts-unused-exports 102/160/18 (167/283). Shrike's perfect score is
+expected because this corpus is its own CI gate, not an independent sample; the
+competitor scores on the same labels are the informative comparison. The
+false-positive clusters are convention-specific: React Cosmos/Ladle and test
+entries for fallow, Metro and Remix/React Router for knip, and route conventions
+for the export-only tools.
+
+The 2026-11-22 comparison against knip 5.88.1, fallow 3.46.0, and depcheck
+1.4.7 is recorded in
+[`benchmarks/competitor-2026-11-22.md`](../benchmarks/competitor-2026-11-22.md).
+It uses three small Next.js apps (22–36 analyzed files) and two production-sized
+apps (675 and 1,673 files), release builds, a warm OS cache, paired interleaved
+rounds (each round runs Shrike and fallow in alternating order), five-round
+medians, and peak RSS from `wait4`.
+
+| Workload | Shrike CLI cold | Shrike engine cold | Fallow cold | Knip | Depcheck |
+|---|---:|---:|---:|---:|---:|
+| 22 files | 0.233 s / 58 MB | 0.056 s / 15 MB | 0.517 s / 109 MB | 2.92 s / 204 MB | 2.65 s / 206 MB |
+| 1,673 files | 1.773 s / 158 MB | 1.505 s / 158 MB | 1.979 s / 162 MB | 15.15 s / 677 MB | 26.10 s / 448 MB |
+| 675 files | 0.796 s / 85 MB | 0.464 s / 66 MB | 0.936 s / 109 MB | 9.68 s / 520 MB | 13.19 s / 455 MB |
+
+The Shrike CLI beats fallow cold on every repository: 1.12× on the 1,673-file
+app, 1.18× on the 675-file app, and 1.80–2.22× on the small apps. It is
+1.48–2.12× faster warm. The Shrike engine's margin is wider: 1.32–16.4× cold and
+3.24–30.5× warm. Across all five repositories the Shrike CLI is 8.5–12.5×
+faster than knip and 9.1–16.6× faster than depcheck cold; against knip's cache
+it is 10.8–16.0× faster warm. On requo the CLI's warm overhead over the engine
+is ~0.49 s (0.910 s vs 0.417 s), and peak RSS is 122 MB. The engine output is
+byte-identical before and after the optimization, and the CLI's parsed JSON is
+identical on all five repositories.
+
+Accuracy is an agreement study, not precision/recall. Outside files reported
+unused by any tool, Shrike's combined exported-plus-advisory set had 0, 0, 0, 24,
+and 26 findings not shared with knip/fallow. The 24 on requo are 2 genuine
+transitive dead exports, 1 dead re-export, and 21 advisory de-export-only
+entries; the 26 on accounteer are 13 server actions that fallow also reports, 3
+dead analytics exports (two declarations and one unused re-export), and 10
+advisory entries. Knip had 13 and 12 outside-unused-file differences on requo
+and accounteer; fallow had none on either. Shrike and fallow agree on 25/25 and
+23/23 server actions. Shrike matched knip on both repositories with real unused
+dependencies and reported no config-only false positives on the other three.
+
+The comparison's caveats are in the report: no complete ground truth, different
+finding categories (`internalOnly` is advisory), knip/fallow suppress exports in
+unused files, the absent-prop rule is warning-only, and the remaining
+conservative gap is opaque namespace dynamic imports. The earlier
+default-exported-const absent-prop gap is closed, and returned loaders and
+property assertions are now narrowed (D-048/D-049).
+
+The expanded 2026-11-23 comparison is recorded in
+[`benchmarks/competitor-2026-11-23.md`](../benchmarks/competitor-2026-11-23.md).
+It replaces the small hand-picked corpus with 12 paired fixtures: five Next.js
+apps, the same pinned OSS repositories fallow uses (preact, fastify, zod,
+query, vite), and two generated projects (1k and 5k files). It keeps fallow's
+2-warmup / 5-measured-round, cold-and-warm, median-plus-RSS protocol and adds
+finding-count validation, invalid-run exclusion, separate CLI and engine rows,
+and rotating tool order. depcheck, ts-prune, and ts-unused-exports are measured
+as narrow-scope context rather than ranked against full scans. The suite is
+owned by the repository under `benchmarks/competitors/`.
+
+On the clean 2026-11-22T18:02:22Z run, the Shrike CLI beat fallow cold on 11/12
+fixtures (median 1.47×, geomean 1.45×) and warm on 12/12 (1.93× / 1.90×). The
+engine beat fallow cold on 12/12 (3.33× / 3.64×) and warm on 12/12
+(9.46× / 10.14×). Knip was valid on 10/12; there the CLI was 1.27–27.06× faster
+cold (median 6.16×). The only CLI cold loss was Vite (0.86×), where the engine
+still beat fallow (1.41×), so the gap is Node-side startup and JSON
+orchestration rather than analysis. On requo (1,677 files) the CLI measured
+2.054 s cold / 0.846 s warm, the engine 1.601 / 0.422, and fallow 2.398 / 1.254.
+
+The benchmark also acts as a correctness probe: the first full run found a
+UTF-8 char-boundary panic in the HTML module-script scanner on Vite. The fix is
+byte-based prefix matching plus a regression test, and no analysis rule
+changed. RSS sampling now starts only after the child has called `exec` and
+verifies each PID's start time, so neither the harness's pre-exec fork image
+nor a reused PID can attribute another process's memory to a fast tool.
+Knip configurations that exit 2 because their configs import unbuilt workspace
+or plugin packages (query and vite) are excluded rather than timed as slow
+scans; zod becomes valid after installing its config's `vite@5` peer.
 
 ---
 

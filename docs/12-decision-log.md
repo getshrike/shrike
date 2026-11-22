@@ -1484,6 +1484,857 @@ metadata routes, or removes the page/layout renderer split.
 
 ---
 
+## D-038 — Unused React component props are advisory warnings
+
+**Decision:** Report a destructured prop that a live local React component never
+reads as an `unused_component_prop` warning. Never emit it as a deletion
+candidate: removing a prop changes the component contract, and Shrike's batch
+deletion model only removes whole symbols. Scope the parser to top-level
+uppercase function declarations and `const` arrow/function-expression
+components that return JSX, with a single inline object-destructured parameter.
+Abstain on rest/spread, a bare `props` parameter, multiple parameters, nested
+patterns, computed keys, exported components, and any component whose value
+escapes the module (`memo(Card)`, a registry, `displayName`, direct export).
+Gate the rule project-wide on a React runtime (`react`, `react-dom`, `next`,
+`preact`).
+
+**Alternatives considered:**
+
+- Emit a deletion candidate: rejected because a prop is not a symbol and
+  removing it is a manual contract change. The warning names the component and
+  prop so the reviewer can decide.
+- Follow fallow 3.45.0's exported-binding check: fallow reports a prop on
+  `export default memo(Card)` because it only asks whether `Card` is exported.
+  Shrike's value-reference walk sees `Card` passed to `memo` and abstains, which
+  avoids the HOC false positive.
+- Report every JSX-returning function: rejected because `forwardRef`, imported
+  prop interfaces, and rest-spread components need manual review and would
+  widen the false-positive surface.
+
+**Why:** fallow 3.45.0 detects unused props; knip 5.88.1 does not. A probe at
+`/tmp/opencode/react-gap-probe` reports `Badge.tone` under both Shrike and
+fallow. A second probe at `/tmp/opencode/props-hoc-probe` shows fallow's HOC
+false positive (`Card.subtitle`) and Shrike's abstention while still reporting
+the local `Local.subtitle`.
+
+**Consequences:**
+
+- `FileSummary.component_props` records the component, prop, local binding,
+  usage flag, and span; the parser skips the whole-program value-reference walk
+  when a file has no component candidates.
+- The graph emits warnings after reachability, so a dead component stays a
+  candidate and does not also produce prop warnings.
+- `ANALYSIS_VERSION` is bumped to 74.
+- The CLI groups the code under the `react` diagnostic category.
+
+**Revisit if:** Shrike adds contract-level edits or a verified prop-removal
+workflow.
+
+---
+
+## D-039 — Unused TypeScript enum members are advisory warnings
+
+**Decision:** Report a member of a live, exported TypeScript enum that no
+project reference reads as an `unused_enum_member` warning. Never emit it as a
+deletion candidate: removing a member changes a serialized value, a numeric
+value, or a public contract, and Shrike's batch deletion model only removes
+whole symbols. Restrict the rule to top-level, non-ambient enums in
+non-declaration source files that are not generated, merged, public API, or
+entries. Credit every member on a whole-object use, computed access, numeric
+reverse lookup, namespace alias, local or re-export alias, or literal dynamic
+import. Credit the referenced member on an initializer (`B = A`) and credit
+every member on object destructuring, because the destructured binding cannot
+be attributed to one member with confidence.
+
+**Alternatives considered:**
+
+- Emit a deletion candidate: rejected because a member is not a symbol and the
+  edit can change a stored value or an external contract. The warning names the
+  enum and member for manual review.
+- Follow fallow 3.45.0's initializer handling: fallow reports `Initializer.A`
+  as unused in `enum Initializer { A = 1, B = A, C = 4 }` even though `B`
+  reads `A`. Shrike's parser records initializer member references and credits
+  them, which removes that false positive.
+- Match knip 5.88.1 on object destructuring: knip reports
+  `Destructured.Second` after `const { First } = Destructured`. Shrike credits
+  every member because the object is read as a whole; the finding is hidden
+  rather than risk a false positive.
+- Report members of dead enums: rejected because the enum itself is already one
+  deletion candidate; reporting each member would duplicate the finding.
+
+**Why:** fallow 3.45.0 and knip 5.88.1 both detect unused enum members and
+Shrike did not. A probe at `/tmp/opencode/enum-probe` has eleven enums covering
+string, numeric, whole-object, computed, destructured, initializer, type-only,
+same-file, re-exported, and dead cases. Shrike reports the same seven unused
+members as knip except `Destructured.Second` (deliberate over-credit) and
+credits `Initializer.A` where fallow falsely reports it.
+
+**Consequences:**
+
+- `FileSummary.enums` records each enum's name, ambient/opaque flags, and
+  member names, initializer references, and spans; `TSQualifiedName` member
+  accesses are recorded as precise member reads.
+- The graph emits warnings after reachability, so a dead enum stays a candidate
+  and does not also produce member warnings.
+- `ANALYSIS_VERSION` is bumped to 75.
+- The CLI groups the code under the `types` diagnostic category.
+
+**Revisit if:** Shrike adds a verified enum-member edit, or TypeScript changes
+how const-enum and namespace member accesses are emitted.
+
+---
+
+## D-040 — Unused class members are advisory warnings
+
+**Decision:** Report a member of a live, exported class that no project
+reference reads as an `unused_class_member` warning. Never emit it as a
+deletion candidate: removing a member changes the class contract, and Shrike's
+batch deletion model only removes whole symbols. Restrict the rule to top-level
+class declarations and `const` class expressions in non-declaration,
+non-generated source files whose class symbol is live, exported, and neither
+public API nor an entry. Abstain on ambient, abstract, decorated,
+computed-name, index-signature, duplicate-declaration, non-React
+member-expression heritage, and escaping class or instance values, including
+cross-file escapes recorded in `FileSummary.class_value_escapes`. Credit
+`this.x`, `super.x`, `ClassName.x`, `new C().x`, `C.prototype.x`, instance
+bindings (`const x = new C()`, `x: C`), destructuring, namespace, local and
+re-export aliases, literal dynamic imports, and member names shared with an
+ancestor. In React projects, credit the lifecycle allowlist and runtime fields
+(`state`, `props`, `context`, `refs`, `contextType`, `defaultProps`,
+`propTypes`); Next.js additionally credits `getInitialProps`.
+
+**Alternatives considered:**
+
+- Emit a deletion candidate: rejected because a member is not a symbol and the
+  edit can change a class contract or a framework call site. The warning names
+  the class and member for manual review.
+- Report members of dead classes: rejected because the class itself is already
+  one deletion candidate; reporting each member would duplicate the finding.
+- Follow fallow 3.45.0's exported-binding check: fallow reports members of a
+  class whose value is logged with `console.log(Widget)`. Shrike's parser
+  records whole-value uses and the graph abstains on the escaped class, which
+  avoids the false positive.
+- Credit only direct member reads: rejected because `super`, inherited-name
+  dispatch, and aliases can reach a member through a path the syntactic access
+  does not name. Over-crediting can hide a finding; it can never invent one.
+- Run the rule only for React class components: rejected because plain
+  TypeScript service and domain classes have the same dead-member shape, and
+  the conservative gates keep the false-positive surface small.
+
+**Why:** fallow 3.45.0 detects class members by default; knip 5.88.1 only runs
+the check with `--include classMembers`. A probe at
+`/tmp/opencode/class-member-probe-2` covers used and unused fields, methods,
+accessors, static members, parameter properties, inheritance, local classes,
+and a logged React class. Fallow reports 11 unused members and Shrike reports
+10: Shrike abstains on two members of `Widget` because `console.log(Widget)`
+escapes the class value, and Shrike reports `Base.baseDead` where fallow misses
+it because fallow treats `Base` as an unused export even though
+`Sub extends Base` keeps it live.
+
+**Consequences:**
+
+- `FileSummary.classes` records each class's members, self/super/static reads,
+  and escape flags; `class_bindings` records local instance bindings and
+  `class_value_escapes` records whole-value uses for cross-file resolution.
+- The graph emits warnings after reachability, so a dead class stays a
+  candidate and does not also produce member warnings.
+- `ANALYSIS_VERSION` is bumped to 76.
+- The CLI groups the code under the `types` diagnostic category.
+
+**Revisit if:** Shrike adds a verified class-member edit, or TypeScript changes
+how parameter properties and `useDefineForClassFields` emit fields.
+
+---
+
+## D-041 — Same-file typed React props and local wrappers are harvested
+
+**Decision:** Extend `unused_component_prop` beyond inline destructures. A bare
+`props` parameter annotated with a bare same-file `interface` or
+`type X = { ... }` object type contributes one prop per property signature, and
+`props.<name>` / `const { <name> } = props` reads credit it. Local
+`memo(...)` and `forwardRef(...)` wrappers whose first argument is an inline
+arrow or function component are candidates too; `forwardRef<Ref, Props>` may
+supply the props type through its second generic argument. Abstain on imported,
+generic, inherited, union, intersection, qualified, inline-literal, and merged
+type declarations; on rest/spread or any other whole-object use of the props
+binding; on a `memo` comparator; and on exported or otherwise escaping wrappers.
+
+**Alternatives considered:**
+
+- Keep the inline-destructure-only scope: rejected because fallow 3.45.0
+  already harvests same-file typed interfaces and wrappers, so Shrike misses a
+  common React/TypeScript shape.
+- Resolve imported types or alias chains: rejected because the parser is
+  single-file and has no type checker; guessing across modules would widen the
+  false-positive surface.
+- Follow fallow's exported-binding-only escape check: rejected for the same HOC
+  false positive as D-038.
+
+**Why:** fallow's `crates/extract/src/visitor/react.rs` resolves bare same-file
+object types in `resolve_typed_react_props`, credits `props.x` and
+destructure-from-props, and abstains on whole-object use; its
+`classify_component_init` handles `memo`/`forwardRef`. Shrike previously
+rejected every bare `props` parameter and did not recognize local wrappers, so
+`const Card = memo((props: CardProps) => <div>{props.title}</div>)` produced no
+warning even when `tone` was unread.
+
+**Consequences:**
+
+- `ComponentPropRecord.destructured` distinguishes inline destructures from
+  typed declarations for message wording.
+- The parser collects same-file object types before harvesting, so a type
+  declared after the component resolves.
+- `ANALYSIS_VERSION` is bumped to 77.
+- The `unused-component-prop-1` corpus case covers inline, typed, `memo`, and
+  `forwardRef` shapes.
+
+**Revisit if:** Shrike gains a cross-file type resolver, or fallow changes its
+typed-props abstention rules.
+
+---
+
+## D-042 — Unused Pages Router data keys are advisory warnings
+
+**Decision:** A Pages Router page whose `getStaticProps` or
+`getServerSideProps` statically returns `{ props: { ... } }`, or whose
+default-exported component carries a statically returning
+`Page.getInitialProps = ...`, reports an `unused_page_data_key` warning for each
+returned key the page component never reads. The rule is gated on a live
+Next.js Pages Router route entry. It abstains unless the return value and the
+page component's props are both statically readable: non-literal `props`
+values, spreads, computed or duplicate keys, accessors, multiple or bare
+returns, class components, HOCs, `memo`/`forwardRef` wrappers, imported props
+types, rest destructures, and whole-object props use all suppress the rule.
+
+**Alternatives considered:**
+
+- Treat every declared prop as consumed: rejected because the page component is
+  exported, so `unused_component_prop` abstains on it; a declared-but-unread
+  typed prop would then never be reported by any rule.
+- Treat `getInitialProps` as a named export: rejected because Next.js reads it
+  from the loaded default component, not the module namespace; the existing
+  `invalid_pages_router_export` rule already encodes that distinction.
+- Model the rule as a deletion candidate: rejected because a returned key is
+  not a symbol and removing it changes the page's data contract.
+- Cover App Router `pageProps`: rejected because App Router server components
+  read route params and search params through framework APIs rather than a
+  returned props object; there is no analogous static key list.
+
+**Why:** fallow 3.45.0's `unused_load_data_key.rs` covers SvelteKit, React
+Router, and Remix but not Next.js, and knip 5.88.1 has no equivalent. On
+`/tmp/opencode/next-page-data-probe` (a page returning `used` and `unused` and
+reading only `used`) neither tool reports the key; Shrike now does.
+
+**Consequences:**
+
+- `PageDataKeyRecord` carries the data-function name, key, and key span; the
+  graph anchors the warning on the returned property.
+- The CLI groups the code under the `next` diagnostic category.
+- The graph reuses the Pages Router classifier to exclude `pages/api.ts`, the
+  `pages/api/` subtree, and the root-reserved `_app`/`_document`/`_error`
+  pages; a nested `_app` or `_error` remains an ordinary page.
+- `ANALYSIS_VERSION` is bumped to 78.
+- The `unused-page-data-key-1` corpus case covers inline destructuring and
+  typed `getInitialProps` while keeping the page and data function protected.
+
+**Revisit if:** Next.js changes the Pages Router data contract, or a competitor
+adds a Next.js-specific equivalent with a materially different abstention set.
+
+---
+
+## D-043 — Pages Router route-tree conflicts are error diagnostics
+
+**Decision:** Shrike mirrors Next.js's Pages Router `sorted-routes` tree and
+reports only the shapes a real `next build` rejects, as error diagnostics rather
+than findings. Sibling dynamic-name conflicts and repeated slug names reuse
+`dynamic_segment_name_conflict`; required-plus-optional catch-alls, an optional
+catch-all sharing a position with a static page, non-final catch-alls, and
+optional non-catch-all segments use the new `pages_router_route_conflict`.
+
+**Alternatives considered:**
+
+- Report every pair of files that resolves to the same URL: rejected because
+  `pages/foo.tsx` with `pages/foo/index.tsx`, `pages/api/foo.ts` with
+  `pages/api/foo/index.ts`, `pages/[id].tsx` with `pages/[id]/index.tsx`, and
+  `pages/foo.tsx` with `pages/foo.js` all build successfully in Next.js 16.4.6.
+  Next.js silently chooses one file; claiming a build failure would be false.
+- Reuse `route_collision` for every Pages Router failure: rejected because the
+  catch-all and specificity errors are not same-URL leaf collisions, and the
+  existing `route_collision` message would misdescribe them.
+- Add a Pages-specific code for name conflicts too: rejected because the
+  failure and the remediation are identical to the App Router
+  `dynamic_segment_name_conflict`, so one code keeps the CLI and docs coherent.
+- Merge `pages` and `src/pages` into one namespace: rejected because a package
+  with both roots builds successfully; Next.js uses one root per package.
+- Treat API routes or reserved pages as non-participants: rejected because
+  `pages/api/[id].ts` with `pages/api/[slug].ts` fails, while root `_app`,
+  `_document`, and `_error` are not sorted routes.
+
+**Why:** fallow 3.45.0's `route_collision` and
+`dynamic_segment_name_conflict` cover the App Router only, and knip 5.88.1 has
+no route-tree check. Real `next build` probes on Next.js 16.4.6 at
+`/tmp/opencode/next-pages-conflict-probe` (`results.txt` and `results-2.txt`)
+confirm each failure and each deliberate non-failure. The failures come from
+`dist/shared/lib/router/utils/sorted-routes.js`.
+
+**Consequences:**
+
+- `PagesRouterPage` retains the route segments and page root; the graph builds a
+  per-package route tree keyed by `(package, root, canonical position)`.
+- The checks honor `pageExtensions`, include API routes, exclude root-reserved
+  pages, and require the owning package to declare `next`.
+- The CLI groups `pages_router_route_conflict` under the `routing` category.
+- `ANALYSIS_VERSION` is bumped to 79.
+- Graph tests pin the failures, the non-failures, the per-package gate, and the
+  `pages`/`src/pages` separation; the `next-pages-router-route-conflict` corpus
+  case keeps both page defaults protected and still reports a dead helper.
+
+**Revisit if:** Next.js starts failing on a shape the probes currently accept,
+or stops sorting Pages Router routes through `sorted-routes`.
+
+---
+
+## D-044 — Unused TypeScript namespace members are advisory warnings
+
+**Decision:** Report an exported member of a live, exported top-level TypeScript
+namespace that no project reference reads as an `unused_namespace_member`
+warning. Never emit it as a deletion candidate: removing a member changes the
+namespace contract, and Shrike's batch deletion model only removes whole
+symbols. The parser abstains on local namespaces, declaration files,
+`declare global`, and `declare module "..."`. Merged declarations union their
+members, and a dotted `export namespace A.B {}` records `B` as a member of `A`
+with dotted descendant paths. A nested namespace that is unused is reported
+alone and its descendants are suppressed.
+
+**Alternatives considered:**
+
+- Emit a deletion candidate: rejected because a namespace member is not a
+  whole symbol and removing it can break a public contract or a merged
+  declaration. The warning names the owner and member for manual review.
+- Report members of local namespaces exposed by `export { Ns }`: rejected
+  because exporting the namespace object makes every member part of the
+  module surface, so no member is individually dead.
+- Report members of dead namespaces: rejected because the namespace itself is
+  already one deletion candidate; per-member findings would duplicate it.
+- Treat a bare type reference (`: Color`) as a whole-namespace use: rejected
+  because the type position does not read the runtime object or expose its
+  members. Qualified type names still credit their paths, and `typeof Ns`
+  credits the whole object.
+- Follow a strict "only explicit member reads count" policy: rejected because
+  aliases, namespace imports, `import x = Ns.member`, destructuring, computed
+  access, inline import types, and unqualified body references can all reach a
+  member through a path a simple member-expression walk would miss.
+  Over-crediting can hide a finding; it can never invent one.
+- Skip ambient namespaces in `.ts` files: rejected because an exported
+  `declare namespace` in a `.ts` file is program-visible, yet fallow still
+  checks its exported type members. It is an entry, but not a public package
+  surface, so its members remain reviewable.
+
+**Why:** fallow 3.45.0 detects unused namespace members by default; knip 5.88.1
+has no equivalent. Shrike previously treated the whole namespace as one
+symbol, so a live namespace with dead members produced no warning. On fallow's
+`tests/fixtures/unused-namespace-members` fixture Shrike reports the same ten
+findings as fallow (`Color.unusedColorHelper`, `Legacy.unusedFn`,
+`Legacy.unusedValue`, `Merged.unusedHelper`, `Outer.Inner.unusedDeep`,
+`Outer.UnusedNested`, `Typed.UnusedShape`, `make.unusedDefaults`,
+`Api.Types.UnusedResponse`, and `Dotted.Inner.unusedDotted`), plus
+`Api.suppressed`, which fallow hides with a `fallow-ignore-next-line` comment
+that Shrike does not yet support.
+
+**Consequences:**
+
+- `FileSummary.namespaces` records each namespace's exported members with
+  dotted paths and spans; `namespace_member_uses` records dotted reads,
+  whole-object uses (`path: "*"`), and inline import types
+  (`object: import("source")`).
+- The parser records unqualified references inside a namespace body against
+  the root so `Body.entry()` credits the `helper` it reads, and it records only
+  the outermost member chain for `Outer.Inner.deep`.
+- The graph resolves namespace imports, local and re-export aliases,
+  `export * as ns`, literal dynamic imports, and public package re-exports. A
+  namespace re-exported from a public entry is skipped as public surface.
+- `ANALYSIS_VERSION` is bumped to 80.
+- The CLI groups the code under the `types` diagnostic category.
+- The `unused-namespace-member-1` corpus case covers whole-object uses,
+  spreads, computed access, destructuring, `import =`, `typeof`, inline import
+  types, merged declarations, body references, dotted declarations, and the
+  local/ambient controls.
+
+**Revisit if:** Shrike adds ignore-comment support, gains a cross-file type
+resolver, or TypeScript changes how namespace members are emitted.
+
+---
+
+## D-045 — React.lazy and next/dynamic inline loaders credit only `default`
+
+**Decision:** When an inline loader callback passed to an unshadowed
+`React.lazy` or `next/dynamic` call directly returns `import("./Widget")`,
+credit only the loaded module's `default` export. The rule covers React's
+named `lazy` import (including aliases), React's default or namespace import
+used as `.lazy`, and `next/dynamic`'s default import. It accepts an expression
+body, a block body, `await`, TypeScript wrappers, conditional and logical
+branches, and returns from nested blocks. It does not descend into nested
+functions. The callback must return the import itself; a callback that passes
+the namespace to another call keeps the widening record, and a `.then(...)`
+callback keeps the named credit already recorded by the `.then` collector.
+The pass abstains on local wrappers, local lookalikes, shadowed loader
+bindings, type-only imports, imports from other modules, and TypeScript
+namespace bodies. Local loader functions passed by identifier are narrowed
+under D-046.
+
+**Alternatives considered:**
+
+- Keep the whole namespace live: rejected because `React.lazy` and
+  `next/dynamic` only read `default`, so every named export in a lazily loaded
+  component module was a false negative.
+- Treat any callable wrapper as a loader: rejected because an unknown wrapper
+  can consume named exports or return the namespace to arbitrary code.
+- Trust the callee name without import provenance: rejected because local
+  `lazy` helpers, `@loadable/component`, and shadowing parameters have no
+  React/Next contract.
+- Narrow by identifier for local loader functions in the first change:
+  deferred because it needs whole-module reference accounting; the inline form
+  is the common React/Next shape and the safe subset. Implemented later as
+  D-046.
+- Report a diagnostic when the loader returns a named export: rejected because
+  the `.then` form is valid and already narrows precisely.
+
+**Why:** fallow 3.45.0's `record_arrow_wrapped_dynamic_import` credits only
+`default` for these loaders and its extractor tests pin aliases, namespace
+imports, shadowing, type-only imports, and extra arguments. Knip 5.88.1
+reports no unused exports for the same probe. Before this change Shrike
+reported zero candidates for `unusedLazyNamed` and `unusedDynamicNamed` in
+`/tmp/opencode/react-lazy-probe`; after the change both are candidates while
+the lazy defaults and the `.then`-selected `NamedView` stay live.
+
+**Consequences:**
+
+- `FileSummary.dynamic` records from a proven loader carry
+  `imported: ["default"]`; no new diagnostic or CLI category is added because
+  the rule changes liveness, not reporting.
+- The parser post-pass tracks lexical scopes, function and block declarations,
+  catch parameters, loop bindings, class static blocks, and TypeScript
+  namespaces so a shadowed loader name cannot narrow.
+- The `react-component-loader-1` corpus case covers React default, namespace,
+  and aliased named imports, `next/dynamic`, a `.then` default wrapper, an
+  unknown local wrapper, and a shadowed loader parameter.
+- `ANALYSIS_VERSION` is bumped to 81.
+
+**Revisit if:** Shrike supports `@loadable/component` or Vue's
+`defineAsyncComponent` as first-class loaders, or React/Next changes the loader
+contract.
+
+---
+
+## D-046 — Local component-loader functions narrow only when every reference is a loader argument
+
+**Decision:** A top-level `const` arrow or function expression, or a function
+declaration, whose body directly returns one or more static `import()`
+expressions is a local component loader. When at least one unshadowed reference
+to the binding is the first argument of a proven `React.lazy` or
+`next/dynamic` call, and every other unshadowed reference is another such
+argument, credit only each loaded module's `default` export. Exporting the
+loader, declaring it with `let` or `var`, using a computed import specifier, or
+referencing it anywhere else keeps every export live. A shadowed reference does
+not count toward the reference total, and the binding is not registered when a
+same-name declaration already exists at module scope.
+
+**Alternatives considered:**
+
+- Narrow any top-level function with a returned `import()`: rejected because a
+  function can also be called directly, passed to an unknown wrapper, or
+  exported; only exclusive use as a loader argument proves the React/Next
+  contract.
+- Narrow when the loader has at least one loader call, ignoring extra uses:
+  rejected because the extra use can read named exports or return the
+  namespace, as the `/tmp/opencode/react-local-loader-probe` `otherUse` control
+  shows.
+- Track only the loader binding declaration: rejected because exported and
+  reassignable bindings escape the module, and a `let`/`var` loader can be
+  replaced before the loader call runs.
+- Descend into nested functions to collect returned imports: rejected for the
+  same reason as D-045; their `return` statements belong to them.
+
+**Why:** fallow 3.45.0's
+`crates/extract/src/visitor/visit_impl_dynamic_imports.rs` resolves a local
+loader function passed by identifier and its tests pin local, exported,
+reassignable, other-use, and unreferenced cases. On
+`/tmp/opencode/react-local-loader-probe`, Shrike after the change reports
+exactly `app/page.tsx#otherUse`, `src/LocalDynamic.tsx#unusedLocalDynamicNamed`,
+`src/LocalLazy.tsx#unusedLocalLazyNamed`, and
+`src/LocalLazy.tsx#NamedLocalLazy`; the shared loader with a `.then` use keeps
+`src/Shared.tsx` entirely live. Knip 5.88.1 reports only the unused `react-dom`
+dependency on the same probe.
+
+**Consequences:**
+
+- The parser post-pass records every unshadowed identifier reference to a
+  registered local loader and every reference credited as a loader argument.
+  Narrowing requires `credited > 0` and `references - credited == 0`.
+- The loader body accepts direct returns, `await`, TypeScript wrappers,
+  conditional and logical branches, sequence expressions, and returns from
+  nested blocks, switch cases, `try`/`catch`/`finally`, labels, and loops.
+  Function declarations, arrows, and function expressions are supported; the
+  import source must be a string literal or an expressionless template literal.
+- `FileSummary.dynamic` records from a narrowed local loader carry
+  `imported: ["default"]`; no new diagnostic or CLI category is added.
+- The `react-component-loader-1` corpus case covers local lazy and dynamic
+  loaders plus exported, reassignable, and shared-use controls; the parser
+  tests cover non-static and shadowed-reference cases.
+- `ANALYSIS_VERSION` is bumped to 82.
+
+**Revisit if:** React/Next starts passing named exports to a loader, Shrike adds
+cross-module loader tracking, or a loader reference can be proven safe through
+an alias or wrapper.
+
+---
+
+## D-047 — Absent optional React props are advisory warnings
+
+**Decision:** Report an optional prop that a live local React component reads but
+no statically known JSX render site supplies as an `absent_component_prop`
+warning. Never emit it as a deletion candidate: removing the prop or adding a
+call-site value changes the component contract, and the default may be
+intentional. The parser records a contract for every top-level uppercase
+function or `const` component that returns JSX, including exported components,
+with each prop's optionality (a destructuring default or `?` on a same-file
+object type member), read status, and default flag. The graph resolves JSX tags
+through local bindings, imports, re-export aliases, and barrels, and warns only
+when at least one site resolves to the component and every resolved site omits
+the prop. The rule abstains when the component value escapes (same-file or
+cross-file `memo(Card)`, a registry, `const Alias = Card`), when a namespace
+import is rendered as `<UI.Card />` or escapes as a value (`{ ...UI }`,
+`const { Card } = UI`), when a runtime-reachable dynamic import targets the
+component's module, when any site spreads props or uses a namespaced attribute,
+when the component is dead, entry, public API, or generated, and when there is
+no known render site. A direct export is not an escape. Only props the component reads are reported, so an unread prop remains
+the `unused_component_prop` case. Gate the rule project-wide on a React runtime.
+
+**Alternatives considered:**
+
+- Treat a direct export as an escape: rejected because fallow 3.45.0 follows
+  exported components to their known callers, and an exported component in an
+  ordinary module still has a closed, resolvable set of in-project render
+  sites. Public API and entry surfaces are the shapes that actually open the
+  consumer set.
+- Treat "no known render site" as absence: rejected because an exported
+  component may be consumed outside the analyzed project, and a library
+  component legitimately has no in-repo caller.
+- Report unread optional props too: rejected because that duplicates
+  `unused_component_prop` and changes the question from "no caller supplies
+  this" to "the component declares but never reads this".
+- Skip props with defaults: rejected because fallow reports them with a
+  `has_default` flag and its tests pin the positive case; Shrike names the
+  default in the warning so the reviewer can decide whether omission is
+  intentional.
+- Emit a deletion candidate: rejected because a prop is not a symbol and the
+  edit is a contract change outside the batch deletion model.
+
+**Why:** fallow 3.45.0 implements `absent_component_props` in
+`crates/core/src/analyze/absent_component_prop.rs` and its integration tests
+cover the positive case, explicit supply, spread and namespace uncertainty,
+barrel aliases, public and entry surfaces, escapes, and dead modules. Shrike's
+existing parser only recorded local non-exported components for
+`unused_component_prop`, and the graph had no index of JSX consumers, so it
+missed this rule entirely.
+
+**Consequences:**
+
+- `FileSummary.component_contracts` records exported and local component
+  contracts; `jsx_uses` records simple JSX tags with supplied attribute names;
+  `jsx_namespace_uses` records member-expression roots; and
+  `component_value_uses` records non-JSX, non-direct-export value references.
+- The graph emits warnings after reachability and before candidate selection,
+  so a dead component stays one deletion candidate and no prop warning is
+  duplicated.
+- The CLI groups `absent_component_prop` under the `react` diagnostic category.
+- The `unused-component-prop-1` corpus case includes omitted optional props;
+  graph tests cover supplied, spread, namespace, escape, entry/public, dead,
+  typed, defaulted, unread, and barrel-alias controls.
+- `ANALYSIS_VERSION` is bumped to 84.
+
+**Revisit if:** Shrike gains a consumer graph for components rendered outside
+JSX (for example custom renderers), or fallow changes its escape and
+public-surface rules.
+
+**2026-11-22 follow-up:** a default export of a local component
+(`const Card = ...; export default Card;`) creates a `#default` symbol whose
+reference edge points at `#Card`. The absent-prop rule now checks the contract
+under both keys, so a default import that resolves to `#default` is compared
+with the same component and no longer produces a false negative. The
+competitor benchmark's `Folder` case on portfolio is the regression: Shrike now
+reports the same 14 absent props as fallow. `ANALYSIS_VERSION` is bumped to 85
+together with D-048 and D-049.
+
+---
+
+## D-048 — Returned dynamic imports narrow to the names their callers consume
+
+**Decision:** A top-level function declaration whose every return is a literal
+`import("./m")` of the same specifier is a local loader. When every call site in
+the same module either destructures the awaited result, reads static members of
+the awaited result, or discards it, the import consumes only those names (or no
+names for a discard). A bare or opaque call, a computed member read, a
+non-awaited call, a `.then`/`.catch`/`.finally` on the returned namespace, an
+exported loader, a duplicate declaration, a shadowed loader name, or mixed
+returns keeps the whole namespace live. A bare `await import("./m");` or
+`import("./m");` expression statement is side-effect-only and consumes no
+exports; `void import("./m")` and other value uses still widen.
+
+**Alternatives considered:**
+
+- Narrow only when the loader is immediately awaited at every call site:
+  rejected because a caller can legitimately bind the promise or destructure
+  after an `await` in a later statement, and those shapes are statically
+  visible.
+- Treat a non-awaited call as consuming nothing: rejected because the caller
+  can pass the promise to arbitrary code, which may read any export.
+- Track arrow and function-expression loaders too: rejected because the same
+  binding shapes are already covered when they are component loaders
+  (D-045/D-046); a general expression loader needs alias and escape accounting
+  that the declaration-only rule avoids.
+- Descend into nested functions: rejected because their `return` statements
+  belong to them, not to the loader.
+
+**Why:** the benchmark found requo test helpers that do
+`return import("@/lib/env")` and `return import("@/lib/deployment")`, and
+accounteer helpers that do `return await import("@/lib/analytics/client")` and
+then destructure a few names. Treating each helper's return as an arbitrary
+namespace use kept every export of those modules live. Narrowing to the
+destructured names exposed genuine dead exports in accounteer's analytics client
+(`clientAnalyticsConfigured`, `currentConsentState`, the
+`CONSENT_REOPEN_EVENT` re-export) that knip and fallow also missed, while keeping
+the used names live. The same rule reduced false liveness for the deployment
+module's re-exported `DeploymentMode` and its internal-only billing types.
+
+**Consequences:**
+
+- `FileSummary.dynamic` records from a narrowed returned loader carry
+  `imported: [...]`; a discard carries `imported: []`. No new diagnostic or CLI
+  category is added because the rule changes liveness, not reporting.
+- The parser post-pass resolves identifier references against the summary's
+  free and member reference sets, so a use in a nested scope still blocks
+  narrowing. A binding declared more than once, or shadowed by a parameter,
+  local, import, catch binding, or nested declaration, abstains.
+- `narrows_dynamic_imports_returned_from_local_loaders` and
+  `narrows_side_effect_only_dynamic_imports` cover the positive and abstention
+  shapes; `abstains_when_a_loader_name_is_shadowed` covers shadowing and
+  duplicates.
+- `ANALYSIS_VERSION` is bumped to 85.
+
+**Revisit if:** Shrike adds cross-module loader tracking, or a returned loader
+can be proven safe through an alias or an exported wrapper.
+
+---
+
+## D-049 — Namespace bindings used only in property assertions narrow to the asserted names
+
+**Decision:** A literal dynamic-import binding whose only uses are
+`expect(ns).not.toHaveProperty("name")` or
+`expect(ns).toHaveProperty("name")` assertions and static member reads narrows
+to the positively asserted names plus the member-read names. A negative
+assertion credits nothing; a positive assertion credits each string-literal
+name. Any other reference to the binding (a bare use, a computed member, a
+different matcher, a non-literal name, or a call argument) keeps the whole
+namespace live.
+
+**Alternatives considered:**
+
+- Treat every `expect(ns)` use as an opaque namespace use: rejected because
+  `toHaveProperty` reads one property and `not.toHaveProperty` reads none; both
+  are statically visible and common in regression tests for removed actions.
+- Credit negative assertions: rejected because the assertion proves the export
+  is absent, not that it is used.
+- Credit every name in a positive assertion chain: rejected because a chain can
+  mix matchers and non-literal values; only the direct `toHaveProperty` names
+  are proven.
+
+**Why:** accounteer tests use negative property assertions on a dynamically
+imported module to pin that removed server actions stay absent
+(`expect(mod).not.toHaveProperty("setSideContextAction")`). A generic namespace
+use made every export of that module live, hiding genuinely dead exports and
+preventing the graph from reporting them. The assertion-only rule is the
+narrowest shape that proves which names the test reads.
+
+**Consequences:**
+
+- `narrow_assertion_bindings` runs after the dynamic-import pass and only
+  considers records that are still widening (`imported` is `None`) with a
+  literal specifier and a binding name.
+- `narrows_assertion_only_namespace_bindings` covers negative-only, positive
+  plus member-read, opaque matcher, and static member-read shapes.
+- `ANALYSIS_VERSION` is bumped to 85.
+
+**Revisit if:** a test framework adds another property-inspection matcher whose
+semantics are equally narrow, or Shrike starts tracking assertion libraries
+other than the Jest/Vitest `expect` shape.
+
+---
+
+## D-050 — CLI scan JSON is insertion-ordered; receipts stay canonical
+
+**Decision:** `writeJson` serializes command payloads with plain
+`JSON.stringify(value, null, 2)`. The scan payload is built in deterministic
+order, so output stays stable without rebuilding the object graph with sorted
+keys. Receipts, hashes, and on-disk artifacts continue to use canonical
+`stableStringify`.
+
+**Alternatives considered:**
+
+- Keep canonicalizing every scan payload: rejected because a 35 MB requo scan
+  pays a full recursive copy and sort before printing, and the memory cost is
+  visible in the CLI's peak RSS.
+- Add a `--no-canonical` flag: rejected because it splits the output contract
+  and makes reproducibility depend on the flag.
+- Change the receipt path too: rejected because receipt IDs are hashes over
+  canonical JSON and must not depend on insertion order.
+
+**Why:** the competitor benchmark's CPU profile put `stableStringify` and
+`normalizeValue` at the top of the CLI's self time on requo. Replacing it with
+`JSON.stringify` reduced peak RSS on the 1,673-file scan from 409 MB to 339 MB
+and left wall time roughly unchanged, showing that the dependency pass, not
+serialization, is the remaining CLI overhead. The scan payload is assembled
+from ordered arrays and maps, so its JSON is already stable.
+
+**Consequences:**
+
+- `packages/cli/src/output.ts` no longer imports `stableStringify`.
+- `packages/receipts` remains the canonical-JSON owner for receipts and
+  hashing.
+- No schema or output-shape change; only whitespace/key order in command JSON
+  could differ, and the builder's order is fixed.
+- No `ANALYSIS_VERSION` bump: this is an output-path change, not an analysis
+  change.
+
+**Revisit if:** a command payload becomes order-unstable, or a consumer needs
+canonical command JSON for hashing.
+
+---
+
+## D-051 — Large scans reuse the engine snapshot and run independent passes concurrently
+
+**Decision:** keep the existing Rust-engine/TypeScript-CLI split, but remove the
+per-scan work that does not contribute to analysis:
+
+- discovery compiles include/ignore globs once with `globset`, falling back to
+  the reference matcher for unsupported syntax, non-ASCII paths or patterns, and
+  semantic edge cases;
+- independent finish passes (member, component-prop, internal-only, and SCC)
+  run under `rayon::join` and append diagnostics in the original pass order;
+- the per-pass edge sort uses `par_sort_by` with the same total order, and the
+  reachability BFS uses hash sets instead of sorted-vector membership and does
+  not clone the entry list;
+- a repository with no enums skips enum-member analysis;
+- the analyze response carries a compact `dependencyInput` projection and the
+  already-serialized snapshot bytes, so the CLI does not decode and re-encode
+  the full snapshot;
+- the CLI imports only the command being run, loads `@shrike/verifier` only for
+  an executable config, writes snapshot bytes with `writeRawJson`, and
+  prefilters dependency candidates with literal substring checks plus shared
+  directory and alias caches.
+
+**Alternatives considered:**
+
+- Port the dependency pass or the CLI to Rust: rejected because it moves the
+  config-execution boundary and duplicates the resolver; the measured gap was
+  in data movement and startup, not in the dependency algorithm.
+- Cache the serialized CLI document: rejected because the dependency pass and
+  command options can change without changing the engine snapshot.
+- Run all finish passes in one flat parallel pool: rejected because
+  `rayon::join` keeps the pass boundaries and diagnostic order explicit.
+- Replace the stable edge sort with an unstable parallel sort: rejected because
+  tie order would become nondeterministic and the output is expected to stay
+  byte-identical; `par_sort_by` keeps the same total order.
+- Use `globset` unconditionally: rejected because the existing matcher has
+  edge-case semantics (trailing `/**`, non-ASCII `?`, unsupported glob syntax)
+  that must stay byte-identical; the fallback preserves them.
+
+**Why:** the earlier benchmark showed the CLI, not the engine, was the
+large-repository bottleneck: on requo the CLI added ~2.1 s over the warm engine,
+mostly decoding, canonicalizing, and re-encoding the 24 MB snapshot and running
+the dependency pass. The engine also paid for repeated glob matching and
+serial finish passes. The changes target those costs without touching an
+analysis rule.
+
+**Consequences:**
+
+- Requo (1,673 files), final paired interleaved medians: CLI 1.773 s cold /
+  0.910 s warm; engine 1.505 s cold / 0.417 s warm (isolated cold runs
+  1.12–1.16 s); fallow 1.979 s cold / 1.351 s warm. CLI peak RSS fell from
+  339 MB to 122 MB warm.
+- Accounteer (675 files): CLI 0.796 s cold / 0.493 s warm; engine 0.464 s cold
+  / 0.166 s warm; fallow 0.936 s cold / 0.773 s warm.
+- Across all five repositories the CLI beats fallow by 1.12–2.22× cold and
+  1.48–2.12× warm; the engine beats it by 1.32–16.4× cold and 3.24–30.5× warm.
+  The CLI is 8.5–12.5× faster than knip and 9.1–16.6× faster than depcheck
+  cold, and 10.8–16.0× faster than knip's cache warm.
+- Accuracy is unchanged: engine JSON is byte-identical to the pre-change binary
+  on all five benchmark repositories (requo SHA-256 `fca3d3c5…`), CLI parsed
+  JSON is identical on all five, and the corpus, differential, and fixture gates
+  pass.
+- `ANALYSIS_VERSION` is not bumped by the performance work; the dependency
+  projection is an additive response field, and the snapshot bytes are the same
+  snapshot.
+
+**Revisit if:** the dependency pass becomes the dominant cost again, a command
+needs the full snapshot for a non-dependency purpose, or discovery gains glob
+semantics that `globset` cannot reproduce.
+
+---
+
+## D-052 — Competitor claims use a paired, validated, multi-scope corpus
+
+**Decision:** keep the competitor benchmark as a repo-owned harness under
+`benchmarks/competitors/` and require every published performance claim to come
+from it. The protocol follows fallow's public suite (pinned real-world and
+synthetic projects, cold and warm caches, 2 warmups, 5 measured runs, medians,
+peak RSS, and finding-count validation) and adds:
+
+- paired/interleaved rounds with a rotating start order;
+- separate Shrike CLI and engine rows;
+- a 12-fixture corpus: five local Next.js apps, five pinned OSS repositories,
+  and 1k/5k synthetic projects;
+- invalid-run marking: an exit outside the tool's finding convention, or an
+  unparseable report, is excluded rather than timed as a result;
+- narrow-scope tools (depcheck, ts-prune, ts-unused-exports) reported separately
+  from full scans.
+
+**Alternatives considered:**
+
+- Copy fallow's corpus and tools only: rejected because it would not cover
+  Shrike's Next.js workload or the narrow-scope competitors users compare
+  against.
+- Rank every tool in one table: rejected because depcheck and the export-only
+  tools do less work; a combined ranking would misrepresent the comparison.
+- Report a single best run: rejected because cold/warm and machine load change
+  the result; medians over paired rounds are the claim.
+- Include failed competitor runs as timings: rejected because an error path is
+  not a scan. Fallow's suite already drops failed knip runs for the same reason.
+
+**Why:** the corpus has to be broad enough to catch both performance and
+correctness problems. The first full run found a UTF-8 char-boundary panic in
+Shrike's HTML module-script scanner on Vite, and knip exited with a config error
+on zod, query, and vite, whose config files import unbuilt workspace packages.
+A single-repository benchmark would have missed the first and silently reported
+the second as a slow run.
+
+**Consequences:** the 2026-11-23 run is recorded in
+[`benchmarks/competitor-2026-11-23.md`](../benchmarks/competitor-2026-11-23.md).
+The UTF-8 panic is fixed and covered by
+`handles_non_ascii_text_at_a_script_prefix_boundary`; Vite now scans instead of
+crashing. Knip configurations that fail to load are marked invalid and excluded
+from the full-scan comparison. RSS samples now start only after the child has
+called `exec` and verify the sampled PID's start time: a pre-exec fork of the
+harness, or a reused PID, could each produce a repeated, impossible 137 MB
+reading for fast-exiting tools, so those samples are rejected rather than
+reported.
+
+**Revisit if:** a competitor changes its report schema or cache semantics, the
+corpus stops fitting in a normal benchmark window, or a benchmark claim needs a
+workload the suite does not cover.
+
+---
+
 ## Open-decision resolutions (2026-11-20)
 
 The questions in `MASTER_PROMPT.md` §25 are resolved here with the reasoning
@@ -1564,6 +2415,21 @@ external app, credential, or participant.
 | D-035 | Root-only Next.js conventions require the app root | accepted |
 | D-036 | Next.js exports are scoped to the file type that reads them | accepted |
 | D-037 | Route handlers get route-level config, not page/layout cache config | accepted |
+| D-038 | Unused React component props are advisory warnings | accepted |
+| D-039 | Unused TypeScript enum members are advisory warnings | accepted |
+| D-040 | Unused class members are advisory warnings | accepted |
+| D-041 | Same-file typed React props and local wrappers are harvested | accepted |
+| D-042 | Unused Pages Router data keys are advisory warnings | accepted |
+| D-043 | Pages Router route-tree conflicts are error diagnostics | accepted |
+| D-044 | Unused TypeScript namespace members are advisory warnings | accepted |
+| D-045 | React.lazy and next/dynamic inline loaders credit only `default` | accepted |
+| D-046 | Local component-loader functions narrow only when every reference is a loader argument | accepted |
+| D-047 | Absent optional React props are advisory warnings | accepted |
+| D-048 | Returned dynamic imports narrow to the names their callers consume | accepted |
+| D-049 | Namespace bindings used only in property assertions narrow to the asserted names | accepted |
+| D-050 | CLI scan JSON is insertion-ordered; receipts stay canonical | accepted |
+| D-051 | Large scans reuse the engine snapshot and run independent passes concurrently | accepted |
+| D-052 | Competitor claims use a paired, validated, multi-scope corpus | accepted |
 
 ## Rejected ideas
 
