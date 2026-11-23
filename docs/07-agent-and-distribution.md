@@ -2,7 +2,7 @@
 
 > **Parent:** [MASTER_PROMPT.md](../MASTER_PROMPT.md) · **Tracker:** [TRACKER.md](../TRACKER.md)
 > **Status:** canonical · Authored 2026-11-20
-> **Implementation status (2026-11-23):** Claude Code, Cursor, and OpenCode hooks, the GitHub Action, the PR/receipt renderers, the four-tool read-only MCP server, the read-only [design-partner kit](../design-partner/README.md), and the npm release path are implemented. The hook runs fast-tier checks against a reused baseline inside its budget; the Action supports `fail-on: newly-dead`, resolves a project-local `getshrike` install, replaces/removes its delta artifact, and runs from a committed bundle. `getshrike@1.0.0` and the five native platform packages are published with SHA-256 sidecars, GitHub attestations, keyless Sigstore signing, and npm provenance. External delta and prune runs passed on `getshrike/shrike-action-test`, including a draft cleanup PR with a verified receipt. Landing tests, design-partner trials, and the independent audit remain blocked on participants.
+> **Implementation status (2026-11-23):** Claude Code, Cursor, and OpenCode hooks, the GitHub Action, the PR/receipt renderers, the four-tool read-only MCP server, the read-only [design-partner kit](../design-partner/README.md), and the npm release path are implemented. The hook runs fast-tier checks against a reused baseline inside its budget; the Action supports `fail-on: newly-dead`, resolves a project-local `getshrike` install, replaces/removes its delta artifact, and runs from a committed bundle. `getshrike@1.0.1` and the five native platform packages are published with SHA-256 sidecars, GitHub attestations, keyless Sigstore signing, and npm provenance. External delta and prune runs passed on `getshrike/shrike-action-test`, including a draft cleanup PR with a verified receipt. Landing tests, design-partner trials, and the independent audit remain blocked on participants.
 
 ---
 
@@ -403,6 +403,6 @@ These are measured in design-partner trials, not inferred from downloads.
       and both bins run a real scan.
 - [x] The launcher fails closed on a checksum mismatch or a missing platform
       package.
-- [ ] The release workflow completes on a `v1.0.0` tag and publishes the five
-      platform packages plus `getshrike` with provenance (release gate: npm
-      credentials and environment approval).
+- [x] The release workflow completes on a `v1.0.1` tag and publishes the five
+      platform packages plus `getshrike` with provenance (release run 45086196648;
+      the smoke job passed after registry propagation).
