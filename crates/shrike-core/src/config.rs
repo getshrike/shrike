@@ -185,6 +185,14 @@ impl EngineConfig {
     }
 }
 
+/// Return the parent directory of a `/`-separated path, or an empty string
+/// when the path has no parent. Purely lexical; never touches the filesystem.
+#[must_use]
+pub fn parent_dir(path: &str) -> String {
+    path.rsplit_once('/')
+        .map_or_else(String::new, |(dir, _)| dir.to_string())
+}
+
 /// Normalize a repository-relative path to `/` separators, remove `.` segments
 /// and resolve `..` lexically. The function never touches the filesystem.
 #[must_use]

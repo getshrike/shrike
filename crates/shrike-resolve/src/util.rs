@@ -1,5 +1,7 @@
 use std::path::{Component, Path};
 
+pub(crate) use shrike_core::parent_dir;
+
 pub(crate) fn split_package(specifier: &str) -> Option<(String, Option<String>)> {
     if specifier.starts_with('@') {
         let mut parts = specifier.splitn(3, '/');
@@ -27,10 +29,6 @@ pub(crate) fn match_alias(pattern: &str, specifier: &str) -> Option<String> {
     }
 }
 
-pub(crate) fn parent_dir(path: &str) -> String {
-    path.rsplit_once('/')
-        .map_or_else(String::new, |(dir, _)| dir.to_string())
-}
 /// Normalize a path without touching the filesystem, resolving `..` lexically.
 #[must_use]
 pub fn normalize_path(path: &Path) -> String {

@@ -8,9 +8,15 @@ use shrike_core::{
 
 use crate::payloads::{CacheManifest, ManifestEntry};
 
-// Bump whenever graph construction, entry detection, edge resolution, or
-// reachability semantics change. The tool version alone is not enough: a local
-// rebuild at the same version must not reuse snapshots built by older logic.
+// Cache-layout / analysis version. Bump it in the same change that alters any
+// of: graph construction, entry detection (new/changed framework rules),
+// module or import resolution, edge attribution, reachability/liveness,
+// candidate classification, or serialized diagnostics. Pure refactors, docs,
+// and host-only changes must NOT bump it. The tool version alone is not
+// enough: a local rebuild at the same version must not reuse snapshots built
+// by older logic. After a bump, clear `.shrike/cache/` locally. Reviewers:
+// a changed graph-hash fixture without a version bump in the same PR is a
+// blocker (a manual checklist item, deliberately not a git-diff gate).
 const ANALYSIS_VERSION: &str = "85";
 
 pub(crate) fn load_manifest(path: &Path) -> CacheManifest {

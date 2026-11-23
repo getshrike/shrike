@@ -17,9 +17,10 @@
 //! alternation understood by `globset`.
 
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
-use oxc_ast::ast::{Expression, ObjectExpression, ObjectPropertyKind, PropertyKey};
+use oxc_ast::ast::{Expression, ObjectExpression};
 use oxc_ast_visit::{Visit, walk};
-use oxc_span::SourceType;
+
+use super::{anchor_pattern, find_property, source_type, string_value, unwrap, with_config_ast};
 
 /// Storybook applies this glob to a `{ directory }` specifier without `files`.
 const DEFAULT_SPECIFIER_FILES: &str = "**/*.@(mdx|stories.@(mdx|js|jsx|mjs|ts|tsx))";
@@ -44,27 +45,25 @@ pub(crate) fn is_config_path(path: &str) -> bool {
 /// root. Patterns that are absolute, negated, or computed are skipped.
 #[must_use]
 pub(crate) fn story_patterns(config_path: &str, source: &str) -> Vec<String> {
-    let Some(source_type) = source_type(config_path) else {
+    let Some(kind) = source_type(config_path) else {
         return Vec::new();
     };
-    let allocator = oxc_allocator::Allocator::default();
-    let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
-    if !parsed.errors.is_empty() {
-        return Vec::new();
-    }
-    let mut stories = Stories::default();
-    stories.visit_program(&parsed.program);
     let directory = config_path
         .rsplit_once('/')
         .map_or("", |(directory, _)| directory);
-    let mut patterns: Vec<String> = stories
-        .patterns
-        .iter()
-        .filter_map(|pattern| anchor(directory, pattern))
-        .collect();
-    patterns.sort();
-    patterns.dedup();
-    patterns
+    with_config_ast(kind, source, |program| {
+        let mut stories = Stories::default();
+        stories.visit_program(program);
+        let mut patterns: Vec<String> = stories
+            .patterns
+            .iter()
+            .filter_map(|pattern| anchor_pattern(directory, pattern))
+            .collect();
+        patterns.sort();
+        patterns.dedup();
+        patterns
+    })
+    .unwrap_or_default()
 }
 
 /// Compile story patterns into one matcher. `None` means no usable pattern.
@@ -86,14 +85,6 @@ pub(crate) fn matcher(patterns: &[String]) -> Option<GlobSet> {
         builder.add(glob);
     }
     builder.build().ok()
-}
-
-fn source_type(path: &str) -> Option<SourceType> {
-    if path.ends_with(".mts") || path.ends_with(".cts") {
-        Some(SourceType::ts().with_module(true))
-    } else {
-        SourceType::from_path(path).ok()
-    }
 }
 
 #[derive(Default)]
@@ -143,81 +134,6 @@ fn collect_stories(expression: &Expression<'_>, patterns: &mut Vec<String>, dept
         }
         _ => {}
     }
-}
-
-fn string_value(expression: &Expression<'_>) -> Option<String> {
-    match unwrap(expression) {
-        Expression::StringLiteral(literal) => Some(literal.value.to_string()),
-        Expression::TemplateLiteral(template) if template.expressions.is_empty() => template
-            .quasis
-            .first()
-            .and_then(|quasi| quasi.value.cooked.as_ref())
-            .map(ToString::to_string),
-        _ => None,
-    }
-}
-
-fn unwrap<'a>(expression: &'a Expression<'a>) -> &'a Expression<'a> {
-    match expression {
-        Expression::ParenthesizedExpression(inner) => unwrap(&inner.expression),
-        Expression::TSAsExpression(inner) => unwrap(&inner.expression),
-        Expression::TSSatisfiesExpression(inner) => unwrap(&inner.expression),
-        Expression::TSNonNullExpression(inner) => unwrap(&inner.expression),
-        _ => expression,
-    }
-}
-
-fn find_property<'a>(object: &'a ObjectExpression<'a>, name: &str) -> Option<&'a Expression<'a>> {
-    object.properties.iter().find_map(|property| {
-        let ObjectPropertyKind::ObjectProperty(property) = property else {
-            return None;
-        };
-        if property.computed {
-            return None;
-        }
-        let matches = match &property.key {
-            PropertyKey::StaticIdentifier(identifier) => identifier.name == name,
-            PropertyKey::StringLiteral(literal) => literal.value == name,
-            _ => false,
-        };
-        matches.then_some(&property.value)
-    })
-}
-
-/// Anchor one Storybook pattern at the main-config directory. Absolute,
-/// negated, and empty patterns are not entries.
-fn anchor(directory: &str, pattern: &str) -> Option<String> {
-    let pattern = pattern.trim();
-    if pattern.is_empty() || pattern.starts_with('/') || pattern.starts_with('!') {
-        return None;
-    }
-    let joined = if directory.is_empty() {
-        pattern.to_string()
-    } else {
-        format!("{directory}/{pattern}")
-    };
-    let normalized = normalize(&joined);
-    (!normalized.is_empty()).then_some(normalized)
-}
-
-/// Collapse `.`/`..` segments lexically. Leading `..` segments are kept; they
-/// name a path outside the repository and match nothing.
-fn normalize(path: &str) -> String {
-    let mut parts: Vec<&str> = Vec::new();
-    for part in path.split('/') {
-        match part {
-            "" | "." => {}
-            ".." => {
-                if parts.last().is_some_and(|last| *last != "..") {
-                    parts.pop();
-                } else {
-                    parts.push("..");
-                }
-            }
-            part => parts.push(part),
-        }
-    }
-    parts.join("/")
 }
 
 /// Rewrite extglob alternation to brace alternation. Storybook globs commonly
@@ -387,17 +303,17 @@ mod tests {
     #[test]
     fn anchors_patterns_at_the_config_directory() {
         assert_eq!(
-            anchor(".storybook", "../src/**/*.demo.tsx").as_deref(),
+            anchor_pattern(".storybook", "../src/**/*.demo.tsx").as_deref(),
             Some("src/**/*.demo.tsx")
         );
         assert_eq!(
-            anchor("apps/web/.storybook", "./stories/**/*.tsx").as_deref(),
+            anchor_pattern("apps/web/.storybook", "./stories/**/*.tsx").as_deref(),
             Some("apps/web/.storybook/stories/**/*.tsx")
         );
-        assert_eq!(anchor(".storybook", "/tmp/stories/**/*.tsx"), None);
-        assert_eq!(anchor(".storybook", "!../src/**/*.tsx"), None);
+        assert_eq!(anchor_pattern(".storybook", "/tmp/stories/**/*.tsx"), None);
+        assert_eq!(anchor_pattern(".storybook", "!../src/**/*.tsx"), None);
         assert_eq!(
-            anchor(".storybook", "../../outside/**/*.tsx").as_deref(),
+            anchor_pattern(".storybook", "../../outside/**/*.tsx").as_deref(),
             Some("../outside/**/*.tsx")
         );
     }

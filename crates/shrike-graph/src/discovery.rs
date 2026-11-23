@@ -8,7 +8,7 @@ use shrike_core::{EngineConfig, content_hash};
 use shrike_syntax::{FileSummary, parse_source};
 
 use crate::build_snapshot;
-use crate::next_config;
+use crate::config::next;
 use crate::types::GraphSnapshot;
 
 /// App Router files whose stem is significant. Next.js only treats these
@@ -231,7 +231,7 @@ pub fn discover(root: &Path, config: &EngineConfig) -> Discovery {
         if filter.ignored(&relative) {
             continue;
         }
-        if next_config::is_config_path(&relative) {
+        if next::is_config_path(&relative) {
             next_configs.push(relative.clone());
         }
         // Cosmos config is JSON and is not parsed as a module, but it decides
@@ -265,7 +265,7 @@ pub fn discover(root: &Path, config: &EngineConfig) -> Discovery {
             let Ok(source) = fs::read_to_string(root.join(config_path)) else {
                 continue;
             };
-            let extensions = next_config::page_extensions(&source);
+            let extensions = next::page_extensions(&source);
             if !extensions.contains("md") && !extensions.contains("mdx") {
                 continue;
             }

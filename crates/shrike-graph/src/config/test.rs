@@ -84,7 +84,7 @@ fn resolve_candidate(
     // Vitest, even when the config lives in `config/`. Try the config directory
     // first (the common case), then the repository root.
     for candidate in [relative_to_config, literal.to_string()] {
-        if let Some(normalized) = normalize(&candidate) {
+        if let Some(normalized) = normalize_test_path(&candidate) {
             if analyzed.contains(normalized.as_str()) {
                 return Some(normalized);
             }
@@ -93,7 +93,11 @@ fn resolve_candidate(
     None
 }
 
-fn normalize(path: &str) -> Option<String> {
+/// Normalize a test-config path. This intentionally differs from
+/// `shrike_core::normalize_relative`: a `..` that escapes the repository root
+/// invalidates the candidate (`None`) instead of being kept as a leading
+/// `../` segment, because test setup files must live inside the repo.
+fn normalize_test_path(path: &str) -> Option<String> {
     let mut parts: Vec<&str> = Vec::new();
     let normalized = path.replace('\\', "/");
     for part in normalized.split('/') {

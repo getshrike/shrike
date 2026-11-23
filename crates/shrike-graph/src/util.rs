@@ -1,5 +1,6 @@
 use rayon::prelude::*;
 use serde::Serialize;
+pub(crate) use shrike_core::parent_dir;
 use shrike_syntax::DeclarationKind;
 
 use crate::types::{EdgeRecord, GraphSnapshot};
@@ -33,11 +34,6 @@ pub(crate) fn declaration_kind(kind: DeclarationKind) -> &'static str {
         DeclarationKind::Namespace => "namespace",
         DeclarationKind::Default => "default",
     }
-}
-
-pub(crate) fn parent_dir(path: &str) -> String {
-    path.rsplit_once('/')
-        .map_or_else(String::new, |(dir, _)| dir.to_string())
 }
 
 pub(crate) fn route_of(path: &str) -> Option<String> {

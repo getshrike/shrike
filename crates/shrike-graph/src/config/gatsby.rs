@@ -17,10 +17,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use oxc_ast::ast::{
     BindingPatternKind, CallExpression, Expression, ImportDeclaration, ImportDeclarationSpecifier,
-    ObjectExpression, ObjectPropertyKind, PropertyKey, VariableDeclarator,
+    PropertyKey, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::SourceType;
+
+use super::{find_property, unwrap, with_config_ast};
 
 /// Static page-template references found in a Gatsby node file.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -49,32 +51,28 @@ pub(crate) fn is_node_path(path: &str) -> bool {
 /// Read the page components registered by `createPage` calls.
 #[must_use]
 pub(crate) fn template_references(path: &str, source: &str) -> TemplateScan {
-    let Some(source_type) = SourceType::from_path(path).ok() else {
-        return TemplateScan {
-            specifiers: Vec::new(),
-            dynamic: true,
-        };
+    // A node file Shrike cannot parse may contain any registration. Fail
+    // closed toward the conventional template directory.
+    let fail_closed = || TemplateScan {
+        specifiers: Vec::new(),
+        dynamic: true,
     };
-    let allocator = oxc_allocator::Allocator::default();
-    let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
-    if !parsed.errors.is_empty() {
-        // A node file Shrike cannot parse may contain any registration. Fail
-        // closed toward the conventional template directory.
-        return TemplateScan {
-            specifiers: Vec::new(),
-            dynamic: true,
-        };
-    }
-    let mut bindings = Bindings::default();
-    bindings.visit_program(&parsed.program);
-    let mut visitor = PageVisitor {
-        bindings: &bindings,
-        scan: TemplateScan::default(),
+    let Some(kind) = SourceType::from_path(path).ok() else {
+        return fail_closed();
     };
-    visitor.visit_program(&parsed.program);
-    visitor.scan.specifiers.sort();
-    visitor.scan.specifiers.dedup();
-    visitor.scan
+    with_config_ast(kind, source, |program| {
+        let mut bindings = Bindings::default();
+        bindings.visit_program(program);
+        let mut visitor = PageVisitor {
+            bindings: &bindings,
+            scan: TemplateScan::default(),
+        };
+        visitor.visit_program(program);
+        visitor.scan.specifiers.sort();
+        visitor.scan.specifiers.dedup();
+        visitor.scan
+    })
+    .unwrap_or_else(fail_closed)
 }
 
 #[derive(Clone, Debug)]
@@ -178,7 +176,7 @@ impl<'a> Visit<'a> for PageVisitor<'_> {
                 .arguments
                 .first()
                 .and_then(|argument| argument.as_expression())
-                .and_then(|expression| match unwrap_expression(expression) {
+                .and_then(|expression| match unwrap(expression) {
                     Expression::ObjectExpression(object) => find_property(object, "component"),
                     _ => None,
                 });
@@ -210,7 +208,7 @@ fn collect_components(
     expression: &Expression<'_>,
     components: &mut Vec<String>,
 ) -> bool {
-    match unwrap_expression(expression) {
+    match unwrap(expression) {
         Expression::ConditionalExpression(conditional) => {
             let consequent = collect_components(bindings, &conditional.consequent, components);
             let alternate = collect_components(bindings, &conditional.alternate, components);
@@ -254,7 +252,7 @@ fn eval_binding(bindings: &Bindings, expression: &Expression<'_>) -> Option<Bind
     if let Some(path) = eval_path(bindings, expression) {
         return Some(Binding::Path(path));
     }
-    let Expression::CallExpression(call) = unwrap_expression(expression) else {
+    let Expression::CallExpression(call) = unwrap(expression) else {
         return None;
     };
     require_source(call).map(|source| Binding::Module(source.to_string()))
@@ -287,7 +285,7 @@ fn require_source<'a>(call: &'a CallExpression<'a>) -> Option<&'a str> {
 }
 
 fn is_path_require(expression: &Expression<'_>) -> bool {
-    let Expression::CallExpression(call) = unwrap_expression(expression) else {
+    let Expression::CallExpression(call) = unwrap(expression) else {
         return false;
     };
     let Expression::Identifier(callee) = &call.callee else {
@@ -309,7 +307,7 @@ fn is_path_require(expression: &Expression<'_>) -> bool {
 }
 
 fn eval_path(bindings: &Bindings, expression: &Expression<'_>) -> Option<String> {
-    match unwrap_expression(expression) {
+    match unwrap(expression) {
         Expression::StringLiteral(literal) => {
             let value = literal.value.as_str();
             (!value.starts_with('/')).then(|| value.to_string())
@@ -368,33 +366,6 @@ fn eval_path_call(bindings: &Bindings, call: &CallExpression<'_>) -> Option<Stri
         parts.push(eval_path(bindings, argument.as_expression()?)?);
     }
     Some(join(&parts))
-}
-
-fn unwrap_expression<'a>(expression: &'a Expression<'a>) -> &'a Expression<'a> {
-    match expression {
-        Expression::ParenthesizedExpression(inner) => unwrap_expression(&inner.expression),
-        Expression::TSAsExpression(inner) => unwrap_expression(&inner.expression),
-        Expression::TSSatisfiesExpression(inner) => unwrap_expression(&inner.expression),
-        Expression::TSNonNullExpression(inner) => unwrap_expression(&inner.expression),
-        _ => expression,
-    }
-}
-
-fn find_property<'a>(object: &'a ObjectExpression<'a>, name: &str) -> Option<&'a Expression<'a>> {
-    object.properties.iter().find_map(|property| {
-        let ObjectPropertyKind::ObjectProperty(property) = property else {
-            return None;
-        };
-        if property.computed {
-            return None;
-        }
-        let matches = match &property.key {
-            PropertyKey::StaticIdentifier(identifier) => identifier.name == name,
-            PropertyKey::StringLiteral(literal) => literal.value == name,
-            _ => false,
-        };
-        matches.then_some(&property.value)
-    })
 }
 
 /// Join path parts and collapse `.`/`..` segments. Leading `..` segments are
