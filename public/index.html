@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shrike — Brand assets</title>
+<meta name="description" content="The Shrike identity: two strokes on one lean. The left runs whole; the right breaks at its midpoint. Ink and paper, built to invert.">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#0A0A0A">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Shrike — Brand assets">
+<meta property="og:description" content="Two strokes on one lean. The left runs whole; the right breaks at its midpoint.">
+<meta property="og:image" content="og-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+  :root {
+    --ink: #0A0A0A;
+    --paper: #F7F5EF;
+    --pad: clamp(1.25rem, 4vw, 3rem);
+    --wrap: 1180px;
+    color-scheme: light;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 1rem;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  img { max-width: 100%; height: auto; }
+  figure { margin: 0; }
+  a { color: inherit; }
+  section[id] { scroll-margin-top: 5.5rem; }
+  #top { scroll-margin-top: 0; }
+  ::selection { background: var(--ink); color: var(--paper); }
+  .dark ::selection { background: var(--paper); color: var(--ink); }
+  :focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+
+  .wrap { width: min(var(--wrap), calc(100% - var(--pad) * 2)); margin-inline: auto; }
+  .skip {
+    position: absolute; left: 1rem; top: -4rem; z-index: 100;
+    padding: .65rem 1rem; background: var(--paper); color: var(--ink); border: 1px solid var(--ink);
+  }
+  .skip:focus { top: 1rem; }
+
+  /* Header */
+  .site-head {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--paper); border-bottom: 1px solid var(--ink);
+  }
+  .site-head .wrap {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1.5rem; min-height: 4.5rem; padding-block: .5rem;
+  }
+  .brand { display: block; flex: 0 0 auto; }
+  .brand img { display: block; width: 9.25rem; }
+  .site-nav ul {
+    display: flex; flex-wrap: wrap; gap: .35rem 1.35rem;
+    margin: 0; padding: 0; list-style: none; font-size: .78rem; letter-spacing: .02em;
+  }
+  .site-nav a { text-decoration: none; padding-bottom: 2px; border-bottom: 1px solid transparent; }
+  .site-nav a:hover, .site-nav a:focus-visible { border-bottom-color: currentColor; }
+
+  /* Sections */
+  .section {
+    --bg: var(--paper); --fg: var(--ink);
+    background: var(--bg); color: var(--fg);
+    padding-block: clamp(4rem, 9vw, 8rem);
+    border-top: 1px solid var(--ink);
+  }
+  .dark {
+    --bg: var(--ink); --fg: var(--paper);
+    background: var(--bg); color: var(--fg); border-top-color: var(--paper);
+  }
+  .section-label {
+    display: flex; align-items: center; gap: .8rem;
+    margin-bottom: clamp(1.75rem, 4vw, 3rem);
+    font-size: .7rem; font-weight: 600; letter-spacing: .18em; text-transform: uppercase;
+  }
+  .section-label .num {
+    display: inline-grid; place-items: center; min-width: 2.35rem; height: 1.65rem;
+    padding-inline: .5rem; border: 1px solid currentColor; border-radius: 999px;
+    letter-spacing: .06em;
+  }
+  h1, h2, h3, p { margin-top: 0; }
+  h1 {
+    margin-bottom: 1.5rem; font-size: clamp(2.7rem, 7vw, 5.6rem); line-height: .92;
+    letter-spacing: -.055em; font-weight: 650; max-width: 11ch;
+  }
+  h2 {
+    margin-bottom: 1.5rem; font-size: clamp(2rem, 4.6vw, 3.8rem); line-height: .98;
+    letter-spacing: -.045em; font-weight: 650; max-width: 18ch;
+  }
+  h3 { margin-bottom: .45rem; font-size: 1.05rem; line-height: 1.3; letter-spacing: -.015em; font-weight: 650; }
+  p { max-width: 65ch; margin-bottom: 1rem; }
+  .lede { font-size: clamp(1.12rem, 1.9vw, 1.42rem); line-height: 1.48; letter-spacing: -.012em; max-width: 42ch; }
+  .small { font-size: .82rem; line-height: 1.55; }
+  .eyebrow { margin-bottom: 1rem; font-size: .7rem; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; }
+  .divider { border: 0; border-top: 1px solid currentColor; margin: 2rem 0; }
+
+  /* Hero */
+  .hero {
+    --bg: var(--ink); --fg: var(--paper);
+    position: relative; overflow: hidden;
+    padding-block: clamp(3rem, 7vw, 6.5rem) clamp(4rem, 9vw, 8rem);
+    background: var(--bg); color: var(--fg);
+  }
+  .hero-logo { display: block; width: min(760px, 100%); margin-bottom: clamp(2.5rem, 6vw, 4.5rem); }
+  .hero-copy { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: clamp(2rem, 6vw, 6rem); align-items: end; }
+  .hero p { max-width: 50ch; }
+  .hero-facts {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px;
+    margin: 0; background: var(--fg); border: 1px solid var(--fg);
+  }
+  .hero-facts div { background: var(--bg); padding: 1rem 1.1rem; }
+  .hero-facts dt { margin-bottom: .25rem; font-size: .64rem; letter-spacing: .16em; text-transform: uppercase; }
+  .hero-facts dd { margin: 0; font-size: .86rem; line-height: 1.4; }
+  .actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 2rem; }
+  .button {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 3rem;
+    padding: .65rem 1.15rem; border: 1px solid currentColor; color: inherit;
+    text-decoration: none; font-size: .8rem; font-weight: 600; letter-spacing: .02em; line-height: 1.2;
+  }
+  .button.solid { background: var(--fg); color: var(--bg); }
+  .button:hover { background: var(--fg); color: var(--bg); }
+  .button.solid:hover { background: transparent; color: var(--fg); }
+  .text-link { text-decoration: underline; text-underline-offset: .22em; text-decoration-thickness: 1px; }
+  .text-link:hover { text-decoration-thickness: 2px; }
+
+  /* Mark */
+  .split { display: grid; grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr); gap: clamp(2.25rem, 7vw, 7rem); align-items: center; }
+  .mark-stage {
+    display: grid; place-items: center; aspect-ratio: 1;
+    padding: clamp(1.5rem, 9vw, 5rem); border: 1px solid currentColor;
+  }
+  .mark-stage img { display: block; width: min(22rem, 100%); }
+  .principles {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px;
+    margin-top: clamp(2.5rem, 6vw, 4.5rem); background: currentColor; border: 1px solid currentColor;
+  }
+  .principles article { background: var(--bg); padding: clamp(1.15rem, 3vw, 1.75rem); }
+  .principles p { margin: 0; font-size: .86rem; line-height: 1.55; }
+  .spec {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 2rem 0 0; border-top: 1px solid currentColor;
+  }
+  .spec div {
+    display: flex; justify-content: space-between; gap: 1rem;
+    padding: .7rem 0; border-bottom: 1px solid currentColor; font-size: .82rem;
+  }
+  .spec div:nth-child(odd) { padding-right: 1.25rem; }
+  .spec div:nth-child(even) { padding-left: 1.25rem; border-left: 1px solid currentColor; }
+  .spec dt { opacity: 1; }
+  .spec dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* Logo variants */
+  .logo-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px; background: var(--ink); border: 1px solid var(--ink);
+  }
+  .logo-card {
+    display: flex; flex-direction: column; gap: 1.25rem; min-height: 19rem;
+    padding: clamp(1.25rem, 3vw, 2rem); background: var(--paper); color: var(--ink);
+  }
+  .logo-card.dark { background: var(--ink); color: var(--paper); }
+  .logo-card .stage { display: grid; flex: 1; place-items: center; min-height: 8rem; }
+  .logo-card .stage img { display: block; max-height: 8.5rem; width: auto; }
+  .logo-card .stage img.stacked { max-height: 13rem; }
+  .logo-card.dark .stage img { max-height: 9rem; }
+  .logo-card .meta {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
+    padding-top: .8rem; border-top: 1px solid currentColor; font-size: .74rem; line-height: 1.4;
+  }
+  .logo-card .meta strong { font-weight: 600; }
+  .logo-card .meta a { text-underline-offset: .2em; }
+
+  /* In use */
+  .use-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 1.25rem; margin-top: 2.5rem; }
+  .use-card {
+    border: 1px solid currentColor; padding: clamp(1.1rem, 2.5vw, 1.6rem);
+    display: flex; flex-direction: column; gap: 1rem;
+  }
+  .use-card.browser { grid-column: span 7; }
+  .use-card.identity { grid-column: span 5; }
+  .use-card.social { grid-column: span 12; }
+  .use-card .caption { display: flex; justify-content: space-between; gap: 1rem; margin: 0; font-size: .72rem; letter-spacing: .04em; }
+  .use-card .caption a { text-underline-offset: .2em; }
+  .browser { overflow: hidden; border: 1px solid currentColor; background: var(--paper); color: var(--ink); }
+  .browser-bar { display: flex; align-items: center; gap: .65rem; padding: .55rem .8rem; border-bottom: 1px solid currentColor; font-size: .72rem; }
+  .browser-bar img { width: 1rem; height: 1rem; }
+  .browser-bar .url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .browser-bar .dots { margin-left: auto; letter-spacing: .18em; }
+  .browser-body { display: grid; place-items: center; min-height: 10.5rem; padding: clamp(1.5rem, 4vw, 3rem); }
+  .browser-body img { width: min(18rem, 80%); }
+  .repo-row { display: flex; align-items: center; gap: 1.1rem; }
+  .avatar { flex: 0 0 auto; width: 4.25rem; height: 4.25rem; overflow: hidden; border: 1px solid currentColor; background: var(--ink); }
+  .avatar img { display: block; width: 100%; height: 100%; }
+  .repo-row .repo-name { margin: 0; font-size: .9rem; font-weight: 600; }
+  .repo-row .repo-note { margin: .15rem 0 0; font-size: .74rem; }
+  .repo-wordmark { display: block; width: 8.5rem; margin-top: 1.5rem; }
+  .icon-row { display: flex; align-items: flex-end; gap: 1rem; margin-top: auto; padding-top: 1.25rem; border-top: 1px solid currentColor; }
+  .icon-row img { width: 4rem; height: 4rem; border: 1px solid currentColor; }
+  .icon-row .small { margin: 0; }
+  .social img { display: block; width: 100%; border: 1px solid currentColor; }
+
+  /* Guidelines */
+  .guideline-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(2rem, 5vw, 4rem); align-items: start; }
+  .guideline-block { min-width: 0; }
+  .clearspace { position: relative; display: inline-grid; place-items: center; padding: 1.6rem; border: 1px dashed currentColor; }
+  .clearspace img { display: block; width: 11.25rem; height: 11.25rem; }
+  .clearspace::after {
+    content: "1X"; position: absolute; top: -.72rem; left: 1rem; padding: 0 .45rem;
+    background: var(--bg); font-size: .66rem; font-weight: 600; letter-spacing: .12em;
+  }
+  .clearspace-note { margin-top: 1.25rem; font-size: .8rem; max-width: 34ch; }
+  .sizes { display: flex; flex-wrap: wrap; align-items: flex-end; gap: clamp(1.5rem, 4vw, 2.75rem); padding: 2rem 1.6rem; border: 1px solid currentColor; }
+  .size-item { display: grid; justify-items: center; gap: .8rem; font-size: .68rem; letter-spacing: .05em; text-align: center; }
+  .size-item img { display: block; }
+  .colour-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid currentColor; }
+  .swatch { display: flex; flex-direction: column; justify-content: flex-end; gap: .25rem; min-height: 12rem; padding: 1.5rem; }
+  .swatch.ink { background: var(--ink); color: var(--paper); }
+  .swatch.paper { background: var(--paper); color: var(--ink); border-left: 1px solid currentColor; }
+  .swatch strong { font-size: 1.1rem; letter-spacing: -.02em; }
+  .swatch code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .8rem; }
+  .type-spec { display: grid; gap: 2rem; }
+  .type-spec img { display: block; width: min(21rem, 100%); }
+  .type-list {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0;
+    margin: 0; border-top: 1px solid currentColor; font-size: .8rem;
+  }
+  .type-list div { display: flex; justify-content: space-between; gap: 1rem; padding: .65rem 0; border-bottom: 1px solid currentColor; }
+  .type-list div:nth-child(odd) { padding-right: 1rem; }
+  .type-list div:nth-child(even) { padding-left: 1rem; border-left: 1px solid currentColor; }
+  .type-list dd { margin: 0; text-align: right; }
+  .do-strip {
+    display: flex; align-items: baseline; gap: .9rem;
+    margin-top: clamp(2.5rem, 6vw, 4rem); padding: 1.1rem 1.25rem;
+    border: 1px solid currentColor; font-size: .86rem;
+  }
+  .do-strip strong { flex: 0 0 auto; padding: .12rem .45rem; border: 1px solid currentColor; font-size: .64rem; letter-spacing: .14em; text-transform: uppercase; }
+  .rules { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin-top: 1.25rem; background: currentColor; border: 1px solid currentColor; }
+  .rule { background: var(--bg); padding: 1.1rem; }
+  .rule .demo { display: grid; place-items: center; height: 7.5rem; margin-bottom: 1rem; padding: .75rem; overflow: hidden; border-bottom: 1px solid currentColor; }
+  .rule .demo img { display: block; width: 6.25rem; }
+  .rule .demo.rotate img { transform: rotate(-12deg); }
+  .rule .demo.stretch img { transform: scaleX(1.45); }
+  .rule .demo.fade img { opacity: .32; }
+  .rule .demo.retype { font-family: Georgia, "Times New Roman", serif; font-style: italic; font-size: 2rem; letter-spacing: -.03em; }
+  .rule p { margin: 0; font-size: .74rem; line-height: 1.45; }
+  .rule .tag { display: block; margin-bottom: .35rem; font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; }
+  .a11y-note { margin-top: 2rem; font-size: .8rem; max-width: 72ch; }
+
+  /* Downloads */
+  .download-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(1.75rem, 4vw, 3.5rem); margin-top: 2.5rem; }
+  .download-grid h3 { margin-bottom: 1rem; font-size: .7rem; letter-spacing: .16em; text-transform: uppercase; }
+  .download-grid ul { margin: 0; padding: 0; list-style: none; font-size: .82rem; }
+  .download-grid li { border-top: 1px solid currentColor; }
+  .download-grid li:last-child { border-bottom: 1px solid currentColor; }
+  .download-grid a { display: flex; justify-content: space-between; gap: 1rem; padding: .6rem 0; text-decoration: none; }
+  .download-grid a span:last-child { flex: 0 0 auto; }
+  .download-grid a:hover { text-decoration: underline; text-underline-offset: .2em; }
+  .download-note { margin-top: 2rem; font-size: .8rem; }
+  .download-note code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
+
+  /* Footer */
+  .site-foot { background: var(--ink); color: var(--paper); padding-block: 3rem 2.5rem; border-top: 1px solid var(--paper); }
+  .foot-grid { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 2rem; }
+  .site-foot img { display: block; width: 8.5rem; margin-bottom: 1.1rem; }
+  .site-foot p { margin: 0; font-size: .78rem; max-width: 46ch; }
+  .foot-links { display: flex; flex-wrap: wrap; gap: 1.25rem; font-size: .76rem; }
+  .foot-links a { text-underline-offset: .2em; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .hero-copy { grid-template-columns: 1fr; align-items: start; }
+    .split { grid-template-columns: 1fr; }
+    .mark-stage { max-width: 30rem; }
+    .use-card.browser, .use-card.identity { grid-column: span 12; }
+    .guideline-grid { grid-template-columns: 1fr; }
+    .rules { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .download-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 720px) {
+    .site-head .wrap { flex-wrap: wrap; gap: .5rem; }
+    .site-nav { width: 100%; }
+    .site-nav ul { display: grid; grid-template-columns: repeat(5, max-content); gap: .25rem 1.15rem; padding-bottom: .15rem; font-size: .72rem; }
+    .site-nav a { white-space: nowrap; }
+    .logo-grid { grid-template-columns: 1fr; }
+    .principles { grid-template-columns: 1fr; }
+    .spec { grid-template-columns: 1fr; }
+    .spec div:nth-child(odd), .spec div:nth-child(even) { padding-inline: 0; border-left: 0; }
+    .type-list { grid-template-columns: 1fr; }
+    .type-list div:nth-child(odd), .type-list div:nth-child(even) { padding-inline: 0; border-left: 0; }
+    .download-grid { grid-template-columns: 1fr; }
+    .hero-facts { grid-template-columns: 1fr; }
+    .hero-logo { width: 100%; }
+  }
+  @media (max-width: 440px) {
+    .rules { grid-template-columns: 1fr; }
+    .colour-grid { grid-template-columns: 1fr; }
+    .swatch.paper { border-left: 0; border-top: 1px solid currentColor; }
+    .do-strip { align-items: flex-start; flex-direction: column; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    * { transition: none !important; }
+  }
+  @media print {
+    .site-head, .site-nav, .actions, .skip { display: none; }
+    .section, .hero, .site-foot { background: #fff; color: #000; border-color: #000; }
+    .dark { background: #fff; color: #000; }
+    .logo-card.dark { background: #fff; color: #000; }
+    .hero-logo, .site-foot img, .logo-card.dark img, .repo-wordmark { filter: invert(1); }
+    a { text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Shrike home">
+      <img src="shrike-logo.svg" alt="Shrike" width="880" height="300">
+    </a>
+    <nav class="site-nav" aria-label="Sections">
+      <ul>
+        <li><a href="#mark">The mark</a></li>
+        <li><a href="#logo">Logo</a></li>
+        <li><a href="#in-use">In use</a></li>
+        <li><a href="#guidelines">Guidelines</a></li>
+        <li><a href="#downloads">Files</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" id="top" aria-labelledby="hero-title">
+    <div class="wrap">
+      <p class="eyebrow">Brand assets — 2026</p>
+      <img class="hero-logo" src="shrike-logo-paper.svg" alt="Shrike" width="880" height="300">
+      <div class="hero-copy">
+        <div>
+          <h1 id="hero-title">Delete the code. Prove the app.</h1>
+          <p>Shrike deletes what agents and PRs leave behind — and proves the app still builds. The mark says it in one gesture: one path whole, one path broken, both accounted for.</p>
+          <div class="actions">
+            <a class="button solid" href="shrike-logo.svg" download>Download the logo <span aria-hidden="true">↓</span></a>
+            <a class="button" href="#guidelines">Read the guidelines <span aria-hidden="true">↓</span></a>
+          </div>
+        </div>
+        <dl class="hero-facts" aria-label="Identity at a glance">
+          <div><dt>Direction</dt><dd>The Break</dd></div>
+          <div><dt>Palette</dt><dd>#0A0A0A / #F7F5EF</dd></div>
+          <div><dt>Masters</dt><dd>SVG, outlined</dd></div>
+          <div><dt>Built to</dt><dd>Invert without redrawing</dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="mark" aria-labelledby="mark-title">
+    <div class="wrap">
+      <p class="section-label"><span class="num">01</span> The mark</p>
+      <div class="split">
+        <div class="mark-stage">
+          <img src="shrike-symbol.svg" alt="The Shrike symbol: two parallel ink strokes on a 2:5 lean, the right stroke broken at its midpoint" width="256" height="256">
+        </div>
+        <div>
+          <h2 id="mark-title">One lean. One break.</h2>
+          <p class="lede">Two strokes on the same 2:5 rise. The left runs whole. The right breaks at its midpoint — a measured cut, not an accident.</p>
+          <p>The whole stroke is the path that survives. The broken stroke is the deletion, kept in view. Both halves are equal, so the mark records a decision rather than a loss. It is three shapes and one fill; inverting it changes a colour, never the drawing.</p>
+          <p>The name is not illustrated. There is no bird, feather, beak, or eye. The identity comes from the product’s promise: remove what does not belong, and prove what remains.</p>
+        </div>
+      </div>
+
+      <div class="principles">
+        <article>
+          <h3>Lean</h3>
+          <p>Both strokes sit on the same 2:5 rise, 21.8° from vertical. The angle is rational and repeatable.</p>
+        </article>
+        <article>
+          <h3>Break</h3>
+          <p>The 30-unit gap is centred on the right stroke. The remaining 87 + 87 pieces are identical.</p>
+        </article>
+        <article>
+          <h3>Invert</h3>
+          <p>Three shapes, one fill, no strokes. Reversing the mark is a colour change, not a redraw.</p>
+        </article>
+      </div>
+
+      <dl class="spec" aria-label="Mark geometry">
+        <div><dt>Canvas</dt><dd>256 × 256</dd></div>
+        <div><dt>Visible bounds</dt><dd>16.4–239.6 / 26.6–229.4</dd></div>
+        <div><dt>Stroke width</dt><dd>36</dd></div>
+        <div><dt>Stroke length</dt><dd>204</dd></div>
+        <div><dt>Lean</dt><dd>2:5 / 21.8°</dd></div>
+        <div><dt>Break</dt><dd>30, centred</dd></div>
+        <div><dt>Column offset</dt><dd>114</dd></div>
+        <div><dt>Lockup</dt><dd>880 × 300</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="section" id="logo" aria-labelledby="logo-title">
+    <div class="wrap">
+      <p class="section-label"><span class="num">02</span> Logo</p>
+      <h2 id="logo-title">One system, two surfaces.</h2>
+      <p class="lede">Ink artwork on paper. Paper artwork on ink. The inverted files carry their own ink field for cards, avatars, and embeds.</p>
+
+      <div class="logo-grid">
+        <figure class="logo-card">
+          <div class="stage"><img src="shrike-logo.svg" alt="Ink Shrike horizontal logo on paper" width="880" height="300"></div>
+          <figcaption class="meta"><strong>Horizontal / ink</strong><a href="shrike-logo.svg" download>shrike-logo.svg</a></figcaption>
+        </figure>
+        <figure class="logo-card dark">
+          <div class="stage"><img src="shrike-logo-paper.svg" alt="Paper Shrike horizontal logo on ink" width="880" height="300"></div>
+          <figcaption class="meta"><strong>Horizontal / paper</strong><a href="shrike-logo-paper.svg" download>shrike-logo-paper.svg</a></figcaption>
+        </figure>
+        <figure class="logo-card">
+          <div class="stage"><img class="stacked" src="shrike-logo-stacked.svg" alt="Ink Shrike stacked logo on paper" width="420" height="440"></div>
+          <figcaption class="meta"><strong>Stacked / ink</strong><a href="shrike-logo-stacked.svg" download>shrike-logo-stacked.svg</a></figcaption>
+        </figure>
+        <figure class="logo-card dark">
+          <div class="stage"><img src="shrike-symbol-paper.svg" alt="Paper Shrike symbol on ink" width="256" height="256"></div>
+          <figcaption class="meta"><strong>Symbol / paper</strong><a href="shrike-symbol-paper.svg" download>shrike-symbol-paper.svg</a></figcaption>
+        </figure>
+        <figure class="logo-card">
+          <div class="stage"><img src="shrike-wordmark.svg" alt="Ink Shrike wordmark on paper" width="609" height="212"></div>
+          <figcaption class="meta"><strong>Wordmark / ink</strong><a href="shrike-wordmark.svg" download>shrike-wordmark.svg</a></figcaption>
+        </figure>
+        <figure class="logo-card">
+          <div class="stage"><img src="shrike-app-icon.svg" alt="Shrike app icon: paper symbol on an ink rounded tile" width="512" height="512" style="width:8.5rem;height:8.5rem"></div>
+          <figcaption class="meta"><strong>App icon / ink tile</strong><a href="shrike-app-icon.svg" download>shrike-app-icon.svg</a></figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="section dark" id="in-use" aria-labelledby="in-use-title">
+    <div class="wrap">
+      <p class="section-label"><span class="num">03</span> In use</p>
+      <h2 id="in-use-title">The break holds at every size.</h2>
+      <p class="lede">The tight crop handles the tab. The full symbol handles the avatar. The inverted lockup handles the card.</p>
+
+      <div class="use-grid">
+        <div class="use-card browser">
+          <div class="browser">
+            <div class="browser-bar">
+              <img src="favicon-16.png" alt="" width="16" height="16">
+              <span class="url">Shrike — Brand assets</span>
+              <span class="dots" aria-hidden="true">···</span>
+            </div>
+            <div class="browser-body">
+              <img src="shrike-logo.svg" alt="Shrike horizontal logo in a browser page" width="880" height="300">
+            </div>
+          </div>
+          <p class="caption"><span>Browser tab + page header</span><a href="favicon.ico" download>favicon.ico</a></p>
+        </div>
+
+        <div class="use-card identity">
+          <div class="repo-row">
+            <div class="avatar"><img src="shrike-symbol-inverted.svg" alt="Shrike avatar" width="512" height="512"></div>
+            <div>
+              <p class="repo-name">Shrike</p>
+              <p class="repo-note">Proof-carrying cleanup</p>
+            </div>
+          </div>
+          <img class="repo-wordmark" src="shrike-wordmark-paper.svg" alt="Shrike wordmark" width="609" height="212">
+          <div class="icon-row">
+            <img src="shrike-app-icon.svg" alt="Shrike app icon" width="512" height="512" style="width:4rem;height:4rem">
+            <p class="small">App icon<br>512 px, radius 112</p>
+          </div>
+          <p class="caption"><span>Avatar + repo header</span><a href="shrike-symbol-inverted.svg" download>symbol-inverted.svg</a></p>
+        </div>
+
+        <div class="use-card social">
+          <img src="og-card.png" alt="Shrike social card: the ink logo and broken-stroke symbol on warm paper" width="1200" height="630" loading="lazy" decoding="async">
+          <p class="caption"><span>Open Graph card / 1200 × 630</span><a href="og-card.png" download>og-card.png</a></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="guidelines" aria-labelledby="guidelines-title">
+    <div class="wrap">
+      <p class="section-label"><span class="num">04</span> Guidelines</p>
+      <h2 id="guidelines-title">Give it room. Keep it exact.</h2>
+      <p class="lede">Two rules carry the system: protect the clear space, and never redraw the break.</p>
+
+      <div class="guideline-grid">
+        <div class="guideline-block">
+          <h3>Clear space</h3>
+          <div class="clearspace">
+            <img src="shrike-symbol-small.svg" alt="Shrike symbol inside its clear-space zone" width="240" height="240">
+          </div>
+          <p class="clearspace-note">Keep at least <strong>1X</strong> clear on every side, where <strong>X</strong> is the width of one bar: 36 units on the 256 canvas, about 16% of the symbol’s width. At the full horizontal lockup that is roughly 31.6 px.</p>
+        </div>
+
+        <div class="guideline-block">
+          <h3>Minimum sizes</h3>
+          <div class="sizes">
+            <div class="size-item">
+              <img src="shrike-logo.svg" alt="Shrike horizontal logo at minimum size" width="200" height="68">
+              <span>Lockup · 200 px</span>
+            </div>
+            <div class="size-item">
+              <img src="shrike-symbol.svg" alt="Shrike symbol at minimum size" width="24" height="24">
+              <span>Symbol · 24 px</span>
+            </div>
+            <div class="size-item">
+              <img src="shrike-symbol-small.svg" alt="Tightly cropped Shrike symbol at minimum size" width="16" height="16">
+              <span>Small · 16 px</span>
+            </div>
+          </div>
+          <p class="clearspace-note">Below 24 px use the tight crop or the favicon. The full symbol holds from 24 px up.</p>
+        </div>
+      </div>
+
+      <div class="guideline-grid" style="margin-top:clamp(2.5rem,6vw,4.5rem)">
+        <div class="guideline-block">
+          <h3>Colour</h3>
+          <div class="colour-grid">
+            <div class="swatch ink">
+              <strong>Shrike Ink</strong>
+              <code>#0A0A0A</code>
+            </div>
+            <div class="swatch paper">
+              <strong>Shrike Paper</strong>
+              <code>#F7F5EF</code>
+            </div>
+          </div>
+          <p class="clearspace-note">Ink and paper only. No tints, gradients, or secondary brand colours. On a mid-tone, give the mark a solid ink or paper plate.</p>
+        </div>
+
+        <div class="guideline-block">
+          <h3>Typography</h3>
+          <div class="type-spec">
+            <img src="shrike-wordmark.svg" alt="Shrike wordmark" width="609" height="212">
+            <dl class="type-list">
+              <div><dt>Wordmark</dt><dd>Inter Medium</dd></div>
+              <div><dt>Master size</dt><dd>200 px</dd></div>
+              <div><dt>Tracking</dt><dd>−0.02 em</dd></div>
+              <div><dt>i-dot</dt><dd>16-unit square</dd></div>
+              <div><dt>Format</dt><dd>outlines only</dd></div>
+              <div><dt>Supporting</dt><dd>Inter / system UI</dd></div>
+            </dl>
+          </div>
+          <p class="clearspace-note">The wordmark is artwork, not live text. Set supporting copy in Inter or the system UI stack; never retype the logo.</p>
+        </div>
+      </div>
+
+      <div class="do-strip">
+        <strong>Do</strong>
+        <span>Use the supplied SVG, keep the 2:5 lean and the centred break, and give the mark 1X clear space.</span>
+      </div>
+
+      <div class="rules" aria-label="Logo misuse examples">
+        <div class="rule">
+          <div class="demo rotate"><img src="shrike-symbol.svg" alt="Incorrect: rotated Shrike symbol" loading="lazy"></div>
+          <span class="tag">Don’t</span>
+          <p>Rotate or tilt the mark.</p>
+        </div>
+        <div class="rule">
+          <div class="demo stretch"><img src="shrike-symbol.svg" alt="Incorrect: stretched Shrike symbol" loading="lazy"></div>
+          <span class="tag">Don’t</span>
+          <p>Stretch, squash, or outline it.</p>
+        </div>
+        <div class="rule">
+          <div class="demo fade"><img src="shrike-symbol.svg" alt="Incorrect: faded Shrike symbol" loading="lazy"></div>
+          <span class="tag">Don’t</span>
+          <p>Fade, tint, or recolour it.</p>
+        </div>
+        <div class="rule">
+          <div class="demo retype">shrike</div>
+          <span class="tag">Don’t</span>
+          <p>Retype the wordmark or change the i-dot.</p>
+        </div>
+      </div>
+
+      <p class="a11y-note"><strong>Accessibility.</strong> The SVGs include a title and description. In HTML, use <code>alt="Shrike"</code> when the logo stands alone and <code>alt=""</code> when the name is already present in text. Ink on paper measures about 18:1 contrast; keep it that way.</p>
+    </div>
+  </section>
+
+  <section class="section dark" id="downloads" aria-labelledby="downloads-title">
+    <div class="wrap">
+      <p class="section-label"><span class="num">05</span> Files</p>
+      <h2 id="downloads-title">Everything is in this folder.</h2>
+      <p class="lede">Vector masters, transparent raster exports, platform icons, the social card, the presentation board, and the web snippet. No webfonts, no scripts, no external dependencies.</p>
+
+      <div class="download-grid">
+        <div>
+          <h3>Vector masters</h3>
+          <ul>
+            <li><a href="shrike-logo.svg" download><span>Horizontal lockup</span><span>SVG</span></a></li>
+            <li><a href="shrike-logo-paper.svg" download><span>Horizontal / paper</span><span>SVG</span></a></li>
+            <li><a href="shrike-logo-inverted.svg" download><span>Horizontal / inverted</span><span>SVG</span></a></li>
+            <li><a href="shrike-logo-stacked.svg" download><span>Stacked lockup</span><span>SVG</span></a></li>
+            <li><a href="shrike-wordmark.svg" download><span>Wordmark</span><span>SVG</span></a></li>
+            <li><a href="shrike-symbol.svg" download><span>Symbol</span><span>SVG</span></a></li>
+            <li><a href="shrike-symbol-small.svg" download><span>Symbol / small</span><span>SVG</span></a></li>
+            <li><a href="shrike-app-icon.svg" download><span>App icon</span><span>SVG</span></a></li>
+          </ul>
+        </div>
+        <div>
+          <h3>Raster + icons</h3>
+          <ul>
+            <li><a href="png/shrike-logo-black.png" download><span>Logo / 1600 px</span><span>PNG</span></a></li>
+            <li><a href="png/shrike-logo-paper.png" download><span>Logo paper / 1600 px</span><span>PNG</span></a></li>
+            <li><a href="png/shrike-symbol-black.png" download><span>Symbol / 1024 px</span><span>PNG</span></a></li>
+            <li><a href="icon-512.png" download><span>PWA icon / 512 px</span><span>PNG</span></a></li>
+            <li><a href="maskable-512.png" download><span>Maskable / 512 px</span><span>PNG</span></a></li>
+            <li><a href="apple-touch-icon.png" download><span>Apple touch / 180 px</span><span>PNG</span></a></li>
+            <li><a href="favicon.ico" download><span>Favicon</span><span>ICO</span></a></li>
+            <li><a href="og-card.png" download><span>Social card</span><span>PNG</span></a></li>
+          </ul>
+        </div>
+        <div>
+          <h3>Web + docs</h3>
+          <ul>
+            <li><a href="head-snippet.html" download><span>Head snippet</span><span>HTML</span></a></li>
+            <li><a href="site.webmanifest" download><span>Web manifest</span><span>JSON</span></a></li>
+            <li><a href="og-card.svg" download><span>Social card</span><span>SVG</span></a></li>
+            <li><a href="brand-board.html"><span>Brand board</span><span>HTML</span></a></li>
+            <li><a href="README.md"><span>Brand guide</span><span>MD</span></a></li>
+            <li><a href="png/" aria-label="Open the PNG folder"><span>All PNG exports</span><span>Folder</span></a></li>
+          </ul>
+        </div>
+      </div>
+
+      <p class="download-note">Serving from a subpath? Adjust <code>start_url</code> and the icon paths in <code>site.webmanifest</code>. The head snippet assumes the files sit at the site root.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <img src="shrike-logo-paper.svg" alt="Shrike" width="880" height="300">
+        <p>Two strokes on one lean. The left runs whole; the right breaks at its midpoint.</p>
+      </div>
+      <div class="foot-links">
+        <a href="#mark">The mark</a>
+        <a href="#guidelines">Guidelines</a>
+        <a href="README.md">Brand guide</a>
+        <a href="#top">Top ↑</a>
+      </div>
+    </div>
+    <hr class="divider">
+    <p class="small">Ink and paper by design. Shrike brand assets are part of the Shrike repository under the MIT licence. Inter is © The Inter Project Authors, SIL OFL 1.1; the wordmark is outlined and no font files are bundled.</p>
+  </div>
+</footer>
+</body>
+</html>
