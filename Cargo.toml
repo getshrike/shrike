@@ -10,7 +10,6 @@ default-members = [
   "crates/shrike-delta",
   "crates/shrike-plan",
   "crates/shrike-evidence",
-  "crates/shrike-receipt",
   "crates/shrike-engine",
 ]
 
@@ -21,14 +20,14 @@ license = "MIT"
 rust-version = "1.85"
 
 [workspace.dependencies]
-shrike-core = { path = "crates/shrike-core" }
-shrike-protocol = { path = "crates/shrike-protocol" }
-shrike-syntax = { path = "crates/shrike-syntax" }
-shrike-resolve = { path = "crates/shrike-resolve" }
-shrike-graph = { path = "crates/shrike-graph" }
-shrike-delta = { path = "crates/shrike-delta" }
-shrike-plan = { path = "crates/shrike-plan" }
-shrike-evidence = { path = "crates/shrike-evidence" }
+shrike-core = { version = "1.0.1", path = "crates/shrike-core" }
+shrike-protocol = { version = "1.0.1", path = "crates/shrike-protocol" }
+shrike-syntax = { version = "1.0.1", path = "crates/shrike-syntax" }
+shrike-resolve = { version = "1.0.1", path = "crates/shrike-resolve" }
+shrike-graph = { version = "1.0.1", path = "crates/shrike-graph" }
+shrike-delta = { version = "1.0.1", path = "crates/shrike-delta" }
+shrike-plan = { version = "1.0.1", path = "crates/shrike-plan" }
+shrike-evidence = { version = "1.0.1", path = "crates/shrike-evidence" }
 
 oxc_allocator = "0.90.0"
 oxc_ast = "0.90.0"
@@ -41,7 +40,6 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 ignore = "0.4"
 globset = "0.4"
 blake3 = "1.8"
-sha2 = "0.10"
 thiserror = "2.0"
 rayon = "1.11"
 tempfile = "3.23"
