@@ -60,7 +60,7 @@ export async function runCheck(
  *
  * A failure followed by a pass is `flaky` (never a clean pass). A set of
  * failures with different signatures is also marked flaky, per
- * docs/05-verified-deletion.md §3.2.
+ * docs/architecture.md.
  */
 export async function runCheckWithReruns(
   spec: CheckSpec,

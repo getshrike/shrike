@@ -26,29 +26,47 @@
       "pattern": "^plan_[A-Za-z0-9_-]{8,64}$",
       "description": "Content-addressed plan identifier derived from the base, head, delta, and policy."
     },
-    "base": { "$ref": "#/$defs/base" },
-    "head": { "$ref": "#/$defs/head" },
-    "deltaHash": { "$ref": "#/$defs/hash" },
-    "totals": { "$ref": "#/$defs/totals" },
+    "base": {
+      "$ref": "#/$defs/base"
+    },
+    "head": {
+      "$ref": "#/$defs/head"
+    },
+    "deltaHash": {
+      "$ref": "#/$defs/hash"
+    },
+    "totals": {
+      "$ref": "#/$defs/totals"
+    },
     "batches": {
       "type": "array",
       "description": "Independent batches in deterministic order. An empty plan is valid.",
-      "items": { "$ref": "#/$defs/batch" }
+      "items": {
+        "$ref": "#/$defs/batch"
+      }
     },
     "blocked": {
       "type": "array",
       "description": "Candidates that were refused and the reason. A refused symbol is reported, never silently dropped.",
-      "items": { "$ref": "#/$defs/blocked" }
+      "items": {
+        "$ref": "#/$defs/blocked"
+      }
     },
-    "policy": { "$ref": "#/$defs/policy" },
+    "policy": {
+      "$ref": "#/$defs/policy"
+    },
     "blastRadius": {
       "type": "array",
       "description": "Optional blast-radius decisions for batches that were split, refused, or explicitly overridden.",
-      "items": { "$ref": "#/$defs/blastRadius" }
+      "items": {
+        "$ref": "#/$defs/blastRadius"
+      }
     },
     "diagnostics": {
       "type": "array",
-      "items": { "$ref": "#/$defs/diagnostic" }
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      }
     }
   },
   "$defs": {
@@ -68,67 +86,130 @@
     "base": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["commit"],
+      "required": [
+        "commit"
+      ],
       "properties": {
-        "ref": { "type": "string", "minLength": 1 },
-        "commit": { "type": "string", "minLength": 1 },
-        "graphHash": { "$ref": "#/$defs/hash" }
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "graphHash": {
+          "$ref": "#/$defs/hash"
+        }
       }
     },
     "head": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["commit"],
+      "required": [
+        "commit"
+      ],
       "properties": {
-        "ref": { "type": "string", "minLength": 1 },
-        "commit": { "type": "string", "minLength": 1 },
-        "graphHash": { "$ref": "#/$defs/hash" },
-        "dirty": { "type": "boolean", "description": "A dirty head cannot produce a CI receipt." }
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "graphHash": {
+          "$ref": "#/$defs/hash"
+        },
+        "dirty": {
+          "type": "boolean",
+          "description": "A dirty head cannot produce a CI receipt."
+        }
       }
     },
     "totals": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["symbols", "files", "lines"],
+      "required": [
+        "symbols",
+        "files",
+        "lines"
+      ],
       "properties": {
-        "symbols": { "type": "integer", "minimum": 0 },
-        "files": { "type": "integer", "minimum": 0 },
-        "lines": { "type": "integer", "minimum": 0 }
+        "symbols": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "files": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "batch": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "symbols", "files", "lines", "patch"],
+      "required": [
+        "id",
+        "symbols",
+        "files",
+        "lines",
+        "patch"
+      ],
       "properties": {
-        "id": { "type": "string", "pattern": "^batch_[A-Za-z0-9_-]+$" },
+        "id": {
+          "type": "string",
+          "pattern": "^batch_[A-Za-z0-9_-]+$"
+        },
         "symbols": {
           "type": "array",
-          "items": { "$ref": "#/$defs/symbolKey" },
+          "items": {
+            "$ref": "#/$defs/symbolKey"
+          },
           "minItems": 1,
           "uniqueItems": true
         },
         "files": {
           "type": "array",
-          "items": { "$ref": "#/$defs/filePath" },
+          "items": {
+            "$ref": "#/$defs/filePath"
+          },
           "minItems": 1,
           "uniqueItems": true
         },
-        "lines": { "type": "integer", "minimum": 0, "description": "Estimated lines removed; the receipt records exact patch stats after apply." },
+        "lines": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Estimated lines removed; the receipt records exact patch stats after apply."
+        },
         "patch": {
           "type": "string",
           "minLength": 1,
           "description": "Path to the materialized unified diff, for example .shrike/patches/batch_1.patch."
         },
-        "expectedEffect": { "type": "string" }
+        "expectedEffect": {
+          "type": "string"
+        }
       }
     },
     "blocked": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["symbol", "reason"],
+      "required": [
+        "symbol",
+        "reason"
+      ],
       "properties": {
-        "symbol": { "$ref": "#/$defs/symbolKey" },
+        "symbol": {
+          "$ref": "#/$defs/symbolKey"
+        },
         "reason": {
           "type": "string",
           "enum": [
@@ -147,56 +228,142 @@
             "other"
           ]
         },
-        "detail": { "type": "string" }
+        "detail": {
+          "type": "string"
+        }
       }
     },
     "policy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["entryPolicy", "maxSymbols", "maxFiles", "allowOversized"],
+      "required": [
+        "entryPolicy",
+        "maxSymbols",
+        "maxFiles",
+        "allowOversized"
+      ],
       "properties": {
-        "entryPolicy": { "type": "string", "enum": ["production", "local", "ci"] },
-        "maxSymbols": { "type": "integer", "minimum": 1, "default": 50 },
-        "maxFiles": { "type": "integer", "minimum": 1, "default": 10 },
-        "allowOversized": { "type": "boolean", "default": false }
+        "entryPolicy": {
+          "type": "string",
+          "enum": [
+            "production",
+            "local",
+            "ci"
+          ]
+        },
+        "maxSymbols": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 50
+        },
+        "maxFiles": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10
+        },
+        "allowOversized": {
+          "type": "boolean",
+          "default": false
+        }
       }
     },
     "blastRadius": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["batch", "symbols", "files", "liveGraphPercent", "decision"],
+      "required": [
+        "batch",
+        "symbols",
+        "files",
+        "liveGraphPercent",
+        "decision"
+      ],
       "properties": {
-        "batch": { "type": "string", "minLength": 1 },
-        "symbols": { "type": "integer", "minimum": 0 },
-        "files": { "type": "integer", "minimum": 0 },
-        "liveGraphPercent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "batch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "symbols": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "files": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "liveGraphPercent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
         "policy": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "maxSymbols": { "type": "integer", "minimum": 1 },
-            "maxFiles": { "type": "integer", "minimum": 1 },
-            "maxLiveGraphPercent": { "type": "number", "minimum": 0, "maximum": 100 }
+            "maxSymbols": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxFiles": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxLiveGraphPercent": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
           }
         },
-        "decision": { "type": "string", "enum": ["allow", "split", "refuse", "override"] },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "allow",
+            "split",
+            "refuse",
+            "override"
+          ]
+        },
         "splitInto": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true
         },
-        "reason": { "type": "string" }
+        "reason": {
+          "type": "string"
+        }
       }
     },
     "diagnostic": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["severity", "code", "message"],
+      "required": [
+        "severity",
+        "code",
+        "message"
+      ],
       "properties": {
-        "severity": { "type": "string", "enum": ["error", "warning", "info"] },
-        "code": { "type": "string", "minLength": 1 },
-        "message": { "type": "string", "minLength": 1 },
-        "file": { "$ref": "#/$defs/filePath" }
+        "severity": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warning",
+            "info"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file": {
+          "$ref": "#/$defs/filePath"
+        }
       }
     }
   },
@@ -204,10 +371,20 @@
     {
       "schemaVersion": "1.0",
       "id": "plan_01J8ZQ6Y8Q6Y8Q6Y8Q6Y8Q6Y8",
-      "base": { "ref": "origin/main", "commit": "abc123" },
-      "head": { "commit": "def456", "dirty": false },
+      "base": {
+        "ref": "origin/main",
+        "commit": "abc123"
+      },
+      "head": {
+        "commit": "def456",
+        "dirty": false
+      },
       "deltaHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "totals": { "symbols": 0, "files": 0, "lines": 0 },
+      "totals": {
+        "symbols": 0,
+        "files": 0,
+        "lines": 0
+      },
       "batches": [],
       "blocked": [],
       "policy": {
@@ -220,10 +397,22 @@
     {
       "schemaVersion": "1.0",
       "id": "plan_01J8ZQ6Y8Q6Y8Q6Y8Q6Y8Q6Y9",
-      "base": { "ref": "origin/main", "commit": "abc123", "graphHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111" },
-      "head": { "commit": "def456", "dirty": false, "graphHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222" },
+      "base": {
+        "ref": "origin/main",
+        "commit": "abc123",
+        "graphHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "head": {
+        "commit": "def456",
+        "dirty": false,
+        "graphHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      },
       "deltaHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
-      "totals": { "symbols": 2, "files": 2, "lines": 36 },
+      "totals": {
+        "symbols": 2,
+        "files": 2,
+        "lines": 36
+      },
       "batches": [
         {
           "id": "batch_1",
@@ -231,7 +420,10 @@
             "src/lib/format.ts#formatInvoice",
             "src/lib/currency.ts#formatCents"
           ],
-          "files": ["src/lib/format.ts", "src/lib/currency.ts"],
+          "files": [
+            "src/lib/format.ts",
+            "src/lib/currency.ts"
+          ],
           "lines": 36,
           "patch": ".shrike/patches/batch_1.patch",
           "expectedEffect": "Remove 2 dead symbols from 2 files"
@@ -256,7 +448,11 @@
           "symbols": 2,
           "files": 2,
           "liveGraphPercent": 0.2,
-          "policy": { "maxSymbols": 50, "maxFiles": 10, "maxLiveGraphPercent": 5 },
+          "policy": {
+            "maxSymbols": 50,
+            "maxFiles": 10,
+            "maxLiveGraphPercent": 5
+          },
           "decision": "allow"
         }
       ]

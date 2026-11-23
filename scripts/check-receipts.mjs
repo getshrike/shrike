@@ -6,6 +6,8 @@
  * content hash and id, proves reproducibility, validates the schema examples,
  * and validates any committed fixture receipts.
  */
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
@@ -150,10 +152,23 @@ if (reproduced.id !== receipts.verified.id) {
 
 // The published examples must satisfy the same structural contract.
 const schema = JSON.parse(readFileSync(join(root, "schemas", "receipt.schema.json"), "utf8"));
+const ajv = new Ajv2020({ allErrors: true, strict: false });
+addFormats(ajv);
+const schemaValidate = ajv.compile(schema);
+/** Structural validation against the JSON Schema, in addition to the
+ * hand-written semantic checks below (which cover hashes and invariants). */
+function structurallyValid(label, value) {
+  if (!schemaValidate(value)) {
+    const first = schemaValidate.errors?.slice(0, 3).map((e) => `${e.instancePath || "/"} ${e.message}`).join("; ");
+    failures.push(`${label}: receipt schema violation (${first})`);
+  }
+}
 for (const [index, example] of (schema.examples ?? []).entries()) {
   const validation = validateReceipt(example);
   if (!validation.ok) failures.push(`schema example ${index}: ${validation.problems.join("; ")}`);
+  structurallyValid(`schema example ${index}`, example);
 }
+for (const [name, receipt] of Object.entries(receipts)) structurallyValid(`generated ${name}`, receipt);
 
 if (write) {
   mkdirSync(fixtureDir, { recursive: true });
@@ -169,6 +184,7 @@ if (existsSync(fixtureDir)) {
       const parsed = JSON.parse(readFileSync(join(fixtureDir, name), "utf8"));
       const validation = validateReceipt(parsed);
       if (!validation.ok) failures.push(`fixtures/receipts/${name}: ${validation.problems.join("; ")}`);
+      structurallyValid(`fixtures/receipts/${name}`, parsed);
       const verification = verifyReceipt(parsed);
       if (!verification.ok) failures.push(`fixtures/receipts/${name}: ${verification.problems.join("; ")}`);
     } catch (error) {
@@ -185,6 +201,7 @@ if (existsSync(localDir)) {
       const parsed = JSON.parse(readFileSync(join(localDir, name), "utf8"));
       const validation = validateReceipt(parsed);
       if (!validation.ok) failures.push(`.shrike/receipts/${name}: ${validation.problems.join("; ")}`);
+      structurallyValid(`.shrike/receipts/${name}`, parsed);
       const verification = verifyReceipt(parsed);
       if (!verification.ok) failures.push(`.shrike/receipts/${name}: ${verification.problems.join("; ")}`);
     } catch (error) {

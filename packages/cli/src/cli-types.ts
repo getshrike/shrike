@@ -1,71 +1,40 @@
-import type { BuildEvidence } from "./build.ts";
-import type { VerificationTier } from "./config.ts";
+/**
+ * CLI-local projections of the shared protocol types.
+ *
+ * The canonical types live in `@shrike/protocol` and mirror `schemas/`. This
+ * file only re-exports them under the names the CLI has always used and adds
+ * the one shape that is CLI-local (the build-evidence path).
+ */
+import type { BuildEvidence, BuildJoin, DeletionPlan, Diagnostic, GraphSnapshot, ScanResult as ProtocolScanResult } from "@shrike/protocol";
 
-export interface Snapshot {
-  files: { path: string; contentHash: string; lines: number }[];
-  symbols: { key: string; file: string; kind: string; span: { start: number; end: number; line: number; endLine?: number }; lines: number; publicApi: boolean; entry?: boolean }[];
-  modules?: { path: string; file?: string; specifiers: string[]; resolved?: string[]; unresolved?: string[]; external?: string[]; typeRefs?: string[] }[];
-  entries?: { symbol: string; framework: string; kind: string; route?: string | null }[];
-  edges?: { source: string; target: string; kind: string; certainty?: string }[];
-  proofs?: { symbol: string; reason: string; incoming: string[]; outgoing: string[] }[];
-  diagnostics?: { code: string; severity: string; message: string; file?: string }[];
-  candidates: string[];
-  unusedFiles?: string[];
-  live?: string[];
-  internalOnly?: string[];
-  graphHash: string;
-  [key: string]: unknown;
-}
-export interface ScanCandidate {
-  symbol: string;
-  file: string;
-  kind: string;
-  lines: number;
-  reason: string;
-  incoming?: number;
-  outgoing?: number;
-}
-export interface ScanResult {
-  snapshot: Snapshot;
-  candidates: ScanCandidate[];
-  diagnostics?: Snapshot["diagnostics"];
-  [key: string]: unknown;
-}
-export interface DeltaReport {
-  base: { ref: string | null; commit: string };
-  head: { commit: string; dirty: boolean };
-  newlyDead: { symbol: string; file: string; estimatedLines: number }[];
-  newlyDeadFiles: string[];
-  cascade: { symbols: number; files: number; lines: number };
-  batches: { id: string; symbols: number; files: number; lines: number }[];
-  incomparable: unknown;
-  [key: string]: unknown;
-}
-export interface Plan {
-  id: string;
-  deltaHash: string;
-  base: { ref: string | null; commit: string };
-  head: { commit: string; dirty: boolean };
-  totals: { symbols: number; files: number; lines: number };
-  batches: { id: string; symbols: string[]; files: string[]; lines: number; patch: string }[];
-  blocked: { symbol: string; reason: string }[];
-  policy?: { entryPolicy: string; maxSymbols: number; maxFiles: number; allowOversized: boolean };
-  [key: string]: unknown;
-}
+export type {
+  BuildJoin,
+  DeletionPlan,
+  Diagnostic,
+  EdgeRecord,
+  EntryRecord,
+  EngineRequest,
+  EngineResponse,
+  FileRecord,
+  GraphSnapshot,
+  ModuleRecord,
+  ProofRecord,
+  ScanCandidate,
+  SymbolRecord,
+  UnknownRecord,
+  WitnessRecord,
+} from "@shrike/protocol";
 
-export interface BuildJoinResult {
-  status: string;
-  joined: number;
-  total: number;
-  coverage: number;
-  unmatched: string[];
-  routes: { route: string; files: number; symbols: number; bytes: number }[];
-  bytes: { matched: number; shared: number; totalRoute: number };
-  diagnostics: { code: string; severity: string; message: string }[];
-}
+export type Snapshot = GraphSnapshot;
+export type DeltaReport = import("@shrike/protocol").DeltaReport;
+export type Plan = DeletionPlan;
+export type ScanResult = ProtocolScanResult;
+export type BuildJoinResult = BuildJoin;
 
 export interface BuildEvidenceInfo {
   evidence: BuildEvidence;
-  join: BuildJoinResult;
+  join: BuildJoin;
   path: string | null;
 }
+
+export type { BuildEvidence };

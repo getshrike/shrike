@@ -1,4 +1,4 @@
-/** Bounded agent-facing cleanup brief (docs/07-agent-and-distribution.md §6). */
+/** Bounded agent-facing cleanup brief (see docs/architecture.md). */
 
 export interface BriefTrigger {
   file: string;

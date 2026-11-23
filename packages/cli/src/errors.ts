@@ -1,4 +1,4 @@
-/** Exit codes from docs/05-verified-deletion.md §5. */
+/** Exit codes (see docs/development.md). */
 export const ExitCode = {
   OK: 0,
   FINDINGS: 1,

@@ -4,11 +4,14 @@
   "title": "Shrike engine protocol envelope",
   "description": "A single line of the versioned, line-delimited JSON contract between the Shrike TypeScript host and the Rust engine. A line is either a request or a response. One request per line, one response per line; a malformed or partial response is a protocol error and fails closed.",
   "type": "object",
-  "additionalProperties": false,
-  "$comment": "protocolVersion is independent of toolVersion. A breaking change bumps protocolVersion and invalidates cached plans. The canonical command set is ping, analyze, scan, delta, plan, proof, join-build.",
+  "$comment": "protocolVersion is independent of toolVersion. A breaking change bumps protocolVersion and invalidates cached plans. The canonical command set is ping, version, analyze, scan, delta, plan, proof, join-build, augment-build.",
   "oneOf": [
-    { "$ref": "#/$defs/request" },
-    { "$ref": "#/$defs/response" }
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/response"
+    }
   ],
   "$defs": {
     "protocolVersion": {
@@ -31,15 +34,29 @@
       "description": "Zero or more structured details. Strings are accepted for compatibility with engines that emit a flat detail list.",
       "items": {
         "oneOf": [
-          { "type": "string", "minLength": 1 },
+          {
+            "type": "string",
+            "minLength": 1
+          },
           {
             "type": "object",
             "additionalProperties": false,
-            "required": ["message"],
+            "required": [
+              "message"
+            ],
             "properties": {
-              "message": { "type": "string", "minLength": 1 },
-              "path": { "type": "string", "description": "JSON pointer or dotted path to the offending field." },
-              "code": { "type": "string", "minLength": 1 }
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "description": "JSON pointer or dotted path to the offending field."
+              },
+              "code": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         ]
@@ -48,7 +65,11 @@
     "error": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["code", "message", "details"],
+      "required": [
+        "code",
+        "message",
+        "details"
+      ],
       "properties": {
         "code": {
           "type": "string",
@@ -60,17 +81,35 @@
           "minLength": 1,
           "description": "Human-readable explanation with absolute paths and secrets redacted."
         },
-        "details": { "$ref": "#/$defs/errorDetails" }
+        "details": {
+          "$ref": "#/$defs/errorDetails"
+        }
       }
     },
     "batchPolicy": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "maxSymbols": { "type": "integer", "minimum": 1, "default": 50 },
-        "maxFiles": { "type": "integer", "minimum": 1, "default": 10 },
-        "maxLiveGraphPercent": { "type": "number", "minimum": 0, "maximum": 100, "default": 5 },
-        "allowOversized": { "type": "boolean", "default": false }
+        "maxSymbols": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 50
+        },
+        "maxFiles": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10
+        },
+        "maxLiveGraphPercent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 5
+        },
+        "allowOversized": {
+          "type": "boolean",
+          "default": false
+        }
       }
     },
     "payload": {
@@ -78,134 +117,402 @@
       "additionalProperties": false,
       "description": "Command-specific input. Unknown fields are rejected; an omitted field is not interpreted as an empty value.",
       "properties": {
-        "root": { "type": "string", "minLength": 1, "description": "Repository root for the analysis." },
-        "base": { "type": "string", "minLength": 1, "description": "Base ref or commit for delta and plan." },
-        "head": { "type": "string", "minLength": 1, "description": "Head ref or commit for delta and plan." },
-        "symbol": { "type": "string", "pattern": "^[^#]+#[^#]+$", "description": "Stable symbol key path#Name for proof." },
-        "planId": { "type": "string", "minLength": 1, "description": "Plan identifier for proof or verification." },
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repository root for the analysis."
+        },
+        "base": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Base ref or commit for delta and plan."
+        },
+        "head": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Head ref or commit for delta and plan."
+        },
+        "symbol": {
+          "type": "string",
+          "pattern": "^[^#]+#[^#]+$",
+          "description": "Stable symbol key path#Name for proof."
+        },
+        "planId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Plan identifier for proof or verification."
+        },
         "snapshot": {
           "oneOf": [
-            { "$ref": "graph-snapshot.schema.json" },
-            { "type": "string", "minLength": 1 }
+            {
+              "$ref": "graph-snapshot.schema.json"
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
           ],
           "description": "Snapshot object or snapshot path/content hash for plan, proof, and build joins."
         },
-        "baseSnapshot": { "$ref": "graph-snapshot.schema.json", "description": "Merge-base snapshot for delta." },
-        "headSnapshot": { "$ref": "graph-snapshot.schema.json", "description": "Head snapshot for delta." },
-        "baseCommit": { "type": "string", "minLength": 1 },
-        "headCommit": { "type": "string", "minLength": 1 },
-        "dirty": { "type": "boolean" },
-        "delta": { "type": "object", "description": "Delta report produced by the delta command." },
+        "baseSnapshot": {
+          "$ref": "graph-snapshot.schema.json",
+          "description": "Merge-base snapshot for delta."
+        },
+        "headSnapshot": {
+          "$ref": "graph-snapshot.schema.json",
+          "description": "Head snapshot for delta."
+        },
+        "baseCommit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "headCommit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dirty": {
+          "type": "boolean"
+        },
+        "delta": {
+          "type": "object",
+          "description": "Delta report produced by the delta command."
+        },
         "build": {
           "oneOf": [
-            { "type": "object" },
-            { "type": "string", "minLength": 1 }
+            {
+              "type": "object"
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
           ],
           "description": "Normalized build evidence object or a path to a next analyze export JSONL file."
         },
-        "cacheDir": { "type": "string", "minLength": 1, "description": "Cache directory relative to root. Defaults to .shrike/cache." },
-        "config": { "$ref": "config.schema.json" },
+        "cacheDir": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Cache directory relative to root. Defaults to .shrike/cache."
+        },
+        "config": {
+          "$ref": "config.schema.json"
+        },
         "include": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true
         },
         "ignore": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true
         },
-        "tsconfig": { "type": "string", "minLength": 1 },
-        "entryPolicy": { "type": "string", "enum": ["production", "local", "ci"] },
-        "batchPolicy": { "$ref": "#/$defs/batchPolicy" },
-        "policy": { "$ref": "#/$defs/batchPolicy" },
-        "timeoutMs": { "type": "integer", "minimum": 1 },
-        "dryRun": { "type": "boolean" },
-        "allowOversized": { "type": "boolean" },
-        "format": { "type": "string", "enum": ["json", "text", "markdown"] }
+        "tsconfig": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entryPolicy": {
+          "type": "string",
+          "enum": [
+            "production",
+            "local",
+            "ci"
+          ]
+        },
+        "batchPolicy": {
+          "$ref": "#/$defs/batchPolicy"
+        },
+        "policy": {
+          "$ref": "#/$defs/batchPolicy"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "dryRun": {
+          "type": "boolean"
+        },
+        "allowOversized": {
+          "type": "boolean"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "json",
+            "text",
+            "markdown"
+          ]
+        }
       }
     },
     "request": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "id", "command", "payload"],
+      "required": [
+        "protocolVersion",
+        "id",
+        "command",
+        "payload"
+      ],
       "properties": {
-        "protocolVersion": { "$ref": "#/$defs/protocolVersion" },
-        "id": { "$ref": "#/$defs/requestId" },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/requestId"
+        },
         "command": {
           "type": "string",
-          "enum": ["ping", "analyze", "scan", "delta", "plan", "proof", "join-build", "augment-build"]
+          "enum": [
+            "ping",
+            "version",
+            "analyze",
+            "scan",
+            "delta",
+            "plan",
+            "proof",
+            "join-build",
+            "augment-build"
+          ]
         },
-        "payload": { "$ref": "#/$defs/payload" }
+        "payload": {
+          "$ref": "#/$defs/payload"
+        }
       },
       "allOf": [
         {
-          "if": { "properties": { "command": { "const": "ping" } }, "required": ["command"] },
-          "then": { "properties": { "payload": { "maxProperties": 0 } } }
+          "if": {
+            "properties": {
+              "command": {
+                "const": "ping"
+              }
+            },
+            "required": [
+              "command"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "maxProperties": 0
+              }
+            }
+          }
         },
         {
-          "if": { "properties": { "command": { "enum": ["analyze", "scan"] } }, "required": ["command"] },
-          "then": { "properties": { "payload": { "required": ["root"] } } }
+          "if": {
+            "properties": {
+              "command": {
+                "enum": [
+                  "analyze",
+                  "scan"
+                ]
+              }
+            },
+            "required": [
+              "command"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "required": [
+                  "root"
+                ]
+              }
+            }
+          }
         },
         {
-          "if": { "properties": { "command": { "const": "delta" } }, "required": ["command"] },
-          "then": { "properties": { "payload": { "required": ["baseSnapshot", "headSnapshot", "baseCommit", "headCommit"] } } }
+          "if": {
+            "properties": {
+              "command": {
+                "const": "delta"
+              }
+            },
+            "required": [
+              "command"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "required": [
+                  "baseSnapshot",
+                  "headSnapshot",
+                  "baseCommit",
+                  "headCommit"
+                ]
+              }
+            }
+          }
         },
         {
-          "if": { "properties": { "command": { "const": "plan" } }, "required": ["command"] },
-          "then": { "properties": { "payload": { "required": ["snapshot", "delta"] } } }
+          "if": {
+            "properties": {
+              "command": {
+                "const": "plan"
+              }
+            },
+            "required": [
+              "command"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "required": [
+                  "snapshot",
+                  "delta"
+                ]
+              }
+            }
+          }
         },
         {
-          "if": { "properties": { "command": { "const": "proof" } }, "required": ["command"] },
-          "then": { "properties": { "payload": { "required": ["snapshot", "symbol"] } } }
+          "if": {
+            "properties": {
+              "command": {
+                "const": "proof"
+              }
+            },
+            "required": [
+              "command"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "required": [
+                  "snapshot",
+                  "symbol"
+                ]
+              }
+            }
+          }
         },
         {
-          "if": { "properties": { "command": { "enum": ["join-build", "augment-build"] } }, "required": ["command"] },
-          "then": { "properties": { "payload": { "required": ["snapshot", "build"] } } }
+          "if": {
+            "properties": {
+              "command": {
+                "enum": [
+                  "join-build",
+                  "augment-build"
+                ]
+              }
+            },
+            "required": [
+              "command"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "required": [
+                  "snapshot",
+                  "build"
+                ]
+              }
+            }
+          }
         }
       ]
     },
     "response": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "id", "ok"],
+      "required": [
+        "protocolVersion",
+        "id",
+        "ok"
+      ],
       "properties": {
-        "protocolVersion": { "$ref": "#/$defs/protocolVersion" },
-        "id": { "$ref": "#/$defs/requestId" },
-        "ok": { "type": "boolean" },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/requestId"
+        },
+        "ok": {
+          "type": "boolean"
+        },
         "result": {
           "oneOf": [
-            { "type": "object" },
-            { "type": "null" }
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
           ],
           "description": "Command result. Required and non-null when ok is true; null or omitted when ok is false."
         },
         "error": {
           "oneOf": [
-            { "$ref": "#/$defs/error" },
-            { "type": "null" }
+            {
+              "$ref": "#/$defs/error"
+            },
+            {
+              "type": "null"
+            }
           ],
           "description": "Required and non-null when ok is false; null or omitted when ok is true."
         }
       },
       "allOf": [
         {
-          "if": { "properties": { "ok": { "const": true } }, "required": ["ok"] },
-          "then": {
-            "required": ["result"],
+          "if": {
             "properties": {
-              "result": { "type": "object" },
-              "error": { "type": "null" }
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "ok"
+            ]
+          },
+          "then": {
+            "required": [
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "object"
+              },
+              "error": {
+                "type": "null"
+              }
             }
           }
         },
         {
-          "if": { "properties": { "ok": { "const": false } }, "required": ["ok"] },
-          "then": {
-            "required": ["error"],
+          "if": {
             "properties": {
-              "result": { "type": "null" },
-              "error": { "$ref": "#/$defs/error" }
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "ok"
+            ]
+          },
+          "then": {
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "result": {
+                "type": "null"
+              },
+              "error": {
+                "$ref": "#/$defs/error"
+              }
             }
           }
         }
@@ -222,7 +529,9 @@
         "base": "origin/main",
         "head": "HEAD",
         "config": {
-          "include": ["src/**"]
+          "include": [
+            "src/**"
+          ]
         },
         "cacheDir": ".shrike/cache"
       }

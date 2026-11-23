@@ -64,6 +64,7 @@
   },
   "devDependencies": {
     "@shrike/agent": "workspace:*",
+    "@shrike/protocol": "workspace:*",
     "@shrike/receipts": "workspace:*",
     "@shrike/testkit": "workspace:*",
     "@shrike/verifier": "workspace:*",
