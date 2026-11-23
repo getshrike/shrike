@@ -1,4 +1,4 @@
-/** Receipt types for docs/05-verified-deletion.md §4 and §4.2. */
+/** Receipt types (see docs/architecture.md). */
 
 export type ReceiptOutcome =
   | "verified"

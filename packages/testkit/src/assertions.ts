@@ -29,7 +29,7 @@ export function assertSnapshotShape(value: unknown): void {
   }
 }
 
-/** Minimal delta invariants from docs/04-whole-graph-delta.md §7. */
+/** Minimal delta invariants (see docs/architecture.md). */
 export function assertDeltaShape(value: unknown): void {
   assert.ok(isRecord(value), "delta must be an object");
   assert.equal(value.schemaVersion, "1.0");

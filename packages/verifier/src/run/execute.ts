@@ -2,7 +2,7 @@
  * Execute a shell command with a hard timeout and bounded output capture.
  *
  * The shell is the trust boundary: project scripts are trusted by definition
- * (docs/09-security-and-trust.md). The verifier runs them only in a worktree.
+ * (see docs/architecture.md). The verifier runs them only in a worktree.
  */
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";

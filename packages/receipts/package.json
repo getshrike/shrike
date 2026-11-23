@@ -16,6 +16,7 @@
     "build": "tsc -p tsconfig.build.json"
   },
   "devDependencies": {
+    "@shrike/protocol": "workspace:*",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.3"
   }

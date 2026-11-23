@@ -59,12 +59,21 @@
       "type": "object",
       "additionalProperties": false,
       "description": "Workspace layout used for comparability and monorepo attribution.",
-      "required": ["root", "packages"],
+      "required": [
+        "root",
+        "packages"
+      ],
       "properties": {
-        "root": { "type": "string", "minLength": 1 },
+        "root": {
+          "type": "string",
+          "minLength": 1
+        },
         "packages": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true
         }
       }
@@ -72,72 +81,109 @@
     "files": {
       "type": "array",
       "description": "File records sorted by normalized path. Invariant A1: sorted and unique.",
-      "items": { "$ref": "#/$defs/file" }
+      "items": {
+        "$ref": "#/$defs/file"
+      }
     },
     "symbols": {
       "type": "array",
       "description": "Symbol records sorted by (file, span.start, kind, name).",
-      "items": { "$ref": "#/$defs/symbol" }
+      "items": {
+        "$ref": "#/$defs/symbol"
+      }
     },
     "modules": {
       "type": "array",
       "description": "Module records sorted by path. Every module has a path#__module__ key.",
-      "items": { "$ref": "#/$defs/module" }
+      "items": {
+        "$ref": "#/$defs/module"
+      }
     },
     "entries": {
       "type": "array",
       "description": "Framework, package, test, and config entries sorted by entry key.",
-      "items": { "$ref": "#/$defs/entry" }
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
     },
     "edges": {
       "type": "array",
       "description": "Edges sorted by (source, target, kind, certainty). Unknown edges are retained.",
-      "items": { "$ref": "#/$defs/edge" }
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
     },
     "sccs": {
       "type": "array",
       "description": "Tarjan SCCs. Each SCC is sorted by symbol key; SCCs are sorted by their minimum symbol key. A cycle is deleted as a unit.",
-      "items": { "$ref": "#/$defs/scc" },
+      "items": {
+        "$ref": "#/$defs/scc"
+      },
       "uniqueItems": true
     },
     "live": {
       "type": "array",
       "description": "Canonical ascending list of live symbol keys (serialized FixedBitSet). Invariant F1: every live symbol has a witness.",
-      "items": { "$ref": "#/$defs/symbolKey" },
+      "items": {
+        "$ref": "#/$defs/symbolKey"
+      },
       "uniqueItems": true
     },
     "candidates": {
       "type": "array",
       "description": "Canonical ascending list of deletion-candidate symbol keys. Never contains an entry, a public API symbol, or a symbol from an unparsed file.",
-      "items": { "$ref": "#/$defs/symbolKey" },
+      "items": {
+        "$ref": "#/$defs/symbolKey"
+      },
       "uniqueItems": true
     },
     "unusedFiles": {
       "type": "array",
       "description": "Files no entry and no other module reaches: no entry symbol in the file, no incoming edge from another file, and no live module symbol. A dead declaration in an imported file is not a dead file, and a file imported only by dead code is left to the deletion cascade.",
-      "items": { "$ref": "#/$defs/filePath" },
+      "items": {
+        "$ref": "#/$defs/filePath"
+      },
       "uniqueItems": true
     },
     "internalOnly": {
       "type": "array",
       "description": "Exported symbols that are live only because their own file references them. Not deletion candidates; reported for parity with unused-export tools.",
-      "items": { "$ref": "#/$defs/symbolKey" },
+      "items": {
+        "$ref": "#/$defs/symbolKey"
+      },
       "uniqueItems": true
     },
     "witnesses": {
       "type": "array",
       "description": "Shortest witness paths for live symbols. Optional in a minimal snapshot; required for proof and delta explanations.",
-      "items": { "$ref": "#/$defs/witness" }
+      "items": {
+        "$ref": "#/$defs/witness"
+      }
     },
     "proofs": {
       "type": "array",
       "description": "Auditable proof traces for candidates, including the unknown edges that would block deletion.",
-      "items": { "$ref": "#/$defs/proof" }
+      "items": {
+        "$ref": "#/$defs/proof"
+      }
     },
     "diagnostics": {
       "type": "array",
       "description": "Parse, resolve, entry, and policy diagnostics. A missing fact is a diagnostic, not evidence of death.",
-      "items": { "$ref": "#/$defs/diagnostic" }
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "description": "Unresolved dynamic references that widen reachability.",
+      "items": {
+        "$ref": "#/$defs/unknown"
+      }
+    },
+    "graphHash": {
+      "type": "string",
+      "description": "BLAKE3 of the canonical snapshot serialization."
     }
   },
   "$defs": {
@@ -170,90 +216,272 @@
     "span": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["start", "end", "line", "column"],
+      "required": [
+        "start",
+        "end",
+        "line",
+        "column"
+      ],
       "properties": {
-        "start": { "type": "integer", "minimum": 0, "description": "Byte offset, inclusive." },
-        "end": { "type": "integer", "minimum": 0, "description": "Byte offset, exclusive." },
-        "line": { "type": "integer", "minimum": 1, "description": "1-based line." },
-        "column": { "type": "integer", "minimum": 1, "description": "1-based column." }
+        "start": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Byte offset, inclusive."
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Byte offset, exclusive."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "1-based line."
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "1-based column."
+        },
+        "endLine": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Inclusive end line; 0 for synthetic spans."
+        }
       }
     },
     "diagnostic": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["severity", "code", "message"],
+      "required": [
+        "severity",
+        "code",
+        "message"
+      ],
       "properties": {
-        "severity": { "type": "string", "enum": ["error", "warning", "info"] },
-        "code": { "type": "string", "minLength": 1 },
-        "message": { "type": "string", "minLength": 1 },
-        "file": { "$ref": "#/$defs/filePath" },
-        "span": { "$ref": "#/$defs/span" },
-        "details": { "type": "object" }
+        "severity": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warning",
+            "info"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file": {
+          "$ref": "#/$defs/filePath"
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        },
+        "details": {
+          "type": "object"
+        }
       }
     },
     "file": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "contentHash", "parseStatus", "moduleKind", "generated"],
+      "required": [
+        "path",
+        "contentHash",
+        "parseStatus",
+        "moduleKind",
+        "generated"
+      ],
       "properties": {
-        "path": { "$ref": "#/$defs/filePath" },
-        "contentHash": { "$ref": "#/$defs/hash" },
-        "parseStatus": { "type": "string", "enum": ["ok", "error", "skipped"] },
-        "unparsed": { "type": "boolean", "default": false, "description": "True when parsing failed or the file was intentionally skipped; symbols in it are never candidates." },
+        "path": {
+          "$ref": "#/$defs/filePath"
+        },
+        "contentHash": {
+          "$ref": "#/$defs/hash"
+        },
+        "parseStatus": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "error",
+            "skipped"
+          ]
+        },
+        "unparsed": {
+          "type": "boolean",
+          "default": false,
+          "description": "True when parsing failed or the file was intentionally skipped; symbols in it are never candidates."
+        },
         "moduleKind": {
           "type": "string",
-          "enum": ["ts", "tsx", "js", "jsx", "mjs", "cjs", "dts", "mdx", "vue", "svelte", "astro"]
+          "enum": [
+            "ts",
+            "tsx",
+            "js",
+            "jsx",
+            "mjs",
+            "cjs",
+            "dts",
+            "mdx",
+            "vue",
+            "svelte",
+            "astro",
+            "html"
+          ]
         },
-        "package": { "type": "string", "description": "Workspace package name, when the file belongs to one." },
-        "generated": { "type": "boolean", "description": "Generated files are parsed for edges but excluded from deletion candidates by default." },
-        "sizeBytes": { "type": "integer", "minimum": 0 },
-        "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } }
+        "package": {
+          "type": "string",
+          "description": "Workspace package name, when the file belongs to one."
+        },
+        "generated": {
+          "type": "boolean",
+          "description": "Generated files are parsed for edges but excluded from deletion candidates by default."
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        },
+        "publicApi": {
+          "type": "boolean",
+          "description": "Exported through a package public API."
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Line count."
+        }
       }
     },
     "symbol": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key", "name", "kind", "file", "span", "exported", "publicApi", "entryRoles"],
+      "required": [
+        "key",
+        "name",
+        "kind",
+        "file",
+        "span",
+        "exported",
+        "publicApi"
+      ],
       "properties": {
-        "key": { "$ref": "#/$defs/symbolKey" },
-        "name": { "type": "string", "minLength": 1 },
+        "key": {
+          "$ref": "#/$defs/symbolKey"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
         "kind": {
           "type": "string",
-          "enum": ["function", "class", "variable", "type", "interface", "enum", "namespace", "default", "re-export"]
+          "enum": [
+            "function",
+            "class",
+            "variable",
+            "type",
+            "interface",
+            "enum",
+            "namespace",
+            "default",
+            "re-export",
+            "module"
+          ]
         },
-        "file": { "$ref": "#/$defs/filePath" },
-        "span": { "$ref": "#/$defs/span" },
-        "exported": { "type": "boolean" },
-        "publicApi": { "type": "boolean", "description": "Public package surface, declaration file, or explicit @public marker. Never a candidate." },
-        "entryRoles": {
-          "type": "array",
-          "description": "Entry keys for which this symbol is an entry. Invariant E1: an entry is never deleted.",
-          "items": { "$ref": "#/$defs/entryKey" },
-          "uniqueItems": true
+        "file": {
+          "$ref": "#/$defs/filePath"
         },
-        "typeOnly": { "type": "boolean", "default": false, "description": "Type-only symbols are kept for type analysis but do not keep a runtime symbol live by themselves." },
-        "generated": { "type": "boolean", "default": false },
+        "span": {
+          "$ref": "#/$defs/span"
+        },
+        "exported": {
+          "type": "boolean"
+        },
+        "publicApi": {
+          "type": "boolean",
+          "description": "Public package surface, declaration file, or explicit @public marker. Never a candidate."
+        },
+        "typeOnly": {
+          "type": "boolean",
+          "default": false,
+          "description": "Type-only symbols are kept for type analysis but do not keep a runtime symbol live by themselves."
+        },
+        "generated": {
+          "type": "boolean",
+          "default": false
+        },
         "references": {
           "type": "array",
           "description": "Edge IDs or symbol keys considered for this symbol. Used by proof traces.",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true
+        },
+        "entry": {
+          "type": "boolean",
+          "description": "Symbol is an entry root."
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Declaration span line count."
         }
       }
     },
     "specifier": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["specifier", "kind", "certainty"],
+      "required": [
+        "specifier",
+        "kind",
+        "certainty"
+      ],
       "properties": {
-        "specifier": { "type": "string", "minLength": 1 },
-        "kind": { "type": "string", "enum": ["import", "export", "dynamic", "require", "side-effect"] },
-        "resolved": { "$ref": "#/$defs/moduleKey" },
-        "certainty": { "$ref": "#/$defs/certainty" },
-        "typeOnly": { "type": "boolean", "default": false },
+        "specifier": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "import",
+            "export",
+            "dynamic",
+            "require",
+            "side-effect"
+          ]
+        },
+        "resolved": {
+          "$ref": "#/$defs/moduleKey"
+        },
+        "certainty": {
+          "$ref": "#/$defs/certainty"
+        },
+        "typeOnly": {
+          "type": "boolean",
+          "default": false
+        },
         "dynamicScope": {
           "type": "string",
-          "enum": ["literal", "template-prefix", "directory-prefix", "package", "repo", "unknown"],
+          "enum": [
+            "literal",
+            "template-prefix",
+            "directory-prefix",
+            "package",
+            "repo",
+            "unknown"
+          ],
           "description": "Bounded dynamic scope for import() and require(). Repo-scope unknown blocks deletion."
         }
       }
@@ -261,49 +489,98 @@
     "unresolved": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["specifier", "reason", "certainty"],
+      "required": [
+        "specifier",
+        "reason",
+        "certainty"
+      ],
       "properties": {
-        "specifier": { "type": "string", "minLength": 1 },
-        "reason": { "type": "string", "minLength": 1 },
-        "certainty": { "$ref": "#/$defs/certainty" }
+        "specifier": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "certainty": {
+          "$ref": "#/$defs/certainty"
+        }
       }
     },
     "module": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key", "path", "file", "specifiers", "resolved", "unresolved"],
+      "required": [
+        "path",
+        "file",
+        "specifiers",
+        "resolved",
+        "unresolved"
+      ],
       "properties": {
-        "key": { "$ref": "#/$defs/moduleKey" },
-        "path": { "$ref": "#/$defs/filePath" },
-        "file": { "$ref": "#/$defs/filePath" },
-        "package": { "type": "string" },
-        "specifiers": { "type": "array", "items": { "$ref": "#/$defs/specifier" } },
+        "path": {
+          "$ref": "#/$defs/filePath"
+        },
+        "file": {
+          "$ref": "#/$defs/filePath"
+        },
+        "package": {
+          "type": "string"
+        },
+        "specifiers": {
+          "type": "array",
+          "description": "String values.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
         "resolved": {
           "type": "array",
-          "items": { "$ref": "#/$defs/moduleKey" },
-          "uniqueItems": true
+          "description": "String values.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
-        "unresolved": { "type": "array", "items": { "$ref": "#/$defs/unresolved" } },
+        "unresolved": {
+          "type": "array",
+          "description": "String values.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
         "external": {
           "type": "array",
           "description": "Specifiers the resolver classified as external packages.",
-          "items": { "$ref": "#/$defs/specifier" },
-          "uniqueItems": true
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "typeRefs": {
           "type": "array",
           "description": "Module specifiers referenced from type positions. Dependency evidence, not runtime edges.",
-          "items": { "$ref": "#/$defs/specifier" },
-          "uniqueItems": true
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
     "entry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key", "framework", "kind", "runtime", "certainty"],
+      "required": [
+        "symbol",
+        "framework",
+        "kind",
+        "runtime",
+        "certainty"
+      ],
       "properties": {
-        "key": { "$ref": "#/$defs/entryKey" },
         "framework": {
           "type": "string",
           "enum": [
@@ -326,7 +603,16 @@
             "config",
             "local",
             "scripts",
-            "ambient"
+            "ambient",
+            "expo-config",
+            "cypress",
+            "docusaurus",
+            "vite",
+            "next-config",
+            "next-intl",
+            "react-cosmos",
+            "test-config",
+            "webpack"
           ]
         },
         "kind": {
@@ -382,97 +668,235 @@
             "test-export",
             "declaration",
             "config-export",
-            "custom"
+            "custom",
+            "config-reference",
+            "config-reference-export",
+            "html-entry",
+            "html-entry-export",
+            "html-entry-script",
+            "page-template",
+            "page-template-export",
+            "spec",
+            "support",
+            "convention",
+            "convention-export",
+            "custom-server",
+            "decorator",
+            "decorator-default",
+            "fixture",
+            "fixture-export",
+            "page-export",
+            "root-entry",
+            "root-export",
+            "test-config-reference"
           ]
         },
-        "route": { "type": ["string", "null"], "description": "Route path for Next.js and React entries." },
-        "exportName": { "type": "string", "description": "Convention export name, for example default, GET, or generateMetadata." },
-        "runtime": { "type": "string", "enum": ["client", "server", "both", "unknown"] },
-        "certainty": { "$ref": "#/$defs/certainty" },
-        "file": { "$ref": "#/$defs/filePath" },
-        "symbol": { "$ref": "#/$defs/symbolKey" }
+        "route": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Route path for Next.js and React entries."
+        },
+        "exportName": {
+          "type": "string",
+          "description": "Convention export name, for example default, GET, or generateMetadata."
+        },
+        "runtime": {
+          "type": "string",
+          "enum": [
+            "client",
+            "server",
+            "both",
+            "unknown"
+          ]
+        },
+        "certainty": {
+          "$ref": "#/$defs/certainty"
+        },
+        "file": {
+          "$ref": "#/$defs/filePath"
+        },
+        "symbol": {
+          "$ref": "#/$defs/symbolKey"
+        }
       }
     },
     "edge": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["source", "target", "kind", "certainty"],
+      "required": [
+        "source",
+        "target",
+        "kind",
+        "certainty",
+        "file",
+        "span"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "source": { "$ref": "#/$defs/symbolKey" },
-        "target": { "$ref": "#/$defs/symbolKey" },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "$ref": "#/$defs/symbolKey"
+        },
+        "target": {
+          "$ref": "#/$defs/symbolKey"
+        },
         "kind": {
           "type": "string",
-          "enum": ["import", "re-export", "reference", "call", "jsx", "dynamic", "unknown", "build"]
+          "enum": [
+            "import",
+            "re-export",
+            "reference",
+            "call",
+            "jsx",
+            "dynamic",
+            "unknown",
+            "build",
+            "type",
+            "worker"
+          ]
         },
-        "certainty": { "$ref": "#/$defs/certainty" },
-        "specifier": { "type": "string" },
-        "evidence": { "type": "string", "description": "Build evidence such as chunk:app/registry/page." },
-        "reason": { "type": "string" }
+        "certainty": {
+          "$ref": "#/$defs/certainty"
+        },
+        "specifier": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "string",
+          "description": "Build evidence such as chunk:app/registry/page."
+        },
+        "reason": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string",
+          "description": "File containing the reference."
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        }
       }
     },
     "certainty": {
       "type": "string",
-      "enum": ["certain", "probable", "unknown"],
+      "enum": [
+        "certain",
+        "probable",
+        "unknown",
+        "type"
+      ],
       "description": "certain is a resolved edge; probable is a bounded heuristic; unknown blocks deletion of every symbol it could reach."
     },
     "scc": {
       "type": "array",
       "description": "One strongly connected component. Sorted by symbol key. Invariant K1: no plan contains a partial SCC.",
-      "items": { "$ref": "#/$defs/symbolKey" },
+      "items": {
+        "$ref": "#/$defs/symbolKey"
+      },
       "minItems": 1,
       "uniqueItems": true
     },
     "witness": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["symbol", "entry", "path", "length"],
+      "required": [
+        "symbol",
+        "path"
+      ],
       "properties": {
-        "symbol": { "$ref": "#/$defs/symbolKey" },
-        "entry": { "$ref": "#/$defs/entryKey" },
+        "symbol": {
+          "$ref": "#/$defs/symbolKey"
+        },
         "path": {
           "type": "array",
           "description": "Shortest path from the entry symbol to the live symbol, inclusive. Invariant F2: a valid path; F3: shortest in edge count.",
-          "items": { "$ref": "#/$defs/symbolKey" },
+          "items": {
+            "$ref": "#/$defs/symbolKey"
+          },
           "minItems": 1
         },
         "edges": {
           "type": "array",
           "description": "Edge IDs or (source,target,kind) tuples traversed by the path.",
-          "items": { "type": "string", "minLength": 1 }
-        },
-        "length": { "type": "integer", "minimum": 0, "description": "Edge count. A single-symbol path has length 0." }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
     "proof": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["symbol", "reason", "consideredEdges", "unknownEdges"],
+      "required": [
+        "symbol",
+        "reason",
+        "incoming",
+        "outgoing"
+      ],
       "properties": {
-        "symbol": { "$ref": "#/$defs/symbolKey" },
+        "symbol": {
+          "$ref": "#/$defs/symbolKey"
+        },
         "reason": {
           "type": "string",
-          "enum": [
-            "no-witness",
-            "blocked-by-unknown",
-            "blocked-by-probable-edge",
-            "blocked-by-public-api",
-            "blocked-by-entry",
-            "blocked-by-unparsed-file",
-            "blocked-by-generated"
-          ]
-        },
-        "consideredEdges": {
-          "type": "array",
-          "items": { "type": "string", "minLength": 1 }
-        },
-        "unknownEdges": {
-          "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "minLength": 1,
+          "description": "Short explanation of the proof."
         },
         "entryChecks": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "incoming": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "outgoing": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "unknown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "scope",
+        "file",
+        "span"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "package": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "file": {
+          "type": "string"
+        },
+        "span": {
+          "$ref": "#/$defs/span"
         }
       }
     }
@@ -499,10 +923,17 @@
           "name": "main",
           "kind": "function",
           "file": "src/index.ts",
-          "span": { "start": 0, "end": 20, "line": 1, "column": 1 },
+          "span": {
+            "start": 0,
+            "end": 20,
+            "line": 1,
+            "column": 1
+          },
           "exported": true,
           "publicApi": false,
-          "entryRoles": ["src/index.ts#__entry__"]
+          "entryRoles": [
+            "src/index.ts#__entry__"
+          ]
         }
       ],
       "modules": [
@@ -537,14 +968,22 @@
           "certainty": "certain"
         }
       ],
-      "sccs": [["src/index.ts#main"]],
-      "live": ["src/index.ts#main"],
+      "sccs": [
+        [
+          "src/index.ts#main"
+        ]
+      ],
+      "live": [
+        "src/index.ts#main"
+      ],
       "candidates": [],
       "witnesses": [
         {
           "symbol": "src/index.ts#main",
           "entry": "src/index.ts#__entry__",
-          "path": ["src/index.ts#main"],
+          "path": [
+            "src/index.ts#main"
+          ],
           "edges": [],
           "length": 0
         }

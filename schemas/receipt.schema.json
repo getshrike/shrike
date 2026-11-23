@@ -36,16 +36,30 @@
       "format": "date-time",
       "description": "Metadata only; excluded from contentHash."
     },
-    "tool": { "$ref": "#/$defs/tool" },
-    "base": { "$ref": "#/$defs/base" },
-    "head": { "$ref": "#/$defs/head" },
-    "plan": { "$ref": "#/$defs/plan" },
-    "build": { "$ref": "#/$defs/build" },
-    "batch": { "$ref": "#/$defs/batch" },
+    "tool": {
+      "$ref": "#/$defs/tool"
+    },
+    "base": {
+      "$ref": "#/$defs/base"
+    },
+    "head": {
+      "$ref": "#/$defs/head"
+    },
+    "plan": {
+      "$ref": "#/$defs/plan"
+    },
+    "build": {
+      "$ref": "#/$defs/build"
+    },
+    "batch": {
+      "$ref": "#/$defs/batch"
+    },
     "checks": {
       "type": "array",
       "description": "Every required and advisory check, with after status and baseline status. A verified receipt has at least one check.",
-      "items": { "$ref": "#/$defs/check" }
+      "items": {
+        "$ref": "#/$defs/check"
+      }
     },
     "outcome": {
       "type": "string",
@@ -62,11 +76,19 @@
     "rejected": {
       "type": "array",
       "description": "Minimal failing sets from bisection, each with the check name and failure signature. Empty for a verified receipt.",
-      "items": { "$ref": "#/$defs/rejected" }
+      "items": {
+        "$ref": "#/$defs/rejected"
+      }
     },
-    "policy": { "$ref": "#/$defs/policy" },
-    "environment": { "$ref": "#/$defs/environment" },
-    "recovery": { "$ref": "#/$defs/recovery" },
+    "policy": {
+      "$ref": "#/$defs/policy"
+    },
+    "environment": {
+      "$ref": "#/$defs/environment"
+    },
+    "recovery": {
+      "$ref": "#/$defs/recovery"
+    },
     "contentHash": {
       "$ref": "#/$defs/hash",
       "description": "sha256 of the canonical receipt payload excluding createdAt and contentHash."
@@ -75,13 +97,23 @@
   "allOf": [
     {
       "if": {
-        "properties": { "outcome": { "const": "verified" } },
-        "required": ["outcome"]
+        "properties": {
+          "outcome": {
+            "const": "verified"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
       },
       "then": {
         "properties": {
-          "checks": { "minItems": 1 },
-          "rejected": { "maxItems": 0 }
+          "checks": {
+            "minItems": 1
+          },
+          "rejected": {
+            "maxItems": 0
+          }
         }
       }
     }
@@ -109,49 +141,108 @@
     "tool": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "version"],
+      "required": [
+        "name",
+        "version"
+      ],
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "version": { "type": "string", "minLength": 1 }
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "base": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref", "commit", "graphHash"],
+      "required": [
+        "ref",
+        "commit",
+        "graphHash"
+      ],
       "properties": {
-        "ref": { "type": "string", "minLength": 1 },
-        "commit": { "type": "string", "minLength": 1 },
-        "graphHash": { "$ref": "#/$defs/graphHash" }
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "graphHash": {
+          "$ref": "#/$defs/graphHash"
+        }
       }
     },
     "head": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["commit", "graphHash"],
+      "required": [
+        "commit",
+        "graphHash"
+      ],
       "properties": {
-        "commit": { "type": "string", "minLength": 1 },
-        "graphHash": { "$ref": "#/$defs/graphHash" }
+        "commit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "graphHash": {
+          "$ref": "#/$defs/graphHash"
+        },
+        "dirty": {
+          "type": "boolean",
+          "description": "Head worktree had uncommitted changes."
+        }
       }
     },
     "plan": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "hash"],
+      "required": [
+        "id",
+        "hash"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "hash": { "$ref": "#/$defs/graphHash" }
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hash": {
+          "$ref": "#/$defs/graphHash"
+        }
       }
     },
     "build": {
       "type": "object",
       "additionalProperties": false,
       "description": "Optional build-graph evidence. Absence means static evidence only.",
-      "required": ["source", "snapshotHash", "version", "status"],
+      "required": [
+        "source",
+        "snapshotHash",
+        "version",
+        "status"
+      ],
       "properties": {
-        "source": { "type": "string", "minLength": 1, "description": "For example 'next analyze export'." },
-        "snapshotHash": { "$ref": "#/$defs/hash" },
-        "version": { "type": "string", "minLength": 1, "description": "Next.js version, for example 16.4.0." },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "For example 'next analyze export'."
+        },
+        "snapshotHash": {
+          "$ref": "#/$defs/hash"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Next.js version, for example 16.4.0."
+        },
         "status": {
           "type": "string",
           "enum": [
@@ -170,25 +261,45 @@
     "batch": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "symbols", "files", "linesRemoved", "patches"],
+      "required": [
+        "id",
+        "symbols",
+        "files",
+        "linesRemoved",
+        "patches"
+      ],
       "properties": {
-        "id": { "type": "string", "pattern": "^batch_[A-Za-z0-9_-]+$" },
+        "id": {
+          "type": "string",
+          "pattern": "^batch_[A-Za-z0-9_-]+$"
+        },
         "symbols": {
           "type": "array",
-          "items": { "$ref": "#/$defs/symbolKey" },
+          "items": {
+            "$ref": "#/$defs/symbolKey"
+          },
           "minItems": 1,
           "uniqueItems": true
         },
         "files": {
           "type": "array",
-          "items": { "$ref": "#/$defs/filePath" },
+          "items": {
+            "$ref": "#/$defs/filePath"
+          },
           "minItems": 1,
           "uniqueItems": true
         },
-        "linesRemoved": { "type": "integer", "minimum": 0, "description": "Exact patch stat after apply." },
+        "linesRemoved": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Exact patch stat after apply."
+        },
         "patches": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "minItems": 1,
           "uniqueItems": true
         }
@@ -197,21 +308,56 @@
     "check": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "command", "status", "baselineStatus", "durationMs", "reruns"],
+      "required": [
+        "name",
+        "command",
+        "status",
+        "baselineStatus",
+        "durationMs",
+        "reruns"
+      ],
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "command": { "type": "string", "minLength": 1 },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
         "status": {
           "type": "string",
-          "enum": ["pass", "fail", "timeout", "skipped", "error"]
+          "enum": [
+            "pass",
+            "fail",
+            "timeout",
+            "skipped",
+            "error"
+          ]
         },
         "baselineStatus": {
           "type": "string",
-          "enum": ["pass", "fail", "timeout", "skipped", "error", "unknown"]
+          "enum": [
+            "pass",
+            "fail",
+            "timeout",
+            "skipped",
+            "error",
+            "unknown"
+          ]
         },
-        "durationMs": { "type": "integer", "minimum": 0 },
-        "reruns": { "type": "integer", "minimum": 0 },
-        "required": { "type": "boolean", "default": true },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reruns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "required": {
+          "type": "boolean",
+          "default": true
+        },
         "classification": {
           "type": "string",
           "enum": [
@@ -234,57 +380,125 @@
     "rejected": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["symbols", "check", "signature"],
+      "required": [
+        "symbols",
+        "check",
+        "signature"
+      ],
       "properties": {
         "symbols": {
           "type": "array",
-          "items": { "$ref": "#/$defs/symbolKey" },
+          "items": {
+            "$ref": "#/$defs/symbolKey"
+          },
           "minItems": 1,
           "uniqueItems": true
         },
         "files": {
           "type": "array",
-          "items": { "$ref": "#/$defs/filePath" },
+          "items": {
+            "$ref": "#/$defs/filePath"
+          },
           "uniqueItems": true
         },
-        "check": { "type": "string", "minLength": 1 },
-        "signature": { "type": "string", "minLength": 1 },
-        "reason": { "type": "string" }
+        "check": {
+          "type": "string",
+          "minLength": 1
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string"
+        }
       }
     },
     "policy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["entryPolicy", "maxSymbols", "maxFiles", "allowOversized"],
+      "required": [
+        "entryPolicy",
+        "maxSymbols",
+        "maxFiles",
+        "allowOversized"
+      ],
       "properties": {
-        "entryPolicy": { "type": "string", "enum": ["production", "local", "ci"] },
-        "maxSymbols": { "type": "integer", "minimum": 1 },
-        "maxFiles": { "type": "integer", "minimum": 1 },
-        "allowOversized": { "type": "boolean" },
-        "maxLiveGraphPercent": { "type": "number", "minimum": 0, "maximum": 100 }
+        "entryPolicy": {
+          "type": "string",
+          "enum": [
+            "production",
+            "local",
+            "ci"
+          ]
+        },
+        "maxSymbols": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxFiles": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "allowOversized": {
+          "type": "boolean"
+        },
+        "maxLiveGraphPercent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
       }
     },
     "environment": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["node", "packageManager", "platform"],
+      "required": [
+        "node",
+        "packageManager",
+        "platform"
+      ],
       "properties": {
-        "node": { "type": "string", "minLength": 1 },
-        "packageManager": { "type": "string", "minLength": 1 },
-        "platform": { "type": "string", "minLength": 1 },
-        "os": { "type": "string" },
-        "arch": { "type": "string" },
-        "shrike": { "type": "string" }
+        "node": {
+          "type": "string",
+          "minLength": 1
+        },
+        "packageManager": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platform": {
+          "type": "string",
+          "minLength": 1
+        },
+        "os": {
+          "type": "string"
+        },
+        "arch": {
+          "type": "string"
+        },
+        "shrike": {
+          "type": "string"
+        }
       }
     },
     "recovery": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["snapshotPath", "restoreCommand"],
+      "required": [
+        "snapshotPath",
+        "restoreCommand"
+      ],
       "description": "Present when a revert failed; exit code 5 must print a working restore command.",
       "properties": {
-        "snapshotPath": { "type": "string", "minLength": 1 },
-        "restoreCommand": { "type": "string", "minLength": 1 }
+        "snapshotPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "restoreCommand": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     }
   },
@@ -293,7 +507,10 @@
       "schemaVersion": "1.0",
       "id": "rcpt_01J8ZQ6Y8Q6Y8Q6Y8Q6Y8Q6Y8",
       "createdAt": "2026-11-20T00:00:00.000Z",
-      "tool": { "name": "shrike", "version": "1.0.0" },
+      "tool": {
+        "name": "shrike",
+        "version": "1.0.0"
+      },
       "base": {
         "ref": "origin/main",
         "commit": "abc123",
@@ -315,10 +532,17 @@
       },
       "batch": {
         "id": "batch_1",
-        "symbols": ["src/lib/format.ts#formatInvoice"],
-        "files": ["src/lib/format.ts", "src/lib/currency.ts"],
+        "symbols": [
+          "src/lib/format.ts#formatInvoice"
+        ],
+        "files": [
+          "src/lib/format.ts",
+          "src/lib/currency.ts"
+        ],
         "linesRemoved": 412,
-        "patches": [".shrike/patches/batch_1.patch"]
+        "patches": [
+          ".shrike/patches/batch_1.patch"
+        ]
       },
       "checks": [
         {
@@ -352,7 +576,10 @@
       "schemaVersion": "1.0",
       "id": "rcpt_01J8ZQ6Y8Q6Y8Q6Y8Q6Y8Q6Y9",
       "createdAt": "2026-11-20T00:01:00.000Z",
-      "tool": { "name": "shrike", "version": "1.0.0" },
+      "tool": {
+        "name": "shrike",
+        "version": "1.0.0"
+      },
       "base": {
         "ref": "origin/main",
         "commit": "abc123",
@@ -368,10 +595,16 @@
       },
       "batch": {
         "id": "batch_2",
-        "symbols": ["src/lib/format.ts#formatInvoice"],
-        "files": ["src/lib/format.ts"],
+        "symbols": [
+          "src/lib/format.ts#formatInvoice"
+        ],
+        "files": [
+          "src/lib/format.ts"
+        ],
         "linesRemoved": 18,
-        "patches": [".shrike/patches/batch_2.patch"]
+        "patches": [
+          ".shrike/patches/batch_2.patch"
+        ]
       },
       "checks": [
         {
@@ -389,8 +622,12 @@
       "outcome": "rejected",
       "rejected": [
         {
-          "symbols": ["src/lib/format.ts#formatInvoice"],
-          "files": ["src/lib/format.ts"],
+          "symbols": [
+            "src/lib/format.ts#formatInvoice"
+          ],
+          "files": [
+            "src/lib/format.ts"
+          ],
           "check": "test",
           "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
           "reason": "invoice fixture failed after removal"

@@ -12,7 +12,7 @@ export type CheckStatus = "pass" | "fail" | "timeout" | "error" | "skipped";
 /** Baseline status is a check status plus "missing" when no baseline exists. */
 export type BaselineStatus = CheckStatus | "missing";
 
-/** Comparison classification from docs/05-verified-deletion.md §2.4. */
+/** Comparison classification (see docs/architecture.md). */
 export type CheckClassification =
   | "pass"
   | "improvement"
@@ -24,7 +24,7 @@ export type CheckClassification =
   | "error"
   | "skipped";
 
-/** Check tiers from docs/05-verified-deletion.md §2.3. */
+/** Check tiers (see docs/architecture.md). */
 export type CheckTier = "fast" | "standard" | "full" | "none";
 
 /** A check the host is allowed to run. */
