@@ -34,7 +34,7 @@ export function executeCommand(
       child = spawn(shell.file, [...shell.args, command], {
         cwd: options.cwd,
         // Inherit only the check-safe host environment. Secrets are passed
-        // explicitly through CheckSpec.env; see docs/09 §2.3.
+        // explicitly through CheckSpec.env; see docs/features.md (Trust model and limits).
         env: { ...baseEnvironment(), ...options.env },
         stdio: ["ignore", "pipe", "pipe"],
         detached: process.platform !== "win32",
