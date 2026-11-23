@@ -21,6 +21,8 @@ use oxc_ast::ast::{
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::SourceType;
 
+use super::{find_property, unwrap, with_config_ast};
+
 /// Where an entry specifier is anchored.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum EntryBase {
@@ -62,23 +64,21 @@ pub(crate) fn is_config_path(path: &str) -> bool {
 /// Extract the statically visible entry points of a webpack configuration.
 #[must_use]
 pub(crate) fn entries(path: &str, source: &str) -> Vec<WebpackEntry> {
-    let source_type =
+    let kind =
         SourceType::from_path(path).unwrap_or_else(|_| SourceType::mjs().with_typescript(true));
-    let allocator = oxc_allocator::Allocator::default();
-    let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
-    if !parsed.errors.is_empty() {
-        return Vec::new();
-    }
-    let mut bindings = Bindings::default();
-    bindings.visit_program(&parsed.program);
-    let mut visitor = EntryVisitor {
-        bindings: &bindings,
-        entries: Vec::new(),
-    };
-    visitor.visit_program(&parsed.program);
-    visitor.entries.sort();
-    visitor.entries.dedup();
-    visitor.entries
+    with_config_ast(kind, source, |program| {
+        let mut bindings = Bindings::default();
+        bindings.visit_program(program);
+        let mut visitor = EntryVisitor {
+            bindings: &bindings,
+            entries: Vec::new(),
+        };
+        visitor.visit_program(program);
+        visitor.entries.sort();
+        visitor.entries.dedup();
+        visitor.entries
+    })
+    .unwrap_or_default()
 }
 
 #[derive(Clone, Debug)]
@@ -102,7 +102,7 @@ impl<'a> Visit<'a> for Bindings {
             if is_path_require(init) {
                 self.path_objects.insert(identifier.name.to_string());
             } else if matches!(
-                unwrap_expression(init),
+                unwrap(init),
                 Expression::ArrayExpression(_) | Expression::ObjectExpression(_)
             ) {
                 let mut values = Vec::new();
@@ -242,7 +242,7 @@ fn collect_entry_values(
     expression: &Expression<'_>,
     values: &mut Vec<PathValue>,
 ) {
-    match unwrap_expression(expression) {
+    match unwrap(expression) {
         Expression::ArrayExpression(array) => {
             for element in &array.elements {
                 if let Some(expression) = element.as_expression() {
@@ -290,7 +290,7 @@ enum PathValue {
 }
 
 fn eval_path(bindings: &Bindings, expression: &Expression<'_>) -> Option<PathValue> {
-    match unwrap_expression(expression) {
+    match unwrap(expression) {
         Expression::StringLiteral(literal) => {
             let value = literal.value.as_str();
             if value.starts_with('/') {
@@ -361,33 +361,6 @@ fn eval_path_call(bindings: &Bindings, call: &CallExpression<'_>) -> Option<Path
     Some(match base {
         EntryBase::ConfigDir => PathValue::ConfigDir(joined),
         EntryBase::PackageDir => PathValue::PackageDir(joined),
-    })
-}
-
-fn unwrap_expression<'a>(expression: &'a Expression<'a>) -> &'a Expression<'a> {
-    match expression {
-        Expression::ParenthesizedExpression(inner) => unwrap_expression(&inner.expression),
-        Expression::TSAsExpression(inner) => unwrap_expression(&inner.expression),
-        Expression::TSSatisfiesExpression(inner) => unwrap_expression(&inner.expression),
-        Expression::TSNonNullExpression(inner) => unwrap_expression(&inner.expression),
-        _ => expression,
-    }
-}
-
-fn find_property<'a>(object: &'a ObjectExpression<'a>, name: &str) -> Option<&'a Expression<'a>> {
-    object.properties.iter().find_map(|property| {
-        let ObjectPropertyKind::ObjectProperty(property) = property else {
-            return None;
-        };
-        if property.computed {
-            return None;
-        }
-        let matches = match &property.key {
-            PropertyKey::StaticIdentifier(identifier) => identifier.name == name,
-            PropertyKey::StringLiteral(literal) => literal.value == name,
-            _ => false,
-        };
-        matches.then_some(&property.value)
     })
 }
 

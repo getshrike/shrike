@@ -1,9 +1,9 @@
 use oxc_ast::ast::{
     Argument, ArrayExpressionElement, BindingPatternKind, CallExpression, ComputedMemberExpression,
     Expression, FormalParameters, FunctionBody, IdentifierReference, ImportExpression,
-    JSXIdentifier, JSXMemberExpression, JSXMemberExpressionObject, MemberExpression, NewExpression,
-    ObjectPattern, PropertyKey, StaticMemberExpression, TSQualifiedName, TSTypeName,
-    VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
+    JSXIdentifier, JSXMemberExpression, JSXMemberExpressionObject, NewExpression, ObjectPattern,
+    PropertyKey, StaticMemberExpression, TSQualifiedName, TSTypeName, VariableDeclaration,
+    VariableDeclarationKind, VariableDeclarator,
 };
 use oxc_ast_visit::Visit;
 use oxc_ast_visit::walk::{
@@ -1016,14 +1016,4 @@ fn glob_specifier(argument: &Argument<'_>) -> DynamicSpecifier {
         }
     }
     DynamicSpecifier::Glob { patterns, excludes }
-}
-
-#[allow(dead_code)]
-fn _span_is_used(span: oxc_span::Span) -> u32 {
-    span.start
-}
-
-#[allow(dead_code)]
-fn _member_is_used(member: &MemberExpression<'_>) -> bool {
-    matches!(member, MemberExpression::StaticMemberExpression(_))
 }

@@ -284,3 +284,61 @@ fn parse<T: serde::de::DeserializeOwned>(value: &Value) -> ShrikeResult<T> {
     // the entire payload tree before decoding it.
     T::deserialize(value).map_err(|error| ShrikeError::Protocol(error.to_string()))
 }
+
+#[cfg(test)]
+mod command_contract_tests {
+    use serde_json::json;
+    use shrike_core::ShrikeError;
+    use shrike_protocol::{COMMANDS, Request};
+
+    use super::dispatch;
+
+    /// Must mirror the match arms in `dispatch` above. Keeping the list next
+    /// to the match makes a one-sided change fail `commands_match_dispatch`.
+    const DISPATCH_ARMS: &[&str] = &[
+        "ping",
+        "version",
+        "analyze",
+        "scan",
+        "delta",
+        "plan",
+        "proof",
+        "join-build",
+        "augment-build",
+    ];
+
+    fn request(command: &str) -> Request {
+        Request {
+            protocol_version: "1.0".to_string(),
+            id: "req_contract".to_string(),
+            command: command.to_string(),
+            payload: json!({}),
+        }
+    }
+
+    #[test]
+    fn commands_match_dispatch() {
+        assert_eq!(
+            DISPATCH_ARMS, COMMANDS,
+            "a command was added to the dispatcher or COMMANDS but not both"
+        );
+    }
+
+    #[test]
+    fn every_command_reaches_a_dispatch_arm() {
+        for command in COMMANDS {
+            // An empty payload is invalid for most commands, but it proves the
+            // command reached its match arm: only genuinely unknown commands
+            // return UnknownCommand.
+            let result = dispatch(&request(command));
+            assert!(
+                !matches!(result, Err(ShrikeError::UnknownCommand(_))),
+                "{command} is published in COMMANDS but has no dispatch arm"
+            );
+        }
+        assert!(matches!(
+            dispatch(&request("definitely-not-a-command")),
+            Err(ShrikeError::UnknownCommand(_))
+        ));
+    }
+}

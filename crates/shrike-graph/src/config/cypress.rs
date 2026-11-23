@@ -16,9 +16,10 @@
 use std::collections::BTreeSet;
 
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
-use oxc_ast::ast::{Expression, ObjectExpression, ObjectPropertyKind, PropertyKey};
+use oxc_ast::ast::{Expression, ObjectExpression};
 use oxc_ast_visit::{Visit, walk};
-use oxc_span::SourceType;
+
+use super::{find_property, source_type, string_value, unwrap, with_config_ast};
 
 const E2E_SPEC: &str = "cypress/e2e/**/*.cy.{js,jsx,ts,tsx}";
 const E2E_SUPPORT: &str = "cypress/support/e2e.{js,jsx,ts,tsx}";
@@ -179,7 +180,7 @@ fn anchor(directory: &str, pattern: &str) -> Option<String> {
     } else {
         format!("{directory}/{pattern}")
     };
-    let normalized = normalize(&joined);
+    let normalized = shrike_core::normalize_relative(&joined);
     (!normalized.is_empty() && !normalized.starts_with("../")).then_some(normalized)
 }
 
@@ -195,50 +196,20 @@ fn resolve_file(directory: &str, path: &str, analyzed: &BTreeSet<&str>) -> Optio
     } else {
         format!("{directory}/{path}")
     };
-    let normalized = normalize(&joined);
+    let normalized = shrike_core::normalize_relative(&joined);
     analyzed.contains(normalized.as_str()).then_some(normalized)
 }
 
-/// Collapse `.`/`..` segments lexically. Leading `..` segments are kept; they
-/// name a path outside the repository and match nothing.
-fn normalize(path: &str) -> String {
-    let mut parts: Vec<&str> = Vec::new();
-    for part in path.split('/') {
-        match part {
-            "" | "." => {}
-            ".." => {
-                if parts.last().is_some_and(|last| *last != "..") {
-                    parts.pop();
-                } else {
-                    parts.push("..");
-                }
-            }
-            part => parts.push(part),
-        }
-    }
-    parts.join("/")
-}
-
 fn scan(config_path: &str, source: &str) -> ConfigScan {
-    let Some(source_type) = source_type(config_path) else {
+    let Some(kind) = source_type(config_path) else {
         return ConfigScan::default();
     };
-    let allocator = oxc_allocator::Allocator::default();
-    let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
-    if !parsed.errors.is_empty() {
-        return ConfigScan::default();
-    }
-    let mut scan = ConfigScan::default();
-    scan.visit_program(&parsed.program);
-    scan
-}
-
-fn source_type(path: &str) -> Option<SourceType> {
-    if path.ends_with(".mts") || path.ends_with(".cts") {
-        Some(SourceType::ts().with_module(true))
-    } else {
-        SourceType::from_path(path).ok()
-    }
+    with_config_ast(kind, source, |program| {
+        let mut scan = ConfigScan::default();
+        scan.visit_program(program);
+        scan
+    })
+    .unwrap_or_default()
 }
 
 #[derive(Debug, Default)]
@@ -316,45 +287,6 @@ fn string_list(expression: &Expression<'_>) -> Option<Vec<String>> {
         ),
         _ => string_value(expression).map(|value| vec![value]),
     }
-}
-
-fn string_value(expression: &Expression<'_>) -> Option<String> {
-    match unwrap(expression) {
-        Expression::StringLiteral(literal) => Some(literal.value.to_string()),
-        Expression::TemplateLiteral(template) if template.expressions.is_empty() => template
-            .quasis
-            .first()
-            .and_then(|quasi| quasi.value.cooked.as_ref())
-            .map(ToString::to_string),
-        _ => None,
-    }
-}
-
-fn unwrap<'a>(expression: &'a Expression<'a>) -> &'a Expression<'a> {
-    match expression {
-        Expression::ParenthesizedExpression(inner) => unwrap(&inner.expression),
-        Expression::TSAsExpression(inner) => unwrap(&inner.expression),
-        Expression::TSSatisfiesExpression(inner) => unwrap(&inner.expression),
-        Expression::TSNonNullExpression(inner) => unwrap(&inner.expression),
-        _ => expression,
-    }
-}
-
-fn find_property<'a>(object: &'a ObjectExpression<'a>, name: &str) -> Option<&'a Expression<'a>> {
-    object.properties.iter().find_map(|property| {
-        let ObjectPropertyKind::ObjectProperty(property) = property else {
-            return None;
-        };
-        if property.computed {
-            return None;
-        }
-        let matches = match &property.key {
-            PropertyKey::StaticIdentifier(identifier) => identifier.name == name,
-            PropertyKey::StringLiteral(literal) => literal.value == name,
-            _ => false,
-        };
-        matches.then_some(&property.value)
-    })
 }
 
 #[cfg(test)]
