@@ -73,7 +73,7 @@ The wedge is not "we find dead code." It is:
 | Verified deletion | Implemented — `node scripts/e2e-prune.mjs` |
 | Build-graph evidence | Implemented — JSONL joins, routes, bytes, verdicts, fallbacks, build-edge feedback; 11 build-graph fixtures |
 | npm packaging | Implemented — `getshrike` tarball, five platform packages, checksum verification, clean-machine install test |
-| Release automation | Published — `v1.0.0` five-target build, SHA-256 sidecars, GitHub attestations, keyless Sigstore signing, npm provenance, and a passing registry smoke test |
+| Release automation | Published — `v1.0.1` five-target build, SHA-256 sidecars, GitHub attestations, keyless Sigstore signing, npm provenance, and a passing registry smoke test |
 | External launch | Blocked on design partners and an independent audit — see [`TRACKER.md`](TRACKER.md) |
 
 The full status, decisions, metrics, and evidence log live in
@@ -118,7 +118,7 @@ The full status, decisions, metrics, and evidence log live in
 ├── crates/                   # Rust workspace: core, protocol, syntax, resolve, graph, delta, plan, evidence, receipt, engine
 ├── packages/                 # TypeScript host: cli, verifier, receipts, agent, action, testkit, platform packages
 ├── scripts/                  # repository automation and contract gates
-└── CHANGELOG.md              # release notes and the 1.0.0 change set
+└── CHANGELOG.md              # release notes and change sets
 ```
 
 The `crates/`, `packages/`, `fixtures/`, `benchmarks/`, and `scripts/` directories
@@ -129,7 +129,7 @@ contain working code and are exercised by `.github/workflows/ci.yml`.
 ## Quick start
 
 ```bash
-# Install the published CLI (after the 1.0.0 registry release)
+# Install the published CLI
 npm install -D getshrike
 npx getshrike scan
 

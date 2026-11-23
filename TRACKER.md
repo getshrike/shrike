@@ -1,7 +1,7 @@
 # Shrike 1.0 — Tracker
 
 > **Canonical design:** [`MASTER_PROMPT.md`](MASTER_PROMPT.md)
-> **Status:** implementation complete for phases 0–4 and the distribution/hardening surfaces; `v1.0.0` is published on npm and GitHub; external launch, design-partner, and independent-audit items are blocked
+> **Status:** implementation complete for phases 0–4 and the distribution/hardening surfaces; `v1.0.1` is published on npm and GitHub; external launch, design-partner, and independent-audit items are blocked
 > **Last updated:** 2026-11-23
 
 This tracker is authoritative for Shrike 1.0 status. A phase is not done because
@@ -218,7 +218,7 @@ demonstrated and the evidence is linked here.
 | 6.8 | Failure injection | `done` | Crash, timeout, corrupted cache, failed revert | engine crash/timeout tests; corrupted snapshot and manifest are discarded and rebuilt; `cache verify` reports broken entries; revert-failure/recovery e2e; `packages/cli/test/contracts.test.mjs` |
 | 6.9 | Docs and README final | `done` | Every claim reproducible; links valid | README status, build-graph row, quick start, and MIT license reconciled with the implementation; `node scripts/check-links.mjs` (115 files), `node scripts/check-docs.mjs` (13 docs, 7 plans, 111 task IDs), and `node scripts/check-schemas.mjs` (1231 fixture files) pass |
 | 6.10 | Release candidate | `done` | 1.0.0-rc.2 on npm + GitHub | release workflow, version bumping, release notes, checksums, manifest, attestations, keyless signing, npm publish, and registry smoke test are implemented; release run 45078194795 published all six `1.0.0-rc.2` packages with provenance and created GitHub release `v1.0.0-rc.2`; the smoke job passed on rerun after registry propagation; `NPM_TOKEN` is an environment secret on the protected `npm` environment |
-| 6.11 | 1.0 release | `done` | Tagged, signed, published | `v1.0.0` tagged at `903ea42` with five engine binaries, six tarballs, `SHA256SUMS` and its Sigstore bundle, `release-manifest.json`, and release notes; release run 45081504082 published all six packages with npm provenance and `latest=1.0.0`; the smoke job passed on rerun and installed both bins from the registry |
+| 6.11 | 1.0 release | `done` | Tagged, signed, published | `v1.0.0` tagged at `903ea42` with five engine binaries, six tarballs, `SHA256SUMS` and its Sigstore bundle, `release-manifest.json`, and release notes; release run 45081504082 published all six packages with npm provenance and `latest=1.0.0`; the smoke job passed on rerun and installed both bins from the registry. Patch release `v1.0.1` at `c1bf9bc` shipped the post-1.0.0 prune fixes; release run 45086196648 published all six packages with provenance and `latest=1.0.1`, and the smoke job passed after registry propagation |
 | 6.12 | Opt-in telemetry | `deferred` | Not in v1; revisit after adoption | deferred by D-016 |
 
 ---
@@ -1046,6 +1046,7 @@ implementation starts; design-package validation is recorded below.
 | 2026-11-23 | 5.7 | `getshrike/shrike-action-test` runs 45072373123 and 45085138639; `gh run download` artifacts | OK: delta attempt 4 started 23:16 UTC after `getshrike@1.0.0` propagation and reported `src/add.ts#add` plus `src/add.ts`; prune run opened draft PR #5 against `main` with `rcpt_8e5c5060b59af8480afcab34` (verified, `npm run test` pass/pass) and deleted `src/add.ts`; the repository setting **Allow GitHub Actions to create and approve pull requests** is required for `GITHUB_TOKEN` |
 | 2026-11-23 | 5.7, 6.11 | PRs #12, #14, #15; `node scripts/e2e-prune.mjs`; `node --test packages/action/test/action.test.mjs` | OK: prune normalizes `origin/main` for `gh pr create`, accepts `--pr` through shared validation, checks the remote for an existing branch instead of a stale tracking ref, supplies the `github-actions[bot]` identity when the runner has none, and exits 4 with `gh`'s error when no PR opens; 6 prune e2e scenarios and 10 Action tests pass |
 | 2026-11-23 | 6.10, 6.11 | `gh workflow run release.yml` runs 45078194795 and 45081504082; `npm view getshrike dist-tags`; `gh release view v1.0.0` | OK: `1.0.0-rc.2` and `1.0.0` each published all six packages with npm provenance; `v1.0.0` at `903ea42` has five engine binaries, six tarballs, `SHA256SUMS` and its Sigstore bundle, `release-manifest.json`, and release notes; both smoke jobs passed on rerun after registry propagation; dist-tags `latest=1.0.0`; a registry install runs both bins |
+| 2026-11-23 | 6.11 | `gh workflow run release.yml` run 45086196648; `gh release view v1.0.1`; `npm view getshrike dist-tags` | OK: `1.0.1` published all six packages with provenance; GitHub release `v1.0.1` at `c1bf9bc` has five engine binaries, six tarballs, `SHA256SUMS` and its Sigstore bundle, `release-manifest.json`, and release notes; the smoke job passed on rerun after registry propagation and installed both bins; `latest=1.0.1`, `next=1.0.0-rc.2` |
 
 ---
 
