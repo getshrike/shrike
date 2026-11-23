@@ -4,7 +4,7 @@ Verified dead-code cleanup: a whole-graph PR orphan delta, verified deletion
 batches, and a portable receipt.
 
 ```bash
-npm install -D shrike
+npm install -D getshrike
 npx shrike scan
 npx shrike delta --base origin/main --json
 ```
@@ -24,5 +24,5 @@ shrike plan --base origin/main
 receipt, and opens a draft PR when `gh` is available. It never commits to the
 base branch.
 
-See the repository README and `docs/07-agent-and-distribution.md` for hooks, the
-Action, MCP, and the trust boundary.
+See the repository README and `docs/architecture.md` for hooks, the Action, MCP,
+and the trust boundary.

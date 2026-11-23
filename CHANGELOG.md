@@ -16,7 +16,7 @@ All notable changes to Shrike are recorded here. The format follows
 ## [1.0.0] — 2026-11-23
 
 The first Shrike release line, published to npm and GitHub. External launch
-gates are tracked in [`TRACKER.md`](TRACKER.md).
+gates and release steps are recorded in [`docs/release.md`](docs/release.md).
 
 ### Added
 
@@ -89,11 +89,10 @@ gates are tracked in [`TRACKER.md`](TRACKER.md).
 
 - README install path, package names, status, and repository map updated for the
   `getshrike` release.
-- `docs/07` documents the actual launcher resolution order, tarball gates, and
-  clean-machine install test.
-- `docs/09` records the implemented supply-chain controls and the remaining
-  external audit.
-- `docs/12` records the `getshrike` naming decision as D-053.
+- Launcher resolution order, tarball gates, supply-chain controls, and the
+  `getshrike` naming decision are documented in
+  [`docs/development.md`](docs/development.md) and
+  [`docs/release.md`](docs/release.md).
 - Competitor performance and accuracy reports for 2026-11-23.
 
 ### Known limitations

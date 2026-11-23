@@ -7,7 +7,12 @@ let count = 0;
 function walk(directory) {
   for (const name of readdirSync(directory)) {
     const path = join(directory, name);
-    if (statSync(path).isDirectory()) walk(path);
+    // Third-party and generated trees are not part of this repository's docs;
+    // their READMEs contain links to files packages omit from publication.
+    if (statSync(path).isDirectory()) {
+      if (name === "node_modules" || name === "target" || name === "dist") continue;
+      walk(path);
+    }
     else if (name.endsWith(".md")) {
       count += 1;
       const text = readFileSync(path, "utf8");

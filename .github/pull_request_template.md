@@ -18,6 +18,6 @@
 
 - [ ] The PR title follows Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`).
 - [ ] I ran the relevant Rust, Node, and fixture checks.
-- [ ] I updated docs and the tracker where behavior changed.
+- [ ] I updated the docs where behavior changed.
 - [ ] I kept the change scoped to one concern.
 - [ ] I checked for secrets and generated files.
