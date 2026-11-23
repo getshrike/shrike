@@ -1,273 +1,244 @@
-# Shrike — Proof-Carrying Cleanup
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/shrike-logo-paper.svg">
+    <source media="(prefers-color-scheme: light)" srcset="public/shrike-logo.svg">
+    <img src="public/shrike-logo.svg" alt="Shrike" width="440">
+  </picture>
+</h1>
 
-**Shrike deletes the code that agents and PRs leave behind — and proves the app
-still builds.**
+<p align="center">
+  <strong>Verified dead-code cleanup for TypeScript and JavaScript.</strong><br>
+  Delete what a pull request orphaned. Prove the project still passes its checks.
+</p>
 
-Shrike is a greenfield, Rust-powered cleanup tool for TypeScript and JavaScript
-repositories, with first-class Next.js and React support. It is not a linter, a
-score, a bundle optimizer, or another read-only dead-code report. It produces a
-reviewable cleanup PR: independent deletion batches, the project's own checks run
-against a baseline, failures bisected and reverted, and a portable receipt that
-records exactly what was removed and what was verified.
+<p align="center">
+  <a href="https://github.com/getshrike/shrike/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/getshrike/shrike/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://www.npmjs.com/package/getshrike"><img alt="npm version" src="https://img.shields.io/npm/v/getshrike.svg"></a>
+  <a href="https://www.npmjs.com/package/getshrike"><img alt="Node.js 22 or newer" src="https://img.shields.io/node/v/getshrike.svg"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+</p>
 
-This repository contains the **design and working implementation** of Shrike
-1.0. The Rust engine, TypeScript host, CLI, verifier, receipts, hooks, GitHub
-Action, and MCP server are implemented. Phase 4 (Next.js build-graph evidence)
-includes JSONL streaming, route and byte attribution, server/client verdicts,
-build-edge feedback, and the fallback matrix. The npm package layout, native
-platform packages, checksums, attestations, and keyless release signing are
-implemented and published. The external launch items (design partners and an
-independent audit) remain blocked on participants; see
-[`TRACKER.md`](TRACKER.md).
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#commands">Commands</a> ·
+  <a href="#framework-coverage">Coverage</a> ·
+  <a href="#documentation">Docs</a>
+</p>
 
----
+## Why Shrike
 
-## The problem in one paragraph
+Agents and pull requests add code much faster than they remove it. A deleted
+caller leaves its helper behind. A replaced data path leaves the old hook
+behind. A removed route leaves its components behind. Tests and lint stay green
+because the leftover code is unreachable, not wrong, and the next agent builds
+on top of it.
 
-AI-assisted development changed the shape of technical debt. Agents add helpers,
-fallbacks, variants, and second data-fetching paths; they rarely subtract. The old
-caller survives the rewrite, the old helper survives the replacement, and the old
-file survives the removed route. Tests and lint still pass because the residue is
-unreachable, not incorrect. The codebase grows faster than it is understood, and
-the next agent writes a fourth version of the same function. Detection tools tell
-you what looks unused. None of them take responsibility for removing it safely.
+Most dead-code tools stop at detection. Shrike owns the risky part: the removal
+and the proof.
 
-Shrike does.
-
----
-
-## What makes Shrike different
-
-Most tools stop at detection. Shrike owns the risky part: **the deletion and the
-proof**.
-
-| Pillar | What Shrike does | Why it is different |
-|---|---|---|
-| **Whole-graph PR orphan delta** | Compares the merge-base graph to the PR head and reports code that became dead anywhere in the repo, including files the PR never touched | Changed-file audits cannot see this; current-state scanners cannot attribute it |
-| **Verified deletion batches** | Applies each closure-complete batch in isolation, runs the project's checks against a baseline, bisects failures, and reverts only the culprit | Advisory tools stop at "safe to delete"; Shrike produces a reviewable PR |
-| **Portable receipt** | Emits a content-addressed JSON proof: graph hashes, witnesses, patches, checks, baseline status, build evidence, outcome | A receipt is auditable and shareable; a score is not |
-| **Build-graph evidence** | Joins build evidence to confirm presence and report route and byte impact, while catching dynamic edges the static graph missed | Optional confirmation, never a hard dependency |
-| **Rust speed and determinism** | Parses and indexes 10,000 files in seconds with bounded memory; identical input produces byte-identical output | Fast enough for a post-agent hook; deterministic enough for CI |
-
-The wedge is not "we find dead code." It is:
-
-> **Shrike finds what this PR orphaned, deletes it in verified batches, and gives
-> you a receipt that proves the app still builds.**
-
----
-
-## Status
-
-| Item | State |
-|---|---|
-| Product thesis | Complete — [`docs/00-thesis-and-positioning.md`](docs/00-thesis-and-positioning.md) |
-| Architecture | Complete — [`docs/01-architecture.md`](docs/01-architecture.md) |
-| Algorithms | Complete — [`docs/03-algorithms.md`](docs/03-algorithms.md) |
-| Execution plans | Complete — [`plans/`](plans/) |
-| Agent prompts | Complete — [`prompts/`](prompts/) |
-| Research | Complete — [`research/`](research/) |
-| Schemas | Complete and validated — [`schemas/`](schemas/) |
-| Rust engine | Implemented — `cargo test --workspace` |
-| TypeScript host | Implemented — `pnpm -r typecheck`, `pnpm test:node` |
-| Fixtures and corpus | 14 delta, 6 verification, 250 must-not-report entries |
-| Verified deletion | Implemented — `node scripts/e2e-prune.mjs` |
-| Build-graph evidence | Implemented — JSONL joins, routes, bytes, verdicts, fallbacks, build-edge feedback; 11 build-graph fixtures |
-| npm packaging | Implemented — `getshrike` tarball, five platform packages, checksum verification, clean-machine install test |
-| Release automation | Published — `v1.0.1` five-target build, SHA-256 sidecars, GitHub attestations, keyless Sigstore signing, npm provenance, and a passing registry smoke test |
-| External launch | Blocked on design partners and an independent audit — see [`TRACKER.md`](TRACKER.md) |
-
-The full status, decisions, metrics, and evidence log live in
-[`TRACKER.md`](TRACKER.md).
-
----
-
-## Repository map
-
-```text
-.
-├── MASTER_PROMPT.md          # canonical product + engineering brief
-├── README.md                 # this file
-├── TRACKER.md                # status, tasks, decisions, metrics, logs
-├── docs/                     # design documents
-│   ├── 00-thesis-and-positioning.md
-│   ├── 01-architecture.md
-│   ├── 02-folder-structure.md
-│   ├── 03-algorithms.md
-│   ├── 04-whole-graph-delta.md
-│   ├── 05-verified-deletion.md
-│   ├── 06-build-graph-and-nextjs.md
-│   ├── 07-agent-and-distribution.md
-│   ├── 08-benchmarks-and-confidence.md
-│   ├── 09-security-and-trust.md
-│   ├── 10-non-goals-and-risks.md
-│   ├── 11-market-research.md
-│   └── 12-decision-log.md
-├── plans/                    # execution plans, in dependency order
-│   ├── PLAN-0-foundations.md
-│   ├── PLAN-1-rust-engine.md
-│   ├── PLAN-2-graph-and-delta.md
-│   ├── PLAN-3-verification-and-receipts.md
-│   ├── PLAN-4-build-graph-and-nextjs.md
-│   ├── PLAN-5-distribution-and-launch.md
-│   └── PLAN-6-hardening-and-scale.md
-├── prompts/                  # role prompts for implementation and review agents
-├── research/                 # dated research, competitor matrix, sources
-├── schemas/                  # JSON Schemas for protocol, snapshots, plans, receipts
-├── fixtures/                 # delta, verification, build, receipt, and corpus fixtures
-├── benchmarks/               # deterministic 1k/10k benchmark generator and harness
-├── crates/                   # Rust workspace: core, protocol, syntax, resolve, graph, delta, plan, evidence, receipt, engine
-├── packages/                 # TypeScript host: cli, verifier, receipts, agent, action, testkit, platform packages
-├── scripts/                  # repository automation and contract gates
-└── CHANGELOG.md              # release notes and change sets
-```
-
-The `crates/`, `packages/`, `fixtures/`, `benchmarks/`, and `scripts/` directories
-contain working code and are exercised by `.github/workflows/ci.yml`.
-
----
+- **Whole-graph orphan delta.** Compares the merge-base graph with the PR head
+  graph, so it finds code that became dead anywhere in the repository —
+  including files the PR never touched.
+- **Verified deletion batches.** Applies each batch in a branch worktree, runs
+  the project's own checks against a baseline, bisects failures, and reverts
+  only the culprit.
+- **Portable receipt.** Records graph hashes, witnesses, patches, baseline and
+  after checks, build evidence, and the outcome as content-addressed JSON.
 
 ## Quick start
 
+Requires Node.js 22+. The npm package is `getshrike`; it installs the `shrike`
+and `getshrike` commands and resolves a native engine for your platform.
+
 ```bash
-# Install the published CLI
 npm install -D getshrike
-npx getshrike scan
-
-# Both bin names point at the same launcher
-npx shrike version --json
+npx shrike init
 ```
 
-The npm package installs one optional platform package for the host and resolves
-the native engine from it. The first registry publish is still pending npm
-credentials; until then, build from source:
+`init` writes `shrike.config.ts` and adds `.shrike/` to `.gitignore`. Start
+read-only:
 
 ```bash
-# Build the Rust engine and install the workspace
-cargo build --release -p shrike-engine
-pnpm install
-
-# Run the local gates
-pnpm -r typecheck
-pnpm test:node
-cargo test --workspace
-node scripts/check.mjs
-
-# First scan from the repository root
-node packages/cli/src/main.ts scan --json
-
-# Use the CLI from another repository by pointing at the engine
-SHRIKE_ENGINE=/path/to/shrike/target/release/shrike-engine \
-  node /path/to/shrike/packages/cli/src/main.ts delta --base origin/main --json
+npx shrike scan                      # current-state dead-code evidence
+npx shrike delta --base origin/main  # what this branch orphaned
+npx shrike plan --base origin/main   # deletion batches and blast radius
 ```
 
-`prune` defaults to a branch worktree under `.shrike/worktrees/`, writes a
-receipt per batch under `.shrike/receipts/`, and never commits to `main`.
-`--in-place` is explicit opt-in. Exit codes are `0` clean, `1` findings,
-`2` usage/config, `3` verification failed, `4` could not run, and `5` revert
-failed.
+`scan`, `delta`, and `plan` exit `1` when they find something, so they can gate
+CI as-is. A real delta looks like this:
 
----
+```console
+$ npx shrike delta --base origin/main
+Shrike delta: 1 newly dead symbol in 1 file
+  src/format.ts#formatInvoice  -3 lines  [src/format.ts]
+  src/format.ts  (file)
+Cascade: 1 symbols, 1 files, 3 lines
+```
 
-## The pipeline
+When the plan looks right:
+
+```bash
+npx shrike prune --base origin/main
+```
+
+`prune` applies each batch in a worktree under `.shrike/worktrees/`, runs your
+checks against a baseline, commits only batches that pass, and writes a receipt
+per batch under `.shrike/receipts/`. It never commits to the base branch. Add
+`--pr` to open a draft PR with `gh`.
+
+## How it works
+
+Shrike builds two deterministic snapshots — one at the merge base, one at the PR
+head — and diffs their live sets:
 
 ```text
-project + config
-  → parse (oxc, Rust)
-  → semantic summaries
-  → module resolution
-  → graph + framework entries
-  → reachability with witness paths
-  → base snapshot + head snapshot
-  → orphan delta (what this PR killed)
-  → SCC condensation + cascade closure
-  → independent deletion batches + blast-radius check
-  → apply batch in a worktree
-  → baseline checks → after checks → compare
-  → pass: keep + receipt
-  → fail: bisect, revert culprit, retry remainder
-  → draft PR + portable receipt
+merge-base ─┐
+            ├─ orphan delta → cascade → batches → verify → receipt
+PR head ────┘
 ```
 
-The full algorithm is in [`docs/03-algorithms.md`](docs/03-algorithms.md). The
-delta is in [`docs/04-whole-graph-delta.md`](docs/04-whole-graph-delta.md). The
-verifier is in [`docs/05-verified-deletion.md`](docs/05-verified-deletion.md).
+- **Orphan delta.** `live(base) − live(head)` gives code that was reachable
+  before the PR and is not reachable now. Each item names the changed edge that
+  removed its last witness (`removed-import`, `removed-call`, `removed-route`,
+  ...).
+- **Cascade and partition.** Tarjan SCC condensation closes over exclusive
+  helpers; a conflict graph splits the result into independent batches with
+  blast-radius caps.
+- **Verification.** Each batch is applied in a worktree. Baseline checks run
+  before the edit, the same checks run after, and the results are compared. A
+  failure is bisected, the culprit reverted, and the remaining edits retried.
+- **Receipt.** A batch that survives gets a content-addressed receipt that can
+  be re-checked with `shrike verify`.
 
----
+## What "verified" means
 
-## How to read this package
+Verified means the project's configured checks passed after the removal,
+relative to a baseline. It does not mean the code is semantically unused in
+production, that the tests are adequate, or that external consumers cannot
+import it.
 
-### If you are a human
+Shrike fails closed. By default, an item is blocked rather than deleted if it is
+an entry, public API, generated, unparsed, or reachable through an unknown edge;
+blocked items are reported with a reason. The analyzer treats repository content
+as data, never instructions, and never spawns a process or opens a socket. A
+build graph can add liveness evidence but can never authorize a deletion.
 
-1. Read [`docs/00-thesis-and-positioning.md`](docs/00-thesis-and-positioning.md)
-   for the problem, buyer, and category.
-2. Read [`docs/01-architecture.md`](docs/01-architecture.md) and
-   [`docs/03-algorithms.md`](docs/03-algorithms.md) for how it works.
-3. Read [`docs/10-non-goals-and-risks.md`](docs/10-non-goals-and-risks.md) for
-   what it deliberately will not do.
-4. Start executing at [`plans/PLAN-0-foundations.md`](plans/PLAN-0-foundations.md).
+## Commands
 
-### If you are an implementation agent
+| Command | What it does |
+| --- | --- |
+| `shrike init` | Create `shrike.config.ts` and ignore `.shrike/` |
+| `shrike scan` | Current-state evidence and deletion candidates |
+| `shrike deps` | Unused and unlisted dependency evidence |
+| `shrike delta --base <ref>` | Whole-graph PR orphan delta |
+| `shrike plan --base <ref>` | Deletion batches, impact, and blast radius |
+| `shrike prune --base <ref>` | Apply, verify, and commit batches in a branch worktree; `--pr` opens a draft PR |
+| `shrike verify --plan <id>` | Re-run verification for a saved plan |
+| `shrike proof <symbol>` | Witness path or proof trace for a symbol |
+| `shrike receipt [id]` | Show a receipt |
+| `shrike recover <snapshot>` | Restore files after a failed revert |
+| `shrike evidence --build <path>` | Join a build-evidence export |
+| `shrike hook install` | Install the post-agent hook (`--claude`, `--cursor`, or `--opencode`) |
+| `shrike mcp serve` | Read-only MCP server over stdio |
+| `shrike cache clean\|verify` | Cache maintenance |
+| `shrike version` | Version and protocol information |
 
-1. Load [`prompts/00-orchestrator.md`](prompts/00-orchestrator.md).
-2. Read [`MASTER_PROMPT.md`](MASTER_PROMPT.md) and the doc named by the task.
-3. Work one plan at a time. Do not skip the exit gate.
-4. Update [`TRACKER.md`](TRACKER.md) with evidence, not claims.
+All read-only commands accept `--json`. Exit codes: `0` clean, `1` findings,
+`2` usage/config, `3` verification failed (changes reverted), `4` could not run
+(fail closed), `5` revert failed (manual recovery required).
 
-### If you are reviewing the design
+## Framework coverage
 
-Start with [`research/01-competitive-landscape.md`](research/01-competitive-landscape.md)
-and [`docs/12-decision-log.md`](docs/12-decision-log.md). The decision log records
-what was rejected and why.
+Shrike protects framework-invoked code so it is not mistaken for dead code.
+Framework entries are gated on the owning package declaring the dependency, so a
+file that merely looks like a route in an unrelated package stays analyzable.
 
----
+| Family | Covered conventions |
+| --- | --- |
+| Next.js App Router | `page`, `layout`, `route`, `loading`, `error`, `template`, metadata and icon files, middleware/proxy, instrumentation, route segment config, server actions, RSC boundaries |
+| Next.js Pages Router | `pages/**` routes, `_app`/`_document`, `getStaticProps`/`getServerSideProps`/`getInitialProps`, route-tree conflicts |
+| React / bundlers | `createRoot` and legacy roots, Vite `index.html` scripts, webpack entries, `import.meta.glob`, `require.context` |
+| Routers | React Router, Remix, TanStack Router, Expo Router, Nuxt, SvelteKit |
+| Tooling | Storybook, Ladle, React Cosmos, Cypress, Docusaurus, Gatsby, Metro platform variants |
+| Packages | `package.json` `exports`/`main`/`bin`, workspace packages, public API surfaces |
+| Config and tests | Statically named config and test entry modules; framework-generated types stay live |
 
-## Non-goals
+## Integrations
 
-Shrike will not become:
+- **Post-agent hook.** `npx shrike hook install --claude` (also `--cursor` and
+  `--opencode`) installs a hook that runs after the agent stops. It computes the
+  delta, runs fast checks against a baseline, and writes a bounded
+  `CleanupBrief`. It never applies a deletion, has a 60-second budget, and
+  degrades to delta-only on timeout.
+- **GitHub Action.** [`packages/action/`](packages/action/action.yml) wraps the
+  CLI. `mode: delta` is read-only and can fail a PR with `fail-on: newly-dead`
+  or when `max-items` is exceeded. `mode: prune` produces a verified cleanup PR
+  and refuses fork PRs.
+- **MCP server.** `npx shrike mcp serve` exposes four read-only tools —
+  `shrike_delta`, `shrike_plan`, `shrike_proof`, and `shrike_receipt` — over
+  stdio. No tool mutates the repository, runs project checks, or reads `.env`.
 
-- another bundle optimizer (Vercel owns that);
-- a 100+ plugin catalogue (Knip and Fallow own that);
-- a multi-language analyzer (aislop and fossil own that);
-- a slop score or cleanliness badge (the wrong metric);
-- a type checker (the project's typecheck is a verification input);
-- a generic MCP dead-code scanner (crowded and undifferentiated);
-- an auto-committer to `main` (PR-first, always);
-- a hosted dashboard before the deletion loop is proven.
+## Performance
 
-Full reasoning: [`docs/10-non-goals-and-risks.md`](docs/10-non-goals-and-risks.md).
+The engine is written in Rust and emits deterministic JSON: identical input
+produces byte-identical output, regardless of thread count.
 
----
+| Scenario | Budget |
+| --- | ---: |
+| 1,000 files, cold | ≤ 1.5 s |
+| 1,000 files, warm | ≤ 400 ms |
+| 10,000 files, cold | ≤ 6 s |
+| 10,000 files, warm | ≤ 2 s |
+| 10,000 files, peak RSS | ≤ 600 MB |
 
-## Success in one table
+The harness and reported runs are in [`benchmarks/`](benchmarks/README.md).
+Absolute times are machine-specific; every reported number includes the machine
+and commit.
 
-| Metric | Target |
-|---|---|
-| Confirmed false positives on the must-not-report corpus | 0 |
-| Proposed batches that verify without manual edits | ≥ 80% |
-| Real PRs where the orphan delta finds ≥ 1 newly dead file | ≥ 30% |
-| 1,000-file cold scan | ≤ 1.5 s |
-| 1,000-file warm scan | ≤ 400 ms |
-| 10,000-file cold scan | ≤ 6 s |
-| 10,000-file peak RSS | ≤ 600 MB |
-| Fast-path receipt (delta + typecheck + lint) | ≤ 60 s |
-| Full receipt (typecheck + lint + test + build) | ≤ 10 min |
-| Design partners who merge a Shrike PR in month one | ≥ 3 |
+## Scope
 
-These are targets, not results. Actuals are recorded in
-[`TRACKER.md`](TRACKER.md) §5.
+Shrike is not a linter, a bundle optimizer, a type checker, a plugin catalogue,
+or a cleanliness score. It does not auto-commit to `main`; every mutation happens
+on a branch. It analyzes TypeScript and JavaScript with first-class Next.js and
+React support, and will not grow into a multi-language analyzer.
 
----
+## Documentation
 
-## Name and package
+| If you are… | Read |
+| --- | --- |
+| setting up the repo or looking for a command | [`docs/development.md`](docs/development.md) |
+| learning what Shrike reports | [`docs/features.md`](docs/features.md) |
+| learning the algorithms and invariants | [`docs/how-it-works.md`](docs/how-it-works.md) |
+| deciding where a change belongs | [`docs/architecture.md`](docs/architecture.md) |
+| adding or running tests | [`docs/testing.md`](docs/testing.md) |
+| opening or reviewing a PR | [`docs/contributing.md`](docs/contributing.md) |
+| preparing a release | [`docs/release.md`](docs/release.md) |
 
-The product and CLI command are `shrike`. The unscoped npm package is
-`getshrike`, with the alias `getshrike` on the same launcher; the platform
-packages are `getshrike-linux-x64`, `getshrike-linux-arm64`,
-`getshrike-darwin-x64`, `getshrike-darwin-arm64`, and `getshrike-windows-x64`.
-The unscoped `shrike` name was already taken at `0.5.2`, so `getshrike` keeps
-the install path unscoped and the command unchanged. `getshrike.dev` is the
-project domain. The Rust crates use the `shrike-` prefix. The naming decision is
-recorded in [`docs/12-decision-log.md`](docs/12-decision-log.md) (D-053).
+The full manual starts at [`docs/README.md`](docs/README.md).
+
+## Project layout
+
+```text
+crates/        Rust engine: syntax, resolve, graph, delta, plan, evidence, protocol
+packages/      TypeScript host: cli, verifier, receipts, agent, action, testkit
+schemas/       JSON Schema contract between the two runtimes
+fixtures/      Delta, verification, build-evidence, receipt, and corpus fixtures
+benchmarks/    Deterministic generator and competitor harness
+docs/          Development manual
+```
+
+## Contributing
+
+Contributions are welcome. Read [`docs/contributing.md`](docs/contributing.md)
+before opening a PR, and [`AGENTS.md`](AGENTS.md) if you are working with a
+coding agent. In short: one concern per branch, Conventional Commit titles, and
+the commands and results recorded in the PR.
+
+To build from source, run `pnpm install`, then
+`cargo build --release -p shrike-engine` and `pnpm run build:ts`. Setup, the
+full gate list, and troubleshooting are in
+[`docs/development.md`](docs/development.md).
 
 ## License
 

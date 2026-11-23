@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Generate the PLAN-6 corpus expansion.
+ * Generate additional must-not-report corpus cases. See docs/testing.md.
  *
  * The corpus is fixture data, not generated test output: this script writes the
  * case trees and appends the manifest entries once. It is idempotent, so the
