@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/web-manifest",
+  "name": "Shrike — Proof-carrying cleanup",
+  "short_name": "Shrike",
+  "description": "Shrike deletes the code that agents and PRs leave behind — and proves the app still builds.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0A0A0A",
+  "theme_color": "#0A0A0A",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
