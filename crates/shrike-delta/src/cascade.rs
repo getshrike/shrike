@@ -25,17 +25,31 @@ pub(crate) fn cascade_closure(head: &GraphSnapshot, seeds: &BTreeSet<String>) ->
 }
 
 pub(crate) fn partition(head: &GraphSnapshot, symbols: &BTreeSet<String>) -> Vec<BatchSummary> {
-    let mut by_file: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for key in symbols {
-        if let Some(symbol) = head.symbol(key) {
-            by_file
-                .entry(symbol.file.clone())
-                .or_default()
-                .insert(key.clone());
-        }
-    }
+    let mut units: Vec<(String, Vec<String>, Vec<String>)> =
+        shrike_graph::deletion_groups(head, symbols)
+            .into_iter()
+            .filter_map(|group| {
+                let mut keys: Vec<String> = group
+                    .into_iter()
+                    .filter(|key| head.symbol(key).is_some())
+                    .collect();
+                if keys.is_empty() {
+                    return None;
+                }
+                keys.sort();
+                let mut files: Vec<String> = keys
+                    .iter()
+                    .filter_map(|key| head.symbol(key))
+                    .map(|symbol| symbol.file.clone())
+                    .collect();
+                files.sort();
+                files.dedup();
+                Some((files.first().cloned().unwrap_or_default(), keys, files))
+            })
+            .collect();
+    units.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
     let mut batches = Vec::new();
-    let mut current_files = Vec::new();
+    let mut current_files: Vec<String> = Vec::new();
     let mut current_symbols: Vec<String> = Vec::new();
     let flush =
         |symbols: &mut Vec<String>, files: &mut Vec<String>, batches: &mut Vec<BatchSummary>| {
@@ -63,14 +77,22 @@ pub(crate) fn partition(head: &GraphSnapshot, symbols: &BTreeSet<String>) -> Vec
             symbols.clear();
             files.clear();
         };
-    for (file, keys) in by_file {
+    for (_sort, keys, files) in units {
+        let new_files = files
+            .iter()
+            .filter(|file| !current_files.contains(*file))
+            .count();
         if !current_symbols.is_empty()
-            && (current_symbols.len() + keys.len() > 50 || current_files.len() >= 10)
+            && (current_symbols.len() + keys.len() > 50 || current_files.len() + new_files > 10)
         {
             flush(&mut current_symbols, &mut current_files, &mut batches);
         }
         current_symbols.extend(keys);
-        current_files.push(file);
+        for file in files {
+            if !current_files.contains(&file) {
+                current_files.push(file);
+            }
+        }
     }
     flush(&mut current_symbols, &mut current_files, &mut batches);
     batches

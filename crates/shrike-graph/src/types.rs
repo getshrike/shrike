@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use shrike_core::{Diagnostic, Span};
@@ -148,6 +148,78 @@ impl GraphSnapshot {
     pub fn is_candidate(&self, key: &str) -> bool {
         self.candidates.iter().any(|value| value == key)
     }
+}
+
+/// Group selected deletion candidates that must be removed together.
+///
+/// Two rules define a group:
+/// - every selected non-re-export symbol in one file, so a declaration and a
+///   same-file user never split across batches; and
+/// - a named re-export edge whose source and target are both selected, so a
+///   dead declaration stays with the dead barrel specifier that names it.
+///
+/// Re-export aliases are not grouped by their own file: a barrel can hold
+/// aliases for declarations in many files, and grouping them all by the barrel
+/// would merge unrelated files into one oversized batch. Chains (`index`
+/// re-exports `barrel` re-exports the declaration) still group transitively
+/// through the edges. Groups are sorted by their first symbol so the result is
+/// deterministic.
+#[must_use]
+pub fn deletion_groups(
+    snapshot: &GraphSnapshot,
+    selected: &BTreeSet<String>,
+) -> Vec<BTreeSet<String>> {
+    let selected: BTreeSet<&str> = selected.iter().map(String::as_str).collect();
+    let mut links: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    let mut first_in_file: BTreeMap<&str, &str> = BTreeMap::new();
+    for &key in &selected {
+        let Some(symbol) = snapshot.symbol(key) else {
+            continue;
+        };
+        if symbol.kind == "re-export" {
+            continue;
+        }
+        let file = symbol.file.as_str();
+        if let Some(&first) = first_in_file.get(file) {
+            if first != key {
+                links.entry(first).or_default().insert(key);
+                links.entry(key).or_default().insert(first);
+            }
+        } else {
+            first_in_file.insert(file, key);
+        }
+    }
+    for edge in &snapshot.edges {
+        if edge.kind != "re-export" || edge.source == edge.target {
+            continue;
+        }
+        let (source, target) = (edge.source.as_str(), edge.target.as_str());
+        if !selected.contains(source) || !selected.contains(target) {
+            continue;
+        }
+        links.entry(source).or_default().insert(target);
+        links.entry(target).or_default().insert(source);
+    }
+    let mut assigned: BTreeSet<&str> = BTreeSet::new();
+    let mut groups = Vec::new();
+    for &key in &selected {
+        if !assigned.insert(key) {
+            continue;
+        }
+        let mut group = BTreeSet::from([key.to_string()]);
+        let mut queue = vec![key];
+        while let Some(node) = queue.pop() {
+            for next in links.get(node).into_iter().flatten() {
+                if assigned.insert(next) {
+                    group.insert((*next).to_string());
+                    queue.push(next);
+                }
+            }
+        }
+        groups.push(group);
+    }
+    groups.sort_by(|left, right| left.iter().next().cmp(&right.iter().next()));
+    groups
 }
 
 /// Files no entry and no other module reaches. A file is unused only when it

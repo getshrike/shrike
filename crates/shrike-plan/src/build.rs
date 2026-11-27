@@ -52,16 +52,29 @@ pub fn build_plan(
         }
     }
 
-    let mut by_file: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for key in selected {
-        if let Some(symbol) = by_key.get(key.as_str()) {
-            by_file.entry(symbol.file.clone()).or_default().push(key);
-        }
-    }
-    for symbols in by_file.values_mut() {
-        symbols.sort();
-        symbols.dedup();
-    }
+    let groups = shrike_graph::deletion_groups(snapshot, &selected);
+    let mut units: Vec<(String, Vec<String>, Vec<String>)> = groups
+        .into_iter()
+        .filter_map(|group| {
+            let mut symbols: Vec<String> = group
+                .into_iter()
+                .filter(|key| by_key.contains_key(key.as_str()))
+                .collect();
+            if symbols.is_empty() {
+                return None;
+            }
+            symbols.sort();
+            let mut files: Vec<String> = symbols
+                .iter()
+                .filter_map(|key| by_key.get(key.as_str()).copied())
+                .map(|symbol| symbol.file.clone())
+                .collect();
+            files.sort();
+            files.dedup();
+            Some((files.first().cloned().unwrap_or_default(), symbols, files))
+        })
+        .collect();
+    units.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
 
     let max_symbols = config.batch_policy.max_symbols.max(1) as usize;
     let max_files = config.batch_policy.max_files.max(1) as usize;
@@ -90,15 +103,23 @@ pub fn build_plan(
                 patch: String::new(),
             });
         };
-    for (file, symbols) in by_file {
+    for (_sort, symbols, files) in units {
+        let new_files = files
+            .iter()
+            .filter(|file| !current_files.contains(*file))
+            .count();
         if !current_symbols.is_empty()
             && (current_symbols.len() + symbols.len() > max_symbols
-                || current_files.len() + 1 > max_files)
+                || current_files.len() + new_files > max_files)
         {
             flush(&mut current_symbols, &mut current_files, &mut batches);
         }
         current_symbols.extend(symbols);
-        current_files.push(file);
+        for file in files {
+            if !current_files.contains(&file) {
+                current_files.push(file);
+            }
+        }
     }
     flush(&mut current_symbols, &mut current_files, &mut batches);
 
