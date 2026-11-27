@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" fill="none" role="img" aria-label="Isometric stack of identical deterministic analysis results">
+  <title>Fast deterministic engine</title>
+  <g stroke-linejoin="round" stroke-linecap="round">
+    <g>
+      <path d="m200 127 100 57v8l-100 57-100-57v-8l100-57Z" fill="#090a0b" stroke="#25272c"/>
+      <path d="m100 184 100 57v8l-100-57v-8Z" fill="#0b0c0e" stroke="#25272c"/>
+      <path d="m300 184-100 57v8l100-57v-8Z" fill="#08090a" stroke="#25272c"/>
+    </g>
+    <g>
+      <path d="m200 112 100 57v8l-100 57-100-57v-8l100-57Z" fill="#090a0b" stroke="#27292e"/>
+      <path d="m100 169 100 57v8l-100-57v-8Z" fill="#0b0c0e" stroke="#27292e"/>
+      <path d="m300 169-100 57v8l100-57v-8Z" fill="#08090a" stroke="#27292e"/>
+    </g>
+    <g>
+      <path d="m200 97 100 57v8l-100 57-100-57v-8l100-57Z" fill="#090a0b" stroke="#292b30"/>
+      <path d="m100 154 100 57v8l-100-57v-8Z" fill="#0b0c0e" stroke="#292b30"/>
+      <path d="m300 154-100 57v8l100-57v-8Z" fill="#08090a" stroke="#292b30"/>
+    </g>
+    <g>
+      <path d="m200 82 100 57v8l-100 57-100-57v-8l100-57Z" fill="#090a0b" stroke="#2c2e33"/>
+      <path d="m100 139 100 57v8l-100-57v-8Z" fill="#0b0c0e" stroke="#2c2e33"/>
+      <path d="m300 139-100 57v8l100-57v-8Z" fill="#08090a" stroke="#2c2e33"/>
+    </g>
+    <g>
+      <path d="m200 67 100 57v8l-100 57-100-57v-8l100-57Z" fill="#0d0e10" stroke="#34373d"/>
+      <path d="m100 124 100 57v8l-100-57v-8Z" fill="#0b0c0e" stroke="#303237"/>
+      <path d="m300 124-100 57v8l100-57v-8Z" fill="#08090a" stroke="#303237"/>
+    </g>
+    <path d="m174 105 26 15 26-15m-41 4 15 9m-15-3 9 5m9-6 8-5m-8 11 12-7" stroke="#41444a" stroke-width="1.1"/>
+  </g>
+</svg>

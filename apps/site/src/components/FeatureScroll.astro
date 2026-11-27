@@ -1,0 +1,1089 @@
+---
+import FeatureTerminal from "./FeatureTerminal.astro";
+import HowItWorksOrb from "./HowItWorksOrb.astro";
+
+const howItWorks = [
+  {
+    shape: "square" as const,
+    title: "Find the dead code",
+    body: "Shrike starts at your entry points and follows every import and call. Code that no path reaches is dead.",
+  },
+  {
+    shape: "circle" as const,
+    title: "Remove it in batches",
+    body: "Shrike deletes helpers along with the code that used them. Batches stay small and never share a declaration.",
+  },
+  {
+    shape: "triangle" as const,
+    title: "Check, then keep or undo",
+    body: "Shrike runs your checks before and after each batch. If a batch makes a check fail, Shrike reverts the edit that broke it and retries the rest.",
+  },
+];
+
+const features = [
+  {
+    id: "measure",
+    index: "01",
+    nav: "Measure",
+    title: "See how much you can delete",
+    subtitle: "One number. No files change.",
+    body: "One command measures the dead weight. Shrike only reads your project.",
+    command: "npx getshrike report",
+    theme: "dark",
+  },
+  {
+    id: "find",
+    index: "02",
+    nav: "Find",
+    title: "Find what your PR left dead",
+    subtitle: "Only newly dead code",
+    body: "Shrike compares the merge base with your PR head. It finds code that no longer has a path from any entry, including code outside the diff.",
+    command: "npx getshrike delta --base origin/main",
+    theme: "dark",
+  },
+  {
+    id: "clean",
+    index: "03",
+    nav: "Clean",
+    title: "Delete it in verified batches",
+    subtitle: "No new failures ship",
+    body: "Shrike applies each batch in a worktree and compares your checks against a baseline. If a batch introduces a new failure, Shrike bisects it, reverts the culprit, and retries the rest.",
+    command: "npx getshrike clean --base origin/main",
+    theme: "dark",
+  },
+  {
+    id: "prove",
+    index: "04",
+    nav: "Prove",
+    title: "Get a receipt you can re-check",
+    subtitle: "Why it stayed or went",
+    body: "Ask why any symbol is live or dead. After a cleanup, the receipt shows what changed and what was checked.",
+    command: "npx getshrike why src/lib/currency.ts#formatInvoice",
+    theme: "dark",
+  },
+  {
+    id: "protect",
+    index: "05",
+    nav: "Protect",
+    title: "Protect what a static scan would miss",
+    subtitle: "Routes, tests, public API",
+    body: "Shrike never deletes entries, tests, public API, generated or unparsed files, or code reached through a reference it cannot resolve. Build evidence can keep code the graph cannot see.",
+    command: "npx getshrike evidence --build .next",
+    theme: "dark",
+  },
+];
+---
+
+<section
+  class="feature-scroll relative w-full bg-[#090909] text-[#F5F5F5]"
+  aria-label="Shrike features"
+  data-feature-scroll
+  data-header-surface="dark"
+>
+  <div class="mx-auto w-full max-w-[1400px] px-6 sm:px-8 lg:px-12">
+    <div class="pt-20 pb-16 sm:pt-24 lg:pt-28 lg:pb-20">
+      <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-3 lg:gap-8">
+        {
+          howItWorks.map((item, index) => (
+            <article
+              class="flex min-w-0 flex-col gap-6"
+              data-feature-reveal
+              style={`--reveal-delay: ${index * 80}ms`}
+            >
+              <div class="flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#111111]">
+                <div class="w-[58%]">
+                  <HowItWorksOrb shape={item.shape} delay={index * 900} />
+                </div>
+              </div>
+              <div class="flex flex-col gap-1">
+                <h2 class="font-sans text-[20px] leading-[1.375] tracking-[-0.02em] text-[#F5F5F5]">
+                  {item.title}
+                </h2>
+                <p class="font-sans text-[16px] leading-[1.5] text-[#858585]">
+                  {item.body}
+                </p>
+              </div>
+            </article>
+          ))
+        }
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 border-t border-white/10 lg:grid-cols-[180px_1fr] lg:gap-x-8">
+      <aside class="relative hidden lg:block lg:pt-24">
+        <div
+          class="feature-rail sticky top-[96px]"
+          data-feature-rail
+          data-nav-theme="dark"
+        >
+          <p
+            class="feature-nav-label mb-5 font-mono text-[10px] tracking-[0.18em]"
+          >
+            FEATURES
+          </p>
+          <nav aria-label="Feature sections" class="flex flex-col gap-3">
+            {
+              features.map((feature) => (
+                <a
+                  href={`#${feature.id}`}
+                  class="feature-nav-link"
+                  data-feature-link={feature.id}
+                >
+                  <svg
+                    class="feature-nav-marker"
+                    width="7"
+                    height="9"
+                    viewBox="0 0 7 9"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <path d="M0 0L7 4.5L0 9V0Z" fill="currentColor" />
+                  </svg>
+                  {feature.nav}
+                </a>
+              ))
+            }
+          </nav>
+        </div>
+      </aside>
+
+      <div class="relative min-w-0 lg:border-l lg:border-white/10 lg:pl-8">
+        {
+          features.map((feature, index) => (
+            <section
+              id={feature.id}
+              class={`feature-section relative scroll-mt-24 py-16 sm:py-20 lg:py-24 ${index > 0 ? "border-t border-white/10" : ""}`}
+              data-feature-section={feature.id}
+              data-nav-theme={feature.theme}
+              aria-labelledby={`${feature.id}-title`}
+            >
+              <div
+                class="grid gap-5 md:grid-cols-2 md:gap-4"
+                data-feature-reveal
+              >
+                <p class="font-sans text-[26px] leading-[1.375] tracking-[-0.03em] text-[#F5F5F5] sm:text-[28px] lg:text-[30px]">
+                  <span class="mr-4 text-[#666666]">{feature.index}</span>
+                  {feature.nav}
+                </p>
+                <div class="flex flex-col gap-10 lg:gap-16">
+                  <div>
+                    <h2
+                      id={`${feature.id}-title`}
+                      class="font-sans text-[26px] leading-[1.375] tracking-[-0.03em] text-[#F5F5F5] sm:text-[28px] lg:text-[30px]"
+                    >
+                      {feature.title}
+                    </h2>
+                    <p class="font-sans text-[26px] leading-[1.375] tracking-[-0.03em] text-[#858585] sm:text-[28px] lg:text-[30px]">
+                      {feature.subtitle}
+                    </p>
+                  </div>
+                  <p class="max-w-[600px] font-sans text-[18px] leading-[1.5] text-[#858585] sm:text-[20px] lg:text-[24px] lg:leading-[1.375]">
+                    {feature.body}
+                  </p>
+                </div>
+              </div>
+
+              <div
+                class="mt-12 lg:mt-20"
+                data-feature-reveal
+                style={`--reveal-delay: ${120 + index * 20}ms`}
+              >
+                <FeatureTerminal id={feature.id} initial={feature.command} />
+              </div>
+            </section>
+          ))
+        }
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  type TerminalKey = "measure" | "find" | "clean" | "prove" | "protect";
+  type Token = { cancelled: boolean };
+
+  const reduceMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+
+  class Cancelled extends Error {}
+
+  const isTerminalKey = (value: string | undefined): value is TerminalKey =>
+    value === "measure" ||
+    value === "find" ||
+    value === "clean" ||
+    value === "prove" ||
+    value === "protect";
+
+  class FeatureTerminalController {
+    private readonly terminal: HTMLElement;
+    private readonly screen: HTMLElement;
+    private readonly tab: HTMLElement;
+    private readonly size: HTMLElement;
+    private readonly key: TerminalKey;
+    private readonly initial: string;
+    private token: Token | null = null;
+    private startTimer = 0;
+    private scrollFrame = 0;
+    private instant = false;
+    private readonly pendingWaits = new Set<{
+      timer: number;
+      reject: (error: unknown) => void;
+    }>();
+
+    constructor(terminal: HTMLElement, key: TerminalKey) {
+      const screen = terminal.querySelector<HTMLElement>(
+        "[data-terminal-screen]",
+      );
+      const tab = terminal.querySelector<HTMLElement>("[data-terminal-tab]");
+      const size = terminal.querySelector<HTMLElement>("[data-terminal-size]");
+      if (!screen || !tab || !size) {
+        throw new Error("Feature terminal is missing its chrome");
+      }
+      this.terminal = terminal;
+      this.screen = screen;
+      this.tab = tab;
+      this.size = size;
+      this.key = key;
+      this.initial = terminal.dataset.terminalInitial ?? "";
+      this.updateSize();
+      if (typeof ResizeObserver !== "undefined") {
+        new ResizeObserver(() => this.updateSize()).observe(terminal);
+      }
+    }
+
+    start() {
+      if (this.token || this.startTimer) return;
+      this.startTimer = window.setTimeout(
+        () => {
+          this.startTimer = 0;
+          this.begin();
+        },
+        reduceMotion ? 0 : 220,
+      );
+    }
+
+    stop() {
+      if (this.startTimer) {
+        window.clearTimeout(this.startTimer);
+        this.startTimer = 0;
+      }
+      if (this.token) {
+        this.token.cancelled = true;
+        this.token = null;
+      }
+      window.cancelAnimationFrame(this.scrollFrame);
+      this.cancelWaits();
+      this.cancelAnimations();
+      this.renderInitial();
+    }
+
+    private begin() {
+      if (this.token) return;
+      this.token = { cancelled: false };
+      this.cancelWaits();
+      this.cancelAnimations();
+      this.reset();
+      if (reduceMotion) {
+        this.instant = true;
+        void this.play()
+          .catch(() => {})
+          .finally(() => {
+            this.instant = false;
+          });
+        return;
+      }
+      void this.loop();
+    }
+
+    private async loop() {
+      try {
+        while (this.token && !this.token.cancelled) {
+          await this.play();
+          await this.wait(2600);
+          await this.fadeOut();
+          await this.wait(180);
+          this.reset();
+        }
+      } catch (error) {
+        if (
+          error instanceof Cancelled ||
+          (error instanceof DOMException && error.name === "AbortError")
+        ) {
+          return;
+        }
+        this.instant = true;
+        this.reset();
+        try {
+          await this.play();
+        } catch {
+          this.renderInitial();
+        } finally {
+          this.instant = false;
+        }
+      }
+    }
+
+    private check() {
+      if (!this.token || this.token.cancelled) {
+        throw new Cancelled();
+      }
+    }
+
+    private cancelAnimations() {
+      for (const animation of this.screen.getAnimations()) {
+        animation.cancel();
+      }
+      for (const animation of this.tab.getAnimations()) {
+        animation.cancel();
+      }
+      this.screen.style.opacity = "";
+      this.tab.style.opacity = "";
+      this.tab.style.filter = "";
+      this.tab.style.transform = "";
+    }
+
+    private wait(ms: number) {
+      if (this.instant || reduceMotion) return Promise.resolve();
+      return new Promise<void>((resolve, reject) => {
+        const entry = { timer: 0, reject };
+        entry.timer = window.setTimeout(() => {
+          this.pendingWaits.delete(entry);
+          try {
+            this.check();
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        }, ms);
+        this.pendingWaits.add(entry);
+      });
+    }
+
+    private cancelWaits() {
+      for (const entry of this.pendingWaits) {
+        window.clearTimeout(entry.timer);
+        entry.reject(new Cancelled());
+      }
+      this.pendingWaits.clear();
+    }
+
+    private updateSize() {
+      this.size.textContent = `Sample output - ${Math.round(this.terminal.clientWidth)}x${Math.round(this.terminal.clientHeight)}`;
+    }
+
+    private follow() {
+      window.cancelAnimationFrame(this.scrollFrame);
+      const step = () => {
+        const max = this.screen.scrollHeight - this.screen.clientHeight;
+        const diff = max - this.screen.scrollTop;
+        if (diff > 0.5) {
+          this.screen.scrollTop += Math.max(0.5, diff * 0.12);
+          this.scrollFrame = window.requestAnimationFrame(step);
+        }
+      };
+      this.scrollFrame = window.requestAnimationFrame(step);
+    }
+
+    private addLine(html: string, className = "") {
+      const line = document.createElement("div");
+      line.className = `terminal-line ${className}`.trim();
+      line.innerHTML = html;
+      this.screen.append(line);
+      this.follow();
+      return line;
+    }
+
+    private reveal(line: HTMLElement, duration = 420) {
+      if (this.instant || reduceMotion) return;
+      line.animate(
+        [
+          { opacity: 0, filter: "blur(6px)", transform: "translateY(8px)" },
+          { opacity: 1, filter: "blur(0px)", transform: "translateY(0)" },
+        ],
+        {
+          duration,
+          easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+          fill: "both",
+        },
+      );
+    }
+
+    private async add(
+      html: string,
+      {
+        className = "",
+        pause = 80,
+        duration = 420,
+      }: { className?: string; pause?: number; duration?: number } = {},
+    ) {
+      const line = this.addLine(html, className);
+      this.reveal(line, duration);
+      await this.wait(pause);
+      return line;
+    }
+
+    private async setTab(label: string) {
+      if (this.tab.textContent === label) return;
+      if (this.instant || reduceMotion) {
+        this.tab.textContent = label;
+        return;
+      }
+      await this.tab.animate(
+        [
+          { opacity: 1, filter: "blur(0px)", transform: "translateY(0)" },
+          { opacity: 0, filter: "blur(4px)", transform: "translateY(-3px)" },
+        ],
+        { duration: 140, easing: "ease-out", fill: "both" },
+      ).finished;
+      this.check();
+      this.tab.textContent = label;
+      await this.tab.animate(
+        [
+          { opacity: 0, filter: "blur(4px)", transform: "translateY(3px)" },
+          { opacity: 1, filter: "blur(0px)", transform: "translateY(0)" },
+        ],
+        {
+          duration: 220,
+          easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+          fill: "both",
+        },
+      ).finished;
+      this.check();
+    }
+
+    private async typeCommand(command: string) {
+      const line = this.addLine(
+        `<span class="terminal-dim">$ </span><span data-typed></span><span class="terminal-cursor" data-cursor></span>`,
+      );
+      this.reveal(line, 300);
+      const typed = line.querySelector<HTMLElement>("[data-typed]");
+      const cursor = line.querySelector<HTMLElement>("[data-cursor]");
+      if (!typed) return;
+      for (const char of command) {
+        this.check();
+        typed.textContent = `${typed.textContent ?? ""}${char}`;
+        await this.wait(char === " " ? 28 : 14);
+      }
+      await this.wait(180);
+      cursor?.remove();
+    }
+
+    private reset() {
+      window.cancelAnimationFrame(this.scrollFrame);
+      this.screen.replaceChildren();
+      this.screen.style.opacity = "";
+      this.screen.scrollTop = 0;
+    }
+
+    private renderInitial() {
+      this.reset();
+      this.addLine(
+        `<span class="terminal-dim">$ </span><span>${this.initial}</span><span class="terminal-cursor"></span>`,
+      );
+    }
+
+    private async fadeOut() {
+      const fade = this.screen.animate(
+        [
+          { opacity: 1, filter: "blur(0px)" },
+          { opacity: 0, filter: "blur(4px)" },
+        ],
+        { duration: 320, easing: "ease-in", fill: "both" },
+      );
+      await fade.finished;
+      this.check();
+      this.screen.style.opacity = "0";
+      fade.cancel();
+    }
+
+    private async play() {
+      switch (this.key) {
+        case "measure": {
+          await this.setTab("report");
+          await this.wait(160);
+          await this.typeCommand("npx getshrike report");
+          await this.wait(420);
+          await this.add(
+            `<span class="terminal-dim">Shrike report · current state · 9f2c1ab</span>`,
+            { pause: 180 },
+          );
+          await this.add("", { className: "terminal-spacer", pause: 20 });
+          await this.add(
+            `<span class="terminal-muted">Dead weight</span>  <span class="terminal-bright">4.8%</span>`,
+            { pause: 140 },
+          );
+          await this.add(
+            `<span class="terminal-muted">1,284 removable lines</span> <span class="terminal-dim">/ 26,900 analyzed source lines</span>`,
+            { pause: 110 },
+          );
+          await this.add(
+            `<span class="terminal-dim">███████████████████░░░░░░░░░░░░░░░░░░░░░░░░░</span>`,
+            { pause: 120 },
+          );
+          await this.add("", { className: "terminal-spacer", pause: 20 });
+          await this.add(
+            `<span class="terminal-muted">1 file · 61 symbols · 4 dependencies (advisory)</span>`,
+            { pause: 110 },
+          );
+          await this.add(
+            `<span class="terminal-muted">12 protected</span> <span class="terminal-dim">· 7 diagnostics (2 actionable)</span>`,
+            { pause: 110 },
+          );
+          await this.add("", { className: "terminal-spacer", pause: 20 });
+          await this.add(
+            `<span class="terminal-dim">src/features/billing    12 lines   1 symbol   1 file</span>`,
+            { pause: 80 },
+          );
+          await this.add(
+            `<span class="terminal-dim">src/features/onboarding 238 lines   6 symbols</span>`,
+            { pause: 80 },
+          );
+          await this.add(
+            `<span class="terminal-dim">src/components/legacy   197 lines   4 symbols</span>`,
+            { pause: 80 },
+          );
+          await this.add(
+            `<span class="terminal-dim">... 3 more groups (--verbose)</span>`,
+            { pause: 100 },
+          );
+          await this.add("", { className: "terminal-spacer", pause: 20 });
+          await this.add(`<span class="terminal-muted">Protected reasons</span>`, {
+            pause: 80,
+          });
+          await this.add(`<span class="terminal-dim">  public-api   7</span>`, {
+            pause: 70,
+          });
+          await this.add(`<span class="terminal-dim">  entry-role  3</span>`, {
+            pause: 70,
+          });
+          await this.add(`<span class="terminal-dim">  test-entry  2</span>`, {
+            pause: 100,
+          });
+          await this.add("", { className: "terminal-spacer", pause: 20 });
+          await this.add(
+            `<span class="terminal-dim">Next: npx getshrike clean --all</span>`,
+            { pause: 90 },
+          );
+          await this.add(
+            `<span class="terminal-dim">      npx getshrike report --verbose</span>`,
+            { pause: 160 },
+          );
+          await this.add(
+            `<span class="terminal-dim">$ </span><span class="terminal-cursor"></span>`,
+            { className: "terminal-prompt", pause: 0 },
+          );
+          break;
+        }
+
+        case "find": {
+          await this.setTab("delta");
+          await this.wait(160);
+          await this.typeCommand("npx getshrike delta --base origin/main");
+          await this.wait(420);
+          await this.add(
+            `<span class="terminal-bright">Shrike delta: 14 newly dead symbols in 6 files</span>`,
+            { pause: 180 },
+          );
+          await this.add("", { className: "terminal-spacer", pause: 20 });
+          await this.add(
+            `<span class="terminal-muted">src/lib/currency.ts#formatInvoice</span>  <span class="terminal-dim">-12 lines  [removed-import]</span>`,
+            { className: "terminal-wide-only", pause: 90 },
+          );
+          await this.add(
+            `<span class="terminal-muted">src/lib/currency.ts#formatCents</span>  <span class="terminal-dim">-6 lines  [indirect]</span>`,
+            { className: "terminal-wide-only", pause: 90 },
+          );
+          await this.add(
+            `<span class="terminal-muted">src/features/billing/legacy.tsx#render</span>  <span class="terminal-dim">-48 lines  [removed-jsx]</span>`,
+            { className: "terminal-wide-only", pause: 90 },
+          );
+          await this.add(
+            `<span class="terminal-muted">src/components/old-header.tsx</span>  <span class="terminal-dim">(file)</span>`,
+            { className: "terminal-wide-only", pause: 90 },
+          );
+          await this.add("", { className: "terminal-spacer", pause: 20 });
+          await this.add(
+            `<span class="terminal-bright">Cascade: 3 symbols, 1 files, 18 lines</span>`,
+            { pause: 160 },
+          );
+          await this.add(
+            `<span class="terminal-dim">$ </span><span class="terminal-cursor"></span>`,
+            { className: "terminal-prompt", pause: 0 },
+          );
+          break;
+        }
+
+        case "clean": {
+          await this.setTab("clean");
+          await this.wait(160);
+          await this.typeCommand("npx getshrike clean --base origin/main");
+          await this.wait(320);
+          await this.add(
+            `<span class="terminal-dim">Plan 9f2c: 61 symbols, 10 files, 1,284 lines</span>`,
+            { pause: 140 },
+          );
+          await this.add(
+            `<span class="terminal-dim">  batch-1: 28 symbols, 4 files, 412 lines</span>`,
+            { pause: 80 },
+          );
+          await this.add(
+            `<span class="terminal-dim">  batch-2: 21 symbols, 3 files, 238 lines</span>`,
+            { pause: 80 },
+          );
+          await this.add(
+            `<span class="terminal-dim">  batch-3: 12 symbols, 3 files, 197 lines</span>`,
+            { pause: 80 },
+          );
+          await this.add(
+            `<span class="terminal-dim">Blocked: 2 items</span>`,
+            { pause: 140 },
+          );
+          await this.add("", { className: "terminal-spacer", pause: 20 });
+          await this.add(
+            `<span class="terminal-check">✓</span> <span class="terminal-muted">Verified batch-1: 28 symbols, 4 files.</span>`,
+            { pause: 110 },
+          );
+          await this.add(
+            `<span class="terminal-check">✓</span> <span class="terminal-muted">Verified batch-2: 21 symbols, 3 files.</span>`,
+            { pause: 110 },
+          );
+          await this.add(
+            `<span class="terminal-muted">Shrike: batch-3 rejected (new-failure); changes reverted.</span>`,
+            { className: "terminal-wide-only", pause: 110 },
+          );
+          await this.add(
+            `<span class="terminal-muted">Shrike: rejected 3 symbols from batch-3 (test).</span>`,
+            { className: "terminal-wide-only", pause: 110 },
+          );
+          await this.add(
+            `<span class="terminal-check">✓</span> <span class="terminal-muted">Verified 9 of 12 symbols from batch-3.</span>`,
+            { pause: 110 },
+          );
+          await this.add("", { className: "terminal-spacer", pause: 20 });
+          await this.add(
+            `<span class="terminal-bright">Shrike: 58 symbols removed on shrike/cleanup.</span>`,
+            { pause: 100 },
+          );
+          await this.add(
+            `<span class="terminal-dim">Worktree: .shrike/worktrees/cleanup</span>`,
+            { pause: 100 },
+          );
+          await this.add(
+            `<span class="terminal-dim">Receipts: .shrike/receipts/1.json, 2.json (3 batches)</span>`,
+            { className: "terminal-wide-only", pause: 100 },
+          );
+          await this.add(`<span class="terminal-dim">Next:</span>`, { pause: 80 });
+          await this.add(
+            `<span class="terminal-dim">  npx getshrike receipt 1</span>`,
+            { pause: 80 },
+          );
+          await this.add(
+            `<span class="terminal-dim">  gh pr create --draft --head shrike/cleanup</span>`,
+            { className: "terminal-wide-only", pause: 160 },
+          );
+          await this.add(
+            `<span class="terminal-dim">$ </span><span class="terminal-cursor"></span>`,
+            { className: "terminal-prompt", pause: 0 },
+          );
+          break;
+        }
+
+        case "prove": {
+          await this.setTab("why");
+          await this.wait(160);
+          await this.typeCommand(
+            "npx getshrike why src/lib/currency.ts#formatInvoice",
+          );
+          await this.wait(380);
+          await this.add(
+            `<span class="terminal-bright">src/lib/currency.ts#formatInvoice</span>`,
+            { pause: 100 },
+          );
+          await this.add(`<span class="terminal-dim">  file: src/lib/currency.ts</span>`, {
+            pause: 80,
+          });
+          await this.add(`<span class="terminal-dim">  kind: function</span>`, {
+            pause: 80,
+          });
+          await this.add(`<span class="terminal-dim">  lines: 12</span>`, {
+            pause: 100,
+          });
+          await this.add(`<span class="terminal-muted">  dead at HEAD</span>`, {
+            pause: 120,
+          });
+          await this.add(
+            `<span class="terminal-dim">  proof: no witness from any entry</span>`,
+            { pause: 110 },
+          );
+          await this.add(
+            `<span class="terminal-dim">    incoming: src/lib/currency.ts#formatCents</span>`,
+            { className: "terminal-wide-only", pause: 140 },
+          );
+          await this.add("", { className: "terminal-spacer", pause: 20 });
+          await this.add(
+            `<span class="terminal-dim">  Next: npx getshrike clean --all</span>`,
+            { pause: 140 },
+          );
+          await this.wait(700);
+          await this.setTab("receipt");
+          await this.typeCommand("npx getshrike receipt 1");
+          await this.wait(320);
+          await this.add(`<span class="terminal-bright">1 verified</span>`, {
+            pause: 120,
+          });
+          await this.add(
+            `<span class="terminal-dim">$ </span><span class="terminal-cursor"></span>`,
+            { className: "terminal-prompt", pause: 0 },
+          );
+          break;
+        }
+
+        case "protect": {
+          await this.setTab("evidence");
+          await this.wait(160);
+          await this.typeCommand("npx getshrike evidence --build .next");
+          await this.wait(380);
+          await this.add(`<span class="terminal-dim">{</span>`, { pause: 70 });
+          await this.add(
+            `<span class="terminal-muted">  "status": "full",</span>`,
+            { pause: 70 },
+          );
+          await this.add(
+            `<span class="terminal-muted">  "joined": 41, "total": 42,</span>`,
+            { pause: 70 },
+          );
+          await this.add(
+            `<span class="terminal-muted">  "coverage": 0.976,</span>`,
+            { pause: 70 },
+          );
+          await this.add(
+            `<span class="terminal-muted">  "routes": ["/", "/settings", "/api/webhooks"],</span>`,
+            { className: "terminal-wide-only", pause: 70 },
+          );
+          await this.add(
+            `<span class="terminal-muted">  "bytes": { "matched": 184320, "shared": 40960 },</span>`,
+            { className: "terminal-wide-only", pause: 70 },
+          );
+          await this.add(
+            `<span class="terminal-muted">  "verdicts": [</span>`,
+            { pause: 70 },
+          );
+          await this.add(
+            `<span class="terminal-dim">    { "symbol": "…#handler", "verdict": "present" },</span>`,
+            { className: "terminal-wide-only", pause: 70 },
+          );
+          await this.add(
+            `<span class="terminal-dim">    { "symbol": "…#serverOnly", "verdict": "server-only" }</span>`,
+            { className: "terminal-wide-only", pause: 70 },
+          );
+          await this.add(`<span class="terminal-muted">  ]</span>`, { pause: 70 });
+          await this.add(`<span class="terminal-dim">}</span>`, { pause: 160 });
+          await this.add(
+            `<span class="terminal-dim">$ </span><span class="terminal-cursor"></span>`,
+            { className: "terminal-prompt", pause: 0 },
+          );
+          break;
+        }
+      }
+    }
+  }
+
+  const init = (scrollSection: HTMLElement) => {
+    scrollSection.dataset.enhanced = "true";
+
+    const controllers = new Map<string, FeatureTerminalController>();
+    for (const terminal of scrollSection.querySelectorAll<HTMLElement>(
+      "[data-feature-terminal]",
+    )) {
+      const key = terminal.dataset.featureTerminal;
+      if (!isTerminalKey(key)) continue;
+      try {
+        controllers.set(key, new FeatureTerminalController(terminal, key));
+      } catch {
+        // Leave the initial terminal line in place when the chrome is incomplete.
+      }
+    }
+
+    const revealElements = Array.from(
+      scrollSection.querySelectorAll<HTMLElement>("[data-feature-reveal]"),
+    );
+
+    const hasObserver = typeof IntersectionObserver !== "undefined";
+
+    if (reduceMotion || !hasObserver) {
+      for (const element of revealElements) {
+        element.classList.add("is-visible");
+      }
+    }
+
+    if (!hasObserver) {
+      for (const controller of controllers.values()) controller.start();
+    } else {
+      if (!reduceMotion) {
+        const revealObserver = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (!entry.isIntersecting) continue;
+              entry.target.classList.add("is-visible");
+              revealObserver.unobserve(entry.target);
+            }
+          },
+          { threshold: 0.12, rootMargin: "0px 0px -8% 0px" },
+        );
+        for (const element of revealElements) revealObserver.observe(element);
+      }
+
+      const terminalObserver = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            const key = (entry.target as HTMLElement).dataset.featureTerminal;
+            if (!key) continue;
+            const controller = controllers.get(key);
+            if (!controller) continue;
+            if (entry.isIntersecting) {
+              controller.start();
+            } else {
+              controller.stop();
+            }
+          }
+        },
+        { threshold: 0.25 },
+      );
+      for (const terminal of scrollSection.querySelectorAll<HTMLElement>(
+        "[data-feature-terminal]",
+      )) {
+        terminalObserver.observe(terminal);
+      }
+    }
+
+    const sections = Array.from(
+      scrollSection.querySelectorAll<HTMLElement>("[data-feature-section]"),
+    );
+    const links = new Map<string, HTMLElement>();
+    for (const link of scrollSection.querySelectorAll<HTMLElement>(
+      "[data-feature-link]",
+    )) {
+      const id = link.dataset.featureLink;
+      if (id) links.set(id, link);
+    }
+
+    let activeId = "";
+    const setActive = (id: string) => {
+      if (id === activeId) return;
+      activeId = id;
+      for (const [sectionId, link] of links) {
+        if (sectionId === id) {
+          link.setAttribute("aria-current", "true");
+        } else {
+          link.removeAttribute("aria-current");
+        }
+      }
+    };
+
+    const rail = scrollSection.querySelector<HTMLElement>("[data-feature-rail]");
+
+    // Match the colors to the section actually behind the rail, not the
+    // scroll-spy anchor, so the transition lands with the visible background.
+    const updateRailTheme = () => {
+      if (!rail || rail.offsetParent === null) return;
+      const probe = rail.getBoundingClientRect().top + 18;
+      let theme = "dark";
+      for (const section of sections) {
+        const rect = section.getBoundingClientRect();
+        if (rect.top <= probe && rect.bottom > probe) {
+          theme = section.dataset.navTheme === "light" ? "light" : "dark";
+          break;
+        }
+      }
+      if (rail.dataset.navTheme !== theme) {
+        rail.dataset.navTheme = theme;
+      }
+    };
+
+    const updateActive = () => {
+      if (!sections.length) return;
+      const anchor = window.innerHeight * 0.3;
+      let current = sections[0].id;
+      for (const section of sections) {
+        if (section.getBoundingClientRect().top <= anchor) {
+          current = section.id;
+        }
+      }
+      setActive(current);
+      updateRailTheme();
+    };
+
+    let ticking = false;
+    const requestUpdate = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(() => {
+        updateActive();
+        ticking = false;
+      });
+    };
+
+    window.addEventListener("scroll", requestUpdate, { passive: true });
+    window.addEventListener("resize", requestUpdate);
+    window.addEventListener("hashchange", requestUpdate);
+    setActive(sections[0]?.id ?? "");
+    updateActive();
+  };
+
+  const scrollSection = document.querySelector<HTMLElement>(
+    "[data-feature-scroll]",
+  );
+
+  if (scrollSection) {
+    try {
+      init(scrollSection);
+    } catch {
+      scrollSection.dataset.enhanced = "true";
+      for (const element of scrollSection.querySelectorAll<HTMLElement>(
+        "[data-feature-reveal]",
+      )) {
+        element.classList.add("is-visible");
+      }
+    }
+  }
+</script>
+
+<style>
+  .feature-rail {
+    --rail-active: #f7f7f7;
+    --rail-inactive: #858585;
+    --rail-hover: #b8b8b8;
+    --rail-label: rgba(255, 255, 255, 0.5);
+  }
+
+  .feature-rail[data-nav-theme="light"] {
+    --rail-active: #171717;
+    --rail-inactive: #6b6b6b;
+    --rail-hover: #525252;
+    --rail-label: rgba(23, 23, 23, 0.65);
+  }
+
+  .feature-nav-label {
+    color: var(--rail-label);
+    transition: color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .feature-nav-link {
+    position: relative;
+    display: block;
+    padding-left: 16px;
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.375;
+    letter-spacing: -0.02em;
+    color: var(--rail-inactive);
+    transition: color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .feature-nav-link:hover {
+    color: var(--rail-hover);
+  }
+
+  .feature-nav-link[aria-current="true"] {
+    color: var(--rail-active);
+  }
+
+  .feature-nav-marker {
+    position: absolute;
+    top: 5px;
+    left: 0;
+    width: 7px;
+    height: 9px;
+    opacity: 0;
+    transform: translateX(-2px);
+    transition:
+      opacity 200ms ease,
+      transform 200ms ease;
+  }
+
+  .feature-nav-link[aria-current="true"] .feature-nav-marker {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  .feature-scroll[data-enhanced] [data-feature-reveal] {
+    opacity: 0;
+    filter: blur(6px);
+    transform: translateY(18px);
+  }
+
+  .feature-scroll[data-enhanced] [data-feature-reveal].is-visible {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+    transition:
+      opacity 700ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      filter 700ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+
+  .feature-terminal .terminal-screen {
+    padding: 14px 14px 28px;
+    font-size: 10.5px;
+    line-height: 1.55;
+  }
+
+  .feature-terminal .terminal-dot {
+    width: 8px;
+    height: 8px;
+  }
+
+  @media (min-width: 640px) {
+    .feature-terminal .terminal-screen {
+      padding: 18px 18px 32px;
+      font-size: 12px;
+    }
+
+    .feature-terminal .terminal-dot {
+      width: 10px;
+      height: 10px;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .feature-terminal .terminal-screen {
+      padding: 22px 24px 36px;
+      font-size: 14px;
+    }
+
+    .feature-terminal .terminal-dot {
+      width: 11px;
+      height: 11px;
+    }
+  }
+
+  @media (min-width: 1536px) {
+    .feature-terminal .terminal-screen {
+      padding: 24px 28px 40px;
+      font-size: 15px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .feature-scroll[data-enhanced] [data-feature-reveal] {
+      opacity: 1;
+      filter: none;
+      transform: none;
+      transition: none;
+    }
+
+    .feature-nav-marker {
+      transition: none;
+    }
+  }
+
+  @media (scripting: none) {
+    .feature-scroll[data-enhanced] [data-feature-reveal] {
+      opacity: 1;
+      filter: none;
+      transform: none;
+    }
+  }
+</style>

@@ -1,0 +1,158 @@
+---
+title: "Cleanup report"
+description: "Read the dead-weight report: the metric, groups, branch scope, protected items, diagnostics, advisory dependencies, and the interactive view."
+---
+
+`shrike report` is the read-only entry point. It projects the engine's graph facts into a deterministic report and never edits source, runs project scripts, or decides that a symbol is dead. Detection stays in the engine.
+
+<Note>
+  **Verified** means the project's configured checks passed after removal, relative to a baseline. It does not prove the code is semantically unused in production, that the tests are adequate, or that external consumers cannot import it.
+</Note>
+
+## Run it
+
+```bash
+npx getshrike report                    # current tree
+npx getshrike report --base origin/main # what this branch orphaned
+```
+
+- With no `--base`, the report covers the whole current tree. The engine analyzes the tree once.
+- With `--base`, it compares the merge base with `HEAD` and labels items as **branch-orphan**. The ref must resolve locally; `report` does not guess a default base (unlike `delta`, `plan`, and `clean`).
+- Exit `1` means the report contains removable files or symbols; exit `0` means it found none. `--json` is the stable machine form.
+
+`report` accepts `--json`, `--verbose`, `--quiet`, `--width <n>`, `--no-tui`, and `--allow-dirty` in addition to `--base`.
+
+## Dead weight
+
+The headline metric is **dead weight %**:
+
+```text
+dead weight % = removable source lines / analyzed non-generated source lines
+```
+
+Removable lines are the union of removable symbol spans plus whole removable files. Analyzed lines are the eligible, non-generated source files the engine inventoried. The percentage always appears with the raw fraction:
+
+```text
+Dead weight  4.8%
+1,284 removable lines / 26,900 analyzed source lines
+```
+
+Report JSON stores the same value as `deadWeightBasisPoints`, an integer from `0` to `10000`. Displayed percentages are rounded to one decimal place; a non-zero removable count that rounds to 0 basis points is shown as `<0.1%`, while 1–9 basis points display as `0.0%`.
+
+The metric is a size measure, not a quality score. An empty report is not a claim that the project has no problems.
+
+## Read the plain report
+
+Example output — your project will show its own numbers:
+
+```text
+Shrike report · current state · 9f2c1ab
+
+  Dead weight  4.8%
+  1,284 removable lines / 26,900 analyzed source lines
+  ██████████████░░░░░░░░░░░░░░░░░░░░░░░░
+
+  38 files · 61 symbols (58 exports) · 4 dependencies (advisory)
+  12 protected · 7 diagnostics (2 actionable)
+
+  src/features/billing                  412 lines   9 symbols   3 files
+  src/features/onboarding               238 lines   6 symbols   4 files
+  src/components/legacy                 197 lines   4 symbols   2 files
+
+  Protected reasons
+    public-api    7
+    entry-role    3
+    unknown-edge  2
+  Diagnostics  7 (2 actionable)
+    parse: 1 · asset-import: 1
+
+  Next: npx getshrike clean --all
+        npx getshrike report --verbose
+```
+
+The header names the scope and the short `HEAD` commit. A dirty tree is labelled `dirty` and carries the warning `Dirty tree: this report is local feedback, not a CI receipt.`
+
+- **Counts** list removable files, removable symbols (and exports, when different), advisory dependencies, protected items, and diagnostics.
+- **Groups** sort by removable lines, then directory. Each group lists line, symbol, and file counts.
+- **Protected reasons** summarize why items were not eligible. Add `--verbose` for an example of each reason.
+- **Diagnostics** show the category totals. Add `--verbose` for the diagnostic code and up to three files per group.
+- **Next** prints the exact command that applies to the report. On a current report with findings that is `npx getshrike clean --all`; on a branch report it is `npx getshrike clean --base <ref>` and `npx getshrike why <symbol>`.
+
+`--quiet` keeps the header, metric, counts, and next command and drops the detail sections. `--verbose` shows every group, up to 20 items per group, dependency rows, and expanded diagnostics.
+
+## Branch versus current
+
+| Scope | Command | `mode` | What is counted |
+| --- | --- | --- | --- |
+| Current tree | `shrike report` | `current` | Every removable file and symbol in the snapshot. |
+| Branch delta | `shrike report --base origin/main` | `branch` | Items the branch orphaned, from the engine's delta and plan. |
+
+A branch report also includes `preexisting`: dead code that already existed before the branch and is not counted in the branch metric. The plain report prints it as `Already dead before this branch: N symbols, N files, N lines (not counted)`.
+
+Branch items may carry a `trigger` in JSON: the file, change kind (`removed-import`, `removed-call`, `removed-jsx`, `removed-route`, `renamed-export`, `removed-re-export`, `changed-dynamic`, or `indirect`), a human description, and a certainty. The trigger explains the lost witness; it does not authorize a deletion.
+
+Orphan status is not a deletion decision. A branch-orphaned item still has to be eligible and survive the cleanup plan.
+
+## Protected items
+
+Protected items are reported with a reason and are never deletion candidates. Common reasons:
+
+| Reason | Meaning |
+| --- | --- |
+| `entry-role` | It is reachable from a framework or configuration entry. |
+| `public-api` | It is in a public-API surface or an exported entry point. |
+| `unknown-edge` | An unresolved dynamic edge could reach it. |
+| `probable-edge` | An edge is likely but not proven. |
+| `unparsed-file` | The file could not be parsed, so liveness is unknown. |
+| `generated-file` | The file is treated as generated. |
+| `test-entry` | It is reachable from a test entry. |
+| `external-referrer` | A workspace or external referrer may use it. |
+| `blast-radius` | Removing it would exceed the batch policy. |
+| `workspace-boundary` | It crosses a workspace boundary. |
+| `policy` | A configured policy protects it. |
+| `oversized` | The deletion would exceed the configured limits. |
+| `other` | A protection reason outside this vocabulary; `detail` explains it. |
+
+Use `npx getshrike why <path#Name>` to get the engine's witness or proof trace for one symbol. `why --json` is exactly the engine's proof object.
+
+## Dependencies are advisory
+
+Unused, unlisted, and transitive dependency findings appear in `dependencies` with `"advisory": true`. The plain report labels them **advisory** and only prints rows with `--verbose`. Shrike never removes or edits a dependency, and `clean` does not touch `package.json` for dependency findings.
+
+## Diagnostics
+
+Diagnostics are grouped by category and code. Actionable diagnostics point at a condition that can change analysis coverage or liveness, such as a parse failure or an unresolved edge. Informational diagnostics do not. A high diagnostic count is a reason to inspect the repository before trusting a deletion plan, not a reason to suppress the report.
+
+## JSON and the interactive view
+
+`--json` prints the report object described by [`cleanup-report.schema.json`](https://github.com/getshrike/shrike/blob/main/schemas/cleanup-report.schema.json). It is deterministic: the same input produces byte-identical JSON, with no timestamps or host paths. See [Report format](/reference/report-format) for every field.
+
+Running `shrike` with no arguments on an interactive terminal with a tall and wide enough window opens a read-only view; `shrike report` always prints the plain report. The view never analyzes, deletes, or reads source files. Keys:
+
+| Key | Action |
+| --- | --- |
+| `↑` / `↓` or `k` / `j` | Move the selection. |
+| `g` / `G` | Jump to the first or last row. |
+| `Enter` | Open details for the selected row. |
+| `Esc` | Close a panel or leave filter mode. |
+| `q` | Quit. |
+| `/` | Filter rows by a case-sensitive path substring. |
+| `?` | Toggle help. |
+| `c` | Show the copyable next command. |
+| `d` / `p` | Toggle diagnostics and protected reasons. |
+| `r` | Redraw. |
+
+The view is skipped for `--json`, pipes, CI, agent sessions, `TERM=dumb`, `--no-tui`, `SHRIKE_NO_TUI`, `SHRIKE_TUI_DISABLE`, terminals narrower than 40 columns, and terminals shorter than 10 rows. When the TUI is skipped or cannot load, the plain report is printed instead.
+
+## Limits
+
+- The report is a projection. It does not add candidates, re-rank engine evidence, or infer deadness from imports.
+- The plain report shows up to eight groups without `--verbose`; JSON always contains every group.
+- A dirty tree makes the report local feedback, not a CI receipt.
+- The report does not prove the tests are adequate. Review the plan before any cleanup.
+
+## Next
+
+- [Clean the current tree](/guides/current-state-cleanup) with `clean --all`.
+- [Clean what this branch orphaned](/guides/branch-cleanup) with `clean --base`.
+- [Report format](/reference/report-format) for the JSON contract.

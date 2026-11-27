@@ -35,10 +35,13 @@ flips the tile to paper with an ink mark.
 
 ```html
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="/shrike-logo-paper.svg">
-  <img src="/shrike-logo.svg" alt="Shrike" width="440" height="150">
+  <source media="(prefers-color-scheme: dark)" srcset="/brand/shrike-logo-paper.svg">
+  <img src="/brand/shrike-logo.svg" alt="Shrike" width="440" height="150">
 </picture>
 ```
+
+On this site the assets are served from `/brand/`. If you copy them to a
+different location, change or drop the prefix.
 
 The horizontal master is 880 × 300, so 440 × 150 is a half-scale rendering at
 whole pixels. Keep the intrinsic ratio. Use `alt="Shrike"` when the logo stands
@@ -46,10 +49,11 @@ alone; use `alt=""` when the name is already next to it in text.
 
 ### Browser and install icons
 
-[`head-snippet.html`](head-snippet.html) contains the complete set of icon tags.
-[`site.webmanifest`](site.webmanifest) references the PWA icons at the site root.
-If the site is served from a subpath, adjust the manifest `start_url` and icon
-paths.
+[`head-snippet.html`](head-snippet.html) contains the complete set of icon tags
+for `/brand/`. [`site.webmanifest`](site.webmanifest) references the PWA icons
+beside it under `/brand/` (its `start_url` still points to the site homepage).
+If you copy the files elsewhere, adjust the prefix, the manifest `start_url`,
+and the icon paths.
 
 ## The mark
 
@@ -224,7 +228,7 @@ These are transparent unless the filename says `inverted`.
 ## Licensing
 
 These assets are part of the Shrike repository and are released under its MIT
-licence (see [`../LICENSE`](../LICENSE)). Inter is © The Inter Project Authors,
+licence (see [`LICENSE`](../../../../LICENSE)). Inter is © The Inter Project Authors,
 licensed under the SIL Open Font License 1.1; the wordmark is outlined and no
 font software is redistributed in this folder.
 

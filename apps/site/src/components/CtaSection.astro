@@ -1,0 +1,235 @@
+---
+import { Picture } from "astro:assets";
+import ctaBackdrop from "../assets/images/cta-backdrop.jpg";
+
+const commands = [
+  {
+    id: "npx",
+    label: "npx",
+    prompt: "$ ",
+    command: "npx getshrike report",
+  },
+  {
+    id: "npm",
+    label: "npm",
+    prompt: "$ ",
+    command: "npm install -D getshrike",
+  },
+];
+---
+
+<section
+  class="relative h-[440px] w-full overflow-hidden bg-[#090909] sm:h-[400px] lg:h-[494px]"
+  aria-labelledby="cta-heading"
+  data-header-surface="dark"
+  data-cta
+>
+  <Picture
+    src={ctaBackdrop}
+    alt=""
+    aria-hidden="true"
+    formats={["webp"]}
+    widths={[768, 1200, 1600, 2000]}
+    sizes="100vw"
+    quality={65}
+    loading="lazy"
+    decoding="async"
+    class="pointer-events-none absolute inset-0 h-full w-full object-cover object-center"
+  />
+  <div class="absolute inset-0 bg-[#090909]/60"></div>
+  <div
+    class="absolute inset-0 bg-gradient-to-t from-[#090909] via-[#090909]/55 to-transparent"
+  >
+  </div>
+
+  <div
+    class="relative z-10 mx-auto flex h-full max-w-[1400px] items-end px-6 pb-16 sm:px-8 lg:px-12 lg:pb-20"
+  >
+    <div
+      class="flex w-full flex-col gap-8 lg:flex-row lg:items-end lg:justify-between lg:gap-10"
+    >
+      <h2
+        id="cta-heading"
+        class="min-w-0 max-w-[620px] text-[28px] leading-[1.15] font-normal tracking-[-0.04em] sm:text-[36px] lg:text-[40px] xl:text-[49px]"
+      >
+        <span
+          class="inline-block bg-gradient-to-r from-[#FCFCFC] to-[#E0E0E0] bg-clip-text pr-1 pb-1 text-transparent"
+        >
+          Find the dead code<br />in your repo.
+        </span>
+      </h2>
+
+      <div class="w-full min-w-0 lg:ml-auto lg:w-[420px] lg:shrink-0">
+        <button
+          type="button"
+          class="flex w-full min-w-0 cursor-pointer items-center gap-2 border border-neutral-700 bg-black px-3 py-3 text-left transition-colors hover:border-neutral-500 hover:bg-neutral-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:gap-3 sm:px-5 sm:py-3.5"
+          data-cta-copy
+        >
+          <span class="sr-only">Copy command: </span>
+          <code
+            class="pointer-events-none min-w-0 flex-1 overflow-x-auto font-mono text-[11px] whitespace-nowrap text-neutral-200 [scrollbar-width:none] [-ms-overflow-style:none] sm:text-[13px] lg:text-sm [&::-webkit-scrollbar]:hidden"
+          >
+            <span class="text-neutral-500" data-cta-prompt>$ </span><span
+              data-cta-command-text>npx getshrike report</span
+            >
+          </code>
+          <span class="pointer-events-none shrink-0 p-1.5 text-neutral-400">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="h-4 w-4"
+              aria-hidden="true"
+              data-cta-copy-icon
+            >
+              <rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
+              <path
+                d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
+              ></path>
+            </svg>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="hidden h-4 w-4"
+              aria-hidden="true"
+              data-cta-check-icon
+            >
+              <path d="M20 6 9 17l-5-5"></path>
+            </svg>
+          </span>
+        </button>
+
+        <div class="mt-2 flex justify-end">
+          <div
+            class="inline-flex border border-neutral-600 bg-black/80 p-0.5"
+            role="tablist"
+            aria-label="Install command package manager"
+          >
+            {
+              commands.map((item, index) => (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={index === 0 ? "true" : "false"}
+                  tabindex={index === 0 ? 0 : -1}
+                  data-cta-tab
+                  data-command={item.command}
+                  data-prompt={item.prompt}
+                  class="cta-tab px-3 py-1.5 font-mono text-[11px] transition-colors sm:text-xs"
+                >
+                  {item.label}
+                </button>
+              ))
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <span
+    class="sr-only"
+    role="status"
+    aria-live="polite"
+    data-cta-status></span>
+</section>
+
+<script>
+  const section = document.querySelector<HTMLElement>("[data-cta]");
+
+  if (section) {
+    const commandText =
+      section.querySelector<HTMLElement>("[data-cta-command-text]");
+    const prompt = section.querySelector<HTMLElement>("[data-cta-prompt]");
+    const copyButton =
+      section.querySelector<HTMLButtonElement>("[data-cta-copy]");
+    const copyIcon =
+      section.querySelector<HTMLElement>("[data-cta-copy-icon]");
+    const checkIcon =
+      section.querySelector<HTMLElement>("[data-cta-check-icon]");
+    const status = section.querySelector<HTMLElement>("[data-cta-status]");
+    const tabs = Array.from(
+      section.querySelectorAll<HTMLButtonElement>("[data-cta-tab]"),
+    );
+
+    let command = commandText?.textContent?.trim() ?? "";
+
+    const selectTab = (tab: HTMLButtonElement) => {
+      for (const candidate of tabs) {
+        const selected = candidate === tab;
+        candidate.setAttribute("aria-selected", String(selected));
+        candidate.tabIndex = selected ? 0 : -1;
+      }
+
+      command = tab.dataset.command ?? command;
+      if (commandText) commandText.textContent = command;
+      if (prompt) prompt.textContent = tab.dataset.prompt ?? "$ ";
+    };
+
+    for (const tab of tabs) {
+      tab.addEventListener("click", () => selectTab(tab));
+      tab.addEventListener("keydown", (event) => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        event.preventDefault();
+        const index = tabs.indexOf(tab);
+        const next =
+          tabs[
+            (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) %
+              tabs.length
+          ];
+        if (!next) return;
+        selectTab(next);
+        next.focus();
+      });
+    }
+
+    let resetTimer = 0;
+    copyButton?.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(command);
+      } catch {
+        // Clipboard access can be blocked; leave the command visible to copy.
+        return;
+      }
+
+      copyIcon?.classList.add("hidden");
+      checkIcon?.classList.remove("hidden");
+      if (status) status.textContent = "Copied to clipboard";
+
+      window.clearTimeout(resetTimer);
+      resetTimer = window.setTimeout(() => {
+        copyIcon?.classList.remove("hidden");
+        checkIcon?.classList.add("hidden");
+        if (status) status.textContent = "";
+      }, 1500);
+    });
+  }
+</script>
+
+<style>
+  .cta-tab {
+    color: #a3a3a3;
+  }
+
+  .cta-tab:hover {
+    color: #e5e5e5;
+  }
+
+  .cta-tab[aria-selected="true"] {
+    background-color: #ffffff;
+    color: #000000;
+  }
+</style>

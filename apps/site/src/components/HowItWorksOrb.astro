@@ -1,0 +1,1994 @@
+---
+interface Props {
+  shape: "square" | "circle" | "triangle";
+  delay?: number;
+}
+
+const { shape, delay = 0 } = Astro.props;
+
+// One shader, three mappings. The seed shifts the FBM field so the cards do
+// not read as copies of the same frame.
+const variantByShape = { square: 0, circle: 1, triangle: 2 } as const;
+const seedByShape = { square: 0, circle: 3.7, triangle: 7.9 } as const;
+const variant = variantByShape[shape];
+const seed = (seedByShape[shape] + (delay / 900) * 0.9).toFixed(2);
+---
+
+<div
+  class:list={["how-orb", `how-orb--${shape}`]}
+  data-how-orb
+  data-how-orb-seed={seed}
+  data-how-orb-variant={variant}
+  aria-hidden="true"
+>
+  <div class="how-orb__fallback"></div>
+  <canvas class="how-orb__canvas" data-how-orb-canvas></canvas>
+  <div class="how-orb__grain"></div>
+  <div class="how-orb__sheen"></div>
+</div>
+
+<script>
+  /*
+   * The orb is a real 2D liquid, not a texture distortion. A stable-fluids
+   * step advects a velocity field, injects the pointer's drag, projects the
+   * field to remove divergence, and advects a dye texture that holds the
+   * silver FBM pattern. The pattern is re-injected slowly, so the liquid
+   * keeps flowing when the pointer is still. Lighting comes from the dye's
+   * own luminance gradient, so highlights follow the moving liquid.
+   *
+   * The original ElevenLabs reference samples a static gradient through
+   * animated FBM UVs. That mapping is preserved as the dye source: the
+   * square uses a planar chrome shear, the circle the sphere warp, and the
+   * triangle a prism fan. A 1024px source texture, mipmaps, and a DPR-aware
+   * canvas keep the silver smooth at display size.
+   */
+  const VERTEX_SHADER = `
+    attribute vec2 aPos;
+    varying vec2 vUv;
+
+    void main() {
+      vUv = aPos * 0.5 + 0.5;
+      gl_Position = vec4(aPos, 0.0, 1.0);
+    }
+  `;
+
+  const PATTERN_FRAGMENT_SHADER = `
+    precision highp float;
+
+    varying vec2 vUv;
+    uniform sampler2D uTexture;
+    uniform float uTime;
+    uniform float uSeed;
+    uniform float uVariant;
+    uniform float uHover;
+    uniform float uGrain;
+    uniform vec2 uTilt;
+
+    float random(vec2 point) {
+      return fract(sin(dot(point, vec2(12.9898, 78.233))) * 43758.5453123);
+    }
+
+    float noise(vec2 point) {
+      vec2 cell = floor(point);
+      vec2 local = fract(point);
+      float a = random(cell);
+      float b = random(cell + vec2(1.0, 0.0));
+      float c = random(cell + vec2(0.0, 1.0));
+      float d = random(cell + vec2(1.0, 1.0));
+      vec2 weight = local * local * (3.0 - 2.0 * local);
+      return mix(a, b, weight.x) +
+        (c - a) * weight.y * (1.0 - weight.x) +
+        (d - b) * weight.x * weight.y;
+    }
+
+    float fbm(vec2 point) {
+      float value = 0.0;
+      float amplitude = 0.5;
+      vec2 shift = vec2(100.0);
+      mat2 rotate = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.5));
+
+      for (int i = 0; i < 4; i++) {
+        value += amplitude * noise(point);
+        point = rotate * point * 2.0 + shift;
+        amplitude *= 0.5;
+      }
+
+      return value;
+    }
+
+    void main() {
+      float seconds = uTime;
+      vec2 uv = vec2(1.0 - vUv.x, vUv.y);
+      vec2 base = uv;
+      float scale = 3.25;
+      float flow = seconds * 2.25;
+      float amplitude = 0.65;
+      float detailAmount = 0.045;
+
+      if (uVariant < 0.5) {
+        // Square: planar chrome with a slow in-place shear.
+        base.x += 0.035 * sin(uv.y * 3.14159265 + seconds * 0.35);
+        base.y += 0.022 * cos(uv.x * 3.14159265 - seconds * 0.28);
+        scale = 2.55;
+        detailAmount = 0.05;
+        flow = seconds * 1.65;
+        amplitude = 0.58;
+      } else if (uVariant < 1.5) {
+        // Circle: the reference's sphere warp.
+        vec2 centered = (uv - 0.5) * 2.0;
+        float depth = sqrt(1.0 - clamp(dot(centered, centered), 0.0, 1.0));
+        depth = pow(depth, 1.1);
+        centered /= (vec2(depth) + 1.0) * (1.0 / 0.9);
+        base = (centered + 1.0) * 0.5;
+        detailAmount = 0.07;
+      } else {
+        // Triangle: fan the texture out of the apex like a prism.
+        float spread = max(1.0 - uv.y, 0.12);
+        float fanX = (uv.x - 0.5) / spread + 0.5;
+        base = vec2(mix(fanX, uv.x, 0.12), uv.y);
+        scale = 3.8;
+        flow = seconds * 2.0;
+        amplitude = 0.76;
+        detailAmount = 0.05;
+      }
+
+      // Reference recipe: fbmScale 3.25, fbmPower 2.75, fbmAmplitude 0.65.
+      vec2 field = base * scale + uSeed;
+      vec2 q = vec2(fbm(field), fbm(field + vec2(1.0)));
+      vec2 r = vec2(
+        fbm(field + q + vec2(91.3, 0.55) + 0.15 * flow),
+        fbm(field + q - vec2(45.33, 1.2) + 0.126 * flow)
+      );
+      float f = fbm(field + r);
+      float displacement = mix(
+        0.8,
+        0.66,
+        clamp(f * f * f * 2.75, 0.0, 1.0)
+      );
+      displacement = mix(displacement, 0.0, clamp(length(q), 0.0, 1.0));
+      displacement = mix(displacement, 1.0, clamp(length(r.x), 0.0, 1.0));
+
+      // Fine wobble, standing in for the reference's simplex noise layer.
+      vec2 wobble = vec2(
+        noise(uv * 1.6 + vec2(0.12 * seconds, 0.0)),
+        noise(uv * 1.6 + vec2(31.0, 0.18 * seconds))
+      ) - 0.5;
+
+      // Two finer noise layers fold the chrome bands into marble veins. The
+      // fluid then carries those veins; a perfectly smooth gradient would
+      // shift under the pointer without showing the stir.
+      vec2 detail = vec2(
+        noise(uv * 9.0 + vec2(seconds * 0.22, 0.0)),
+        noise(uv * 9.0 + vec2(23.0, -seconds * 0.18))
+      ) - 0.5;
+      vec2 fine = vec2(
+        noise(uv * 19.0 + vec2(0.0, seconds * 0.14)),
+        noise(uv * 19.0 + vec2(41.0, seconds * 0.11))
+      ) - 0.5;
+
+      vec2 warped =
+        base +
+        vec2(displacement - 0.5) * amplitude * (1.0 + uHover * 0.2) +
+        wobble * 0.06 +
+        detail * detailAmount +
+        fine * 0.012;
+      if (uVariant > 1.5) {
+        warped.y += (displacement - 0.5) * 0.18;
+      }
+
+      // This shader only paints the liquid source. The pointer never warps
+      // these UVs; it moves the dye that carries this pattern. The tilt is
+      // kept for the no-WebGL2 fallback, which has no fluid to move instead.
+      vec2 tilted = clamp(warped + uTilt * 0.012, 0.002, 0.998);
+      // The FBM displacement makes the UV derivative large, which would pick
+      // a blurry mip. Bias toward the base level so the chrome bands stay
+      // crisp; the dye is downsampled to the orb anyway.
+      vec3 color = texture2D(uTexture, tilted, -1.5).rgb;
+
+      // The circle samples the smoothest part of the chrome texture, so give
+      // its dye a little more contrast; otherwise a stir reads as a haze.
+      if (uVariant > 0.5 && uVariant < 1.5) {
+        color = clamp((color - 0.5) * 1.2 + 0.5, 0.0, 1.0);
+      }
+
+      color += (random(gl_FragCoord.xy) - 0.5) * uGrain;
+      color = clamp(color * (1.03 + uHover * 0.05), 0.0, 1.0);
+      gl_FragColor = vec4(color, 1.0);
+    }
+  `;
+
+  const DISPLAY_FRAGMENT_SHADER = `#version 300 es
+    precision highp float;
+
+    in vec2 vUv;
+    uniform sampler2D uDye;
+    uniform vec2 uTexel;
+    uniform vec2 uTilt;
+    uniform float uHover;
+    uniform float uTime;
+    out vec4 fragColor;
+
+    float random(vec2 point) {
+      return fract(sin(dot(point, vec2(12.9898, 78.233))) * 43758.5453123);
+    }
+
+    float luminance(vec3 color) {
+      return dot(color, vec3(0.299, 0.587, 0.114));
+    }
+
+    void main() {
+      vec3 color = texture(uDye, vUv).rgb;
+      color = clamp((color - 0.5) * 1.08 + 0.5, 0.0, 1.0);
+      float center = luminance(color);
+      float left = luminance(
+        texture(uDye, vUv - vec2(uTexel.x, 0.0)).rgb
+      );
+      float right = luminance(
+        texture(uDye, vUv + vec2(uTexel.x, 0.0)).rgb
+      );
+      float bottom = luminance(
+        texture(uDye, vUv - vec2(0.0, uTexel.y)).rgb
+      );
+      float top = luminance(
+        texture(uDye, vUv + vec2(0.0, uTexel.y)).rgb
+      );
+      vec2 slope = clamp(
+        vec2(right - left, top - bottom) * 4.0,
+        -0.6,
+        0.6
+      );
+
+      // The dye's own folds become the surface normal. This is lighting on
+      // the liquid that actually moved, not a separate refraction layer.
+      vec3 normal = normalize(vec3(-slope - uTilt * 0.12, 1.0));
+      vec3 light = normalize(
+        vec3(-0.35 + uTilt.x * 0.45, 0.45 + uTilt.y * 0.45, 0.82)
+      );
+      vec3 viewDir = vec3(0.0, 0.0, 1.0);
+      vec3 halfDir = normalize(light + viewDir);
+      float specular = pow(max(dot(normal, halfDir), 0.0), 24.0);
+      float diffuse = max(dot(normal, light), 0.0);
+      float fresnel = pow(1.0 - max(normal.z, 0.0), 3.0);
+
+      color *= 0.96 + diffuse * 0.07;
+      color += specular * (0.07 + fresnel * 0.05);
+      color += (center - 0.5) * 0.04;
+      color += (random(gl_FragCoord.xy + uTime) - 0.5) * 0.014;
+      color = clamp(color * (1.02 + uHover * 0.05), 0.0, 1.0);
+      fragColor = vec4(color, 1.0);
+    }
+  `;
+
+  const SIM_SIZE = 128;
+  const DYE_SIZE = 512;
+  const PRESSURE_ITERATIONS = 30;
+  const FLUID_STEP = 1 / 60;
+
+  const SIM_VERTEX_SHADER = `#version 300 es
+    in vec2 aPos;
+    out vec2 vUv;
+
+    void main() {
+      vUv = aPos * 0.5 + 0.5;
+      gl_Position = vec4(aPos, 0.0, 1.0);
+    }
+  `;
+
+  const ADVECT_FRAGMENT_SHADER = `#version 300 es
+    precision highp float;
+
+    in vec2 vUv;
+    uniform sampler2D uVelocity;
+    uniform sampler2D uSource;
+    uniform float uDt;
+    uniform float uDissipation;
+    out vec4 fragColor;
+
+    void main() {
+      vec2 velocity = texture(uVelocity, vUv).xy;
+      vec2 coord = clamp(vUv - uDt * velocity, 0.001, 0.999);
+      fragColor = texture(uSource, coord) * uDissipation;
+    }
+  `;
+
+  const FORCE_FRAGMENT_SHADER = `#version 300 es
+    precision highp float;
+
+    in vec2 vUv;
+    uniform sampler2D uVelocity;
+    uniform vec4 uPointer;
+    uniform vec4 uSplat;
+    uniform float uRadius;
+    uniform float uTime;
+    uniform float uDt;
+    out vec4 fragColor;
+
+    void main() {
+      vec2 velocity = texture(uVelocity, vUv).xy;
+
+      // The pointer's drag is a velocity, not a UV offset. It is applied to
+      // the field itself, so the dye is carried by the moving liquid.
+      vec2 delta = vUv - uPointer.zw;
+      float falloff = exp(-dot(delta, delta) / (uRadius * uRadius));
+      velocity += uPointer.xy * falloff;
+
+      // A click pushes the liquid outward from the contact point.
+      vec2 offset = vUv - uSplat.xy;
+      float distance = length(offset);
+      float splat = uSplat.z * exp(
+        -distance * distance / (uSplat.w * uSplat.w)
+      );
+      if (distance > 1e-4) {
+        velocity += (offset / distance) * splat;
+      }
+
+      // A slow drift keeps the liquid alive while the pointer is still. The
+      // pressure projection removes the divergence this adds.
+      vec2 ambient = vec2(
+        sin(vUv.y * 6.5 + uTime * 0.32) +
+          0.55 * sin(vUv.y * 12.0 - uTime * 0.5),
+        cos(vUv.x * 6.0 - uTime * 0.28) +
+          0.55 * cos(vUv.x * 10.5 + uTime * 0.45)
+      ) * 0.08;
+      velocity += (ambient - velocity) * min(uDt * 0.6, 0.08);
+
+      // Contain the liquid inside the tile instead of letting it pile up on
+      // the clamped border.
+      float edge = smoothstep(
+        0.0,
+        0.04,
+        min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y))
+      );
+      velocity *= mix(0.5, 1.0, edge);
+
+      float speed = length(velocity);
+      if (speed > 5.0) velocity *= 5.0 / speed;
+      fragColor = vec4(velocity, 0.0, 1.0);
+    }
+  `;
+
+  const DIVERGENCE_FRAGMENT_SHADER = `#version 300 es
+    precision highp float;
+
+    in vec2 vUv;
+    uniform sampler2D uVelocity;
+    uniform vec2 uTexel;
+    out vec4 fragColor;
+
+    void main() {
+      float left = texture(uVelocity, vUv - vec2(uTexel.x, 0.0)).x;
+      float right = texture(uVelocity, vUv + vec2(uTexel.x, 0.0)).x;
+      float bottom = texture(uVelocity, vUv - vec2(0.0, uTexel.y)).y;
+      float top = texture(uVelocity, vUv + vec2(0.0, uTexel.y)).y;
+      fragColor = vec4(
+        0.5 * (right - left + top - bottom),
+        0.0,
+        0.0,
+        1.0
+      );
+    }
+  `;
+
+  const PRESSURE_FRAGMENT_SHADER = `#version 300 es
+    precision highp float;
+
+    in vec2 vUv;
+    uniform sampler2D uPressure;
+    uniform sampler2D uDivergence;
+    uniform vec2 uTexel;
+    out vec4 fragColor;
+
+    void main() {
+      float left = texture(uPressure, vUv - vec2(uTexel.x, 0.0)).x;
+      float right = texture(uPressure, vUv + vec2(uTexel.x, 0.0)).x;
+      float bottom = texture(uPressure, vUv - vec2(0.0, uTexel.y)).x;
+      float top = texture(uPressure, vUv + vec2(0.0, uTexel.y)).x;
+      float divergence = texture(uDivergence, vUv).x;
+      fragColor = vec4(
+        (left + right + bottom + top - divergence) * 0.25,
+        0.0,
+        0.0,
+        1.0
+      );
+    }
+  `;
+
+  const GRADIENT_FRAGMENT_SHADER = `#version 300 es
+    precision highp float;
+
+    in vec2 vUv;
+    uniform sampler2D uPressure;
+    uniform sampler2D uVelocity;
+    uniform vec2 uTexel;
+    out vec4 fragColor;
+
+    void main() {
+      float left = texture(uPressure, vUv - vec2(uTexel.x, 0.0)).x;
+      float right = texture(uPressure, vUv + vec2(uTexel.x, 0.0)).x;
+      float bottom = texture(uPressure, vUv - vec2(0.0, uTexel.y)).x;
+      float top = texture(uPressure, vUv + vec2(0.0, uTexel.y)).x;
+      vec2 velocity = texture(uVelocity, vUv).xy;
+      velocity -= vec2(right - left, top - bottom) * 0.5;
+      fragColor = vec4(velocity, 0.0, 1.0);
+    }
+  `;
+
+  const CURL_FRAGMENT_SHADER = `#version 300 es
+    precision highp float;
+
+    in vec2 vUv;
+    uniform sampler2D uVelocity;
+    uniform vec2 uTexel;
+    out vec4 fragColor;
+
+    void main() {
+      float left = texture(uVelocity, vUv - vec2(uTexel.x, 0.0)).y;
+      float right = texture(uVelocity, vUv + vec2(uTexel.x, 0.0)).y;
+      float bottom = texture(uVelocity, vUv - vec2(0.0, uTexel.y)).x;
+      float top = texture(uVelocity, vUv + vec2(0.0, uTexel.y)).x;
+      fragColor = vec4(
+        0.5 * (right - left - top + bottom),
+        0.0,
+        0.0,
+        1.0
+      );
+    }
+  `;
+
+  const VORTICITY_FRAGMENT_SHADER = `#version 300 es
+    precision highp float;
+
+    in vec2 vUv;
+    uniform sampler2D uVelocity;
+    uniform sampler2D uCurl;
+    uniform vec2 uTexel;
+    uniform float uStrength;
+    uniform float uDt;
+    out vec4 fragColor;
+
+    void main() {
+      float left = abs(texture(uCurl, vUv - vec2(uTexel.x, 0.0)).x);
+      float right = abs(texture(uCurl, vUv + vec2(uTexel.x, 0.0)).x);
+      float bottom = abs(texture(uCurl, vUv - vec2(0.0, uTexel.y)).x);
+      float top = abs(texture(uCurl, vUv + vec2(0.0, uTexel.y)).x);
+      float center = texture(uCurl, vUv).x;
+
+      // Confine the vorticity by pushing along the gradient of |curl|. This
+      // turns the pointer's shear into a coherent eddy instead of a brief
+      // local dent that the pressure solve immediately smooths away.
+      vec2 force = 0.5 * vec2(right - left, top - bottom);
+      force /= length(force) + 1e-4;
+      force *= uStrength * center;
+      force.y *= -1.0;
+
+      vec2 velocity = texture(uVelocity, vUv).xy;
+      velocity += force * uDt;
+      fragColor = vec4(velocity, 0.0, 1.0);
+    }
+  `;
+
+  const DYE_FRAGMENT_SHADER = `#version 300 es
+    precision highp float;
+
+    in vec2 vUv;
+    uniform sampler2D uVelocity;
+    uniform sampler2D uDye;
+    uniform sampler2D uPattern;
+    uniform float uDt;
+    uniform float uDissipation;
+    uniform float uBlend;
+    out vec4 fragColor;
+
+    void main() {
+      vec2 velocity = texture(uVelocity, vUv).xy;
+      vec2 coord = clamp(vUv - uDt * velocity, 0.001, 0.999);
+      vec3 advected = texture(uDye, coord).rgb * uDissipation;
+      vec3 pattern = texture(uPattern, vUv).rgb;
+      // Re-seed the marbling from the pattern. The step is tiny while the
+      // pointer is moving and larger once it stops, so a stroke stays local
+      // and then heals back into the original flow.
+      fragColor = vec4(mix(advected, pattern, uBlend), 1.0);
+    }
+  `;
+
+  type FluidTarget = {
+    texture: WebGLTexture;
+    framebuffer: WebGLFramebuffer;
+  };
+
+  type FluidProgram = {
+    program: WebGLProgram;
+    uniforms: Record<string, WebGLUniformLocation | null>;
+  };
+
+  type Fluid = {
+    advect: FluidProgram;
+    force: FluidProgram;
+    divergence: FluidProgram;
+    pressure: FluidProgram;
+    gradient: FluidProgram;
+    curl: FluidProgram;
+    vorticity: FluidProgram;
+    dye: FluidProgram;
+    display: FluidProgram;
+    velocity: [FluidTarget, FluidTarget];
+    pressureTargets: [FluidTarget, FluidTarget];
+    divergenceTarget: FluidTarget;
+    curlTarget: FluidTarget;
+    dyeTargets: [FluidTarget, FluidTarget];
+    pattern: FluidTarget;
+    velocityCurrent: number;
+    pressureCurrent: number;
+    dyeCurrent: number;
+    forceX: number;
+    forceY: number;
+    forcePointX: number;
+    forcePointY: number;
+    splatX: number;
+    splatY: number;
+    splatStrength: number;
+    accumulator: number;
+    idle: number;
+  };
+
+  type Orb = {
+    canvas: HTMLCanvasElement;
+    gl: WebGLRenderingContext;
+    program: WebGLProgram;
+    texture: WebGLTexture;
+    time: WebGLUniformLocation | null;
+    hoverLocation: WebGLUniformLocation | null;
+    tiltLocation: WebGLUniformLocation | null;
+    grainLocation: WebGLUniformLocation | null;
+    seed: number;
+    start: number;
+    visible: boolean;
+    lost: boolean;
+    hover: number;
+    hoverTarget: number;
+    tiltX: number;
+    tiltY: number;
+    tiltVX: number;
+    tiltVY: number;
+    pointerX: number;
+    pointerY: number;
+    pointerInside: boolean;
+    pointerReady: boolean;
+    last: number;
+    fluid: Fluid | null;
+  };
+
+  const orbs: Orb[] = [];
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let frameId = 0;
+
+  const compile = (
+    gl: WebGLRenderingContext,
+    type: number,
+    source: string,
+  ): WebGLShader | null => {
+    const shader = gl.createShader(type);
+    if (!shader) return null;
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      gl.deleteShader(shader);
+      return null;
+    }
+    return shader;
+  };
+
+  const link = (
+    gl: WebGLRenderingContext,
+    vertexSource: string,
+    fragmentSource: string,
+  ): WebGLProgram | null => {
+    const vertexShader = compile(gl, gl.VERTEX_SHADER, vertexSource);
+    const fragmentShader = compile(gl, gl.FRAGMENT_SHADER, fragmentSource);
+    if (!vertexShader || !fragmentShader) {
+      if (vertexShader) gl.deleteShader(vertexShader);
+      if (fragmentShader) gl.deleteShader(fragmentShader);
+      return null;
+    }
+
+    const program = gl.createProgram();
+    if (!program) {
+      gl.deleteShader(vertexShader);
+      gl.deleteShader(fragmentShader);
+      return null;
+    }
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.bindAttribLocation(program, 0, "aPos");
+    gl.linkProgram(program);
+    gl.deleteShader(vertexShader);
+    gl.deleteShader(fragmentShader);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      gl.deleteProgram(program);
+      return null;
+    }
+    return program;
+  };
+
+  const linkFluid = (
+    gl: WebGLRenderingContext,
+    fragmentSource: string,
+    names: string[],
+  ): FluidProgram | null => {
+    const program = link(gl, SIM_VERTEX_SHADER, fragmentSource);
+    if (!program) return null;
+    const uniforms: Record<string, WebGLUniformLocation | null> = {};
+    for (const name of names) {
+      uniforms[name] = gl.getUniformLocation(program, name);
+    }
+    return { program, uniforms };
+  };
+
+  const createTexture = (
+    gl: WebGLRenderingContext,
+    variant: number,
+  ): WebGLTexture | null => {
+    const size = 1024;
+    const source = document.createElement("canvas");
+    source.width = size;
+    source.height = size;
+    const context = source.getContext("2d");
+    if (!context) return null;
+
+    context.fillStyle = "#9a9a9a";
+    context.fillRect(0, 0, size, size);
+
+    const linear = (
+      x0: number,
+      y0: number,
+      x1: number,
+      y1: number,
+      stops: [number, string][],
+    ) => {
+      const gradient = context.createLinearGradient(x0, y0, x1, y1);
+      for (const [offset, color] of stops) gradient.addColorStop(offset, color);
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, size, size);
+    };
+
+    const ellipse = (
+      x: number,
+      y: number,
+      radiusX: number,
+      radiusY: number,
+      rotation: number,
+      stops: [number, string][],
+    ) => {
+      context.save();
+      context.translate(x * size, y * size);
+      context.rotate(rotation);
+      context.scale(radiusX * size, radiusY * size);
+      const gradient = context.createRadialGradient(0, 0, 0, 0, 0, 1);
+      for (const [offset, color] of stops) gradient.addColorStop(offset, color);
+      context.fillStyle = gradient;
+      context.fillRect(-1, -1, 2, 2);
+      context.restore();
+    };
+
+    if (variant === 0) {
+      // Square: diagonal chrome bands with elongated highlights.
+      linear(0, 0, size, size, [
+        [0, "#f7f7f7"],
+        [0.22, "#d2d2d2"],
+        [0.46, "#9a9a9a"],
+        [0.64, "#e2e2e2"],
+        [0.82, "#8b8b8b"],
+        [1, "#5f5f5f"],
+      ]);
+      ellipse(
+        0.28,
+        0.24,
+        0.55,
+        0.22,
+        -0.7,
+        [
+          [0, "rgba(255,255,255,0.85)"],
+          [0.45, "rgba(255,255,255,0.25)"],
+          [1, "rgba(255,255,255,0)"],
+        ],
+      );
+      ellipse(
+        0.74,
+        0.7,
+        0.48,
+        0.2,
+        -0.7,
+        [
+          [0, "rgba(20,20,20,0.55)"],
+          [0.5, "rgba(40,40,40,0.18)"],
+          [1, "rgba(40,40,40,0)"],
+        ],
+      );
+      ellipse(
+        0.52,
+        0.92,
+        0.4,
+        0.14,
+        0,
+        [
+          [0, "rgba(255,255,255,0.5)"],
+          [1, "rgba(255,255,255,0)"],
+        ],
+      );
+    } else if (variant === 1) {
+      // Circle: the original radial composition.
+      linear(0, 0, size, size, [
+        [0, "#ececec"],
+        [0.45, "#b4b4b4"],
+        [1, "#5c5c5c"],
+      ]);
+      ellipse(
+        0.3,
+        0.24,
+        0.55,
+        0.55,
+        0,
+        [
+          [0, "rgba(252,252,252,0.98)"],
+          [0.55, "rgba(224,224,224,0.45)"],
+          [1, "rgba(224,224,224,0)"],
+        ],
+      );
+      ellipse(
+        0.74,
+        0.68,
+        0.5,
+        0.5,
+        0,
+        [
+          [0, "rgba(34,34,34,0.92)"],
+          [0.55, "rgba(82,82,82,0.42)"],
+          [1, "rgba(82,82,82,0)"],
+        ],
+      );
+      ellipse(
+        0.46,
+        0.88,
+        0.48,
+        0.48,
+        0,
+        [
+          [0, "rgba(240,240,240,0.9)"],
+          [0.55, "rgba(158,158,158,0.38)"],
+          [1, "rgba(158,158,158,0)"],
+        ],
+      );
+      ellipse(
+        0.22,
+        0.16,
+        0.12,
+        0.08,
+        -0.6,
+        [
+          [0, "rgba(255,255,255,0.9)"],
+          [1, "rgba(255,255,255,0)"],
+        ],
+      );
+    } else {
+      // Triangle: vertical bands that fan into rays from the apex.
+      linear(0, 0, size, 0, [
+        [0, "#f2f2f2"],
+        [0.18, "#c9c9c9"],
+        [0.36, "#8f8f8f"],
+        [0.52, "#e6e6e6"],
+        [0.68, "#a3a3a3"],
+        [0.84, "#d4d4d4"],
+        [1, "#707070"],
+      ]);
+      linear(0, size, 0, 0, [
+        [0, "rgba(255,255,255,0.28)"],
+        [0.45, "rgba(255,255,255,0)"],
+        [0.78, "rgba(0,0,0,0.12)"],
+        [1, "rgba(0,0,0,0.3)"],
+      ]);
+      ellipse(
+        0.5,
+        0.9,
+        0.16,
+        0.5,
+        0,
+        [
+          [0, "rgba(255,255,255,0.45)"],
+          [0.5, "rgba(255,255,255,0.12)"],
+          [1, "rgba(255,255,255,0)"],
+        ],
+      );
+      ellipse(
+        0.3,
+        0.55,
+        0.4,
+        0.1,
+        -0.9,
+        [
+          [0, "rgba(255,255,255,0.25)"],
+          [1, "rgba(255,255,255,0)"],
+        ],
+      );
+      ellipse(
+        0.7,
+        0.4,
+        0.4,
+        0.1,
+        -0.9,
+        [
+          [0, "rgba(0,0,0,0.2)"],
+          [1, "rgba(0,0,0,0)"],
+        ],
+      );
+    }
+
+    const texture = gl.createTexture();
+    if (!texture) return null;
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      source,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(
+      gl.TEXTURE_2D,
+      gl.TEXTURE_MIN_FILTER,
+      gl.LINEAR_MIPMAP_LINEAR,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    return texture;
+  };
+
+  const createTarget = (
+    gl: WebGLRenderingContext,
+    size: number,
+    internalFormat: number,
+    format: number,
+    type: number,
+    filter: number,
+  ): FluidTarget | null => {
+    const texture = gl.createTexture();
+    if (!texture) return null;
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      internalFormat,
+      size,
+      size,
+      0,
+      format,
+      type,
+      null,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    const framebuffer = gl.createFramebuffer();
+    if (!framebuffer) {
+      gl.deleteTexture(texture);
+      return null;
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      texture,
+      0,
+    );
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteFramebuffer(framebuffer);
+      gl.deleteTexture(texture);
+      return null;
+    }
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { texture, framebuffer };
+  };
+
+  const createFluid = (
+    gl: WebGLRenderingContext,
+    gl2: WebGL2RenderingContext,
+  ): Fluid | null => {
+    if (!gl2.getExtension("EXT_color_buffer_float")) return null;
+
+    const advect = linkFluid(gl, ADVECT_FRAGMENT_SHADER, [
+      "uVelocity",
+      "uSource",
+      "uDt",
+      "uDissipation",
+    ]);
+    const force = linkFluid(gl, FORCE_FRAGMENT_SHADER, [
+      "uVelocity",
+      "uPointer",
+      "uSplat",
+      "uRadius",
+      "uTime",
+      "uDt",
+    ]);
+    const divergence = linkFluid(gl, DIVERGENCE_FRAGMENT_SHADER, [
+      "uVelocity",
+      "uTexel",
+    ]);
+    const pressure = linkFluid(gl, PRESSURE_FRAGMENT_SHADER, [
+      "uPressure",
+      "uDivergence",
+      "uTexel",
+    ]);
+    const gradient = linkFluid(gl, GRADIENT_FRAGMENT_SHADER, [
+      "uPressure",
+      "uVelocity",
+      "uTexel",
+    ]);
+    const curl = linkFluid(gl, CURL_FRAGMENT_SHADER, [
+      "uVelocity",
+      "uTexel",
+    ]);
+    const vorticity = linkFluid(gl, VORTICITY_FRAGMENT_SHADER, [
+      "uVelocity",
+      "uCurl",
+      "uTexel",
+      "uStrength",
+      "uDt",
+    ]);
+    const dye = linkFluid(gl, DYE_FRAGMENT_SHADER, [
+      "uVelocity",
+      "uDye",
+      "uPattern",
+      "uDt",
+      "uDissipation",
+      "uBlend",
+    ]);
+    const display = linkFluid(gl, DISPLAY_FRAGMENT_SHADER, [
+      "uDye",
+      "uTexel",
+      "uTilt",
+      "uHover",
+      "uTime",
+    ]);
+
+    if (
+      !advect ||
+      !force ||
+      !divergence ||
+      !pressure ||
+      !gradient ||
+      !curl ||
+      !vorticity ||
+      !dye ||
+      !display
+    ) {
+      for (const program of [
+        advect,
+        force,
+        divergence,
+        pressure,
+        gradient,
+        curl,
+        vorticity,
+        dye,
+        display,
+      ]) {
+        if (program) gl.deleteProgram(program.program);
+      }
+      return null;
+    }
+
+    const velocityA = createTarget(
+      gl,
+      SIM_SIZE,
+      gl2.RG16F,
+      gl2.RG,
+      gl2.HALF_FLOAT,
+      gl.LINEAR,
+    );
+    const velocityB = createTarget(
+      gl,
+      SIM_SIZE,
+      gl2.RG16F,
+      gl2.RG,
+      gl2.HALF_FLOAT,
+      gl.LINEAR,
+    );
+    const pressureA = createTarget(
+      gl,
+      SIM_SIZE,
+      gl2.RG16F,
+      gl2.RG,
+      gl2.HALF_FLOAT,
+      gl.NEAREST,
+    );
+    const pressureB = createTarget(
+      gl,
+      SIM_SIZE,
+      gl2.RG16F,
+      gl2.RG,
+      gl2.HALF_FLOAT,
+      gl.NEAREST,
+    );
+    const divergenceTarget = createTarget(
+      gl,
+      SIM_SIZE,
+      gl2.RG16F,
+      gl2.RG,
+      gl2.HALF_FLOAT,
+      gl.NEAREST,
+    );
+    const curlTarget = createTarget(
+      gl,
+      SIM_SIZE,
+      gl2.RG16F,
+      gl2.RG,
+      gl2.HALF_FLOAT,
+      gl.LINEAR,
+    );
+    const dyeA = createTarget(
+      gl,
+      DYE_SIZE,
+      gl2.RGBA16F,
+      gl2.RGBA,
+      gl2.HALF_FLOAT,
+      gl.LINEAR,
+    );
+    const dyeB = createTarget(
+      gl,
+      DYE_SIZE,
+      gl2.RGBA16F,
+      gl2.RGBA,
+      gl2.HALF_FLOAT,
+      gl.LINEAR,
+    );
+    const pattern = createTarget(
+      gl,
+      DYE_SIZE,
+      gl2.RGBA8,
+      gl2.RGBA,
+      gl.UNSIGNED_BYTE,
+      gl.LINEAR,
+    );
+
+    if (
+      !velocityA ||
+      !velocityB ||
+      !pressureA ||
+      !pressureB ||
+      !divergenceTarget ||
+      !curlTarget ||
+      !dyeA ||
+      !dyeB ||
+      !pattern
+    ) {
+      for (const target of [
+        velocityA,
+        velocityB,
+        pressureA,
+        pressureB,
+        divergenceTarget,
+        curlTarget,
+        dyeA,
+        dyeB,
+        pattern,
+      ]) {
+        if (!target) continue;
+        gl.deleteFramebuffer(target.framebuffer);
+        gl.deleteTexture(target.texture);
+      }
+      for (const program of [
+        advect,
+        force,
+        divergence,
+        pressure,
+        gradient,
+        curl,
+        vorticity,
+        dye,
+        display,
+      ]) {
+        gl.deleteProgram(program.program);
+      }
+      return null;
+    }
+
+    gl.useProgram(advect.program);
+    gl.uniform1i(advect.uniforms["uVelocity"], 0);
+    gl.uniform1i(advect.uniforms["uSource"], 1);
+
+    gl.useProgram(force.program);
+    gl.uniform1i(force.uniforms["uVelocity"], 0);
+    gl.uniform1f(force.uniforms["uRadius"], 0.06);
+
+    gl.useProgram(divergence.program);
+    gl.uniform1i(divergence.uniforms["uVelocity"], 0);
+    gl.uniform2f(divergence.uniforms["uTexel"], 1 / SIM_SIZE, 1 / SIM_SIZE);
+
+    gl.useProgram(pressure.program);
+    gl.uniform1i(pressure.uniforms["uPressure"], 0);
+    gl.uniform1i(pressure.uniforms["uDivergence"], 1);
+    gl.uniform2f(pressure.uniforms["uTexel"], 1 / SIM_SIZE, 1 / SIM_SIZE);
+
+    gl.useProgram(gradient.program);
+    gl.uniform1i(gradient.uniforms["uPressure"], 0);
+    gl.uniform1i(gradient.uniforms["uVelocity"], 1);
+    gl.uniform2f(gradient.uniforms["uTexel"], 1 / SIM_SIZE, 1 / SIM_SIZE);
+
+    gl.useProgram(curl.program);
+    gl.uniform1i(curl.uniforms["uVelocity"], 0);
+    gl.uniform2f(curl.uniforms["uTexel"], 1 / SIM_SIZE, 1 / SIM_SIZE);
+
+    gl.useProgram(vorticity.program);
+    gl.uniform1i(vorticity.uniforms["uVelocity"], 0);
+    gl.uniform1i(vorticity.uniforms["uCurl"], 1);
+    gl.uniform2f(vorticity.uniforms["uTexel"], 1 / SIM_SIZE, 1 / SIM_SIZE);
+    gl.uniform1f(vorticity.uniforms["uStrength"], 4.0);
+
+    gl.useProgram(dye.program);
+    gl.uniform1i(dye.uniforms["uVelocity"], 0);
+    gl.uniform1i(dye.uniforms["uDye"], 1);
+    gl.uniform1i(dye.uniforms["uPattern"], 2);
+
+    gl.useProgram(display.program);
+    gl.uniform1i(display.uniforms["uDye"], 0);
+    gl.uniform2f(display.uniforms["uTexel"], 1 / DYE_SIZE, 1 / DYE_SIZE);
+
+    return {
+      advect,
+      force,
+      divergence,
+      pressure,
+      gradient,
+      curl,
+      vorticity,
+      dye,
+      display,
+      velocity: [velocityA, velocityB],
+      pressureTargets: [pressureA, pressureB],
+      divergenceTarget,
+      curlTarget,
+      dyeTargets: [dyeA, dyeB],
+      pattern,
+      velocityCurrent: 0,
+      pressureCurrent: 0,
+      dyeCurrent: 0,
+      forceX: 0,
+      forceY: 0,
+      forcePointX: 0.5,
+      forcePointY: 0.5,
+      splatX: 0.5,
+      splatY: 0.5,
+      splatStrength: 0,
+      accumulator: 0,
+      idle: 0,
+    };
+  };
+
+  const renderPattern = (orb: Orb, seconds: number) => {
+    const fluid = orb.fluid;
+    if (!fluid) return;
+    const { gl } = orb;
+    gl.useProgram(orb.program);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fluid.pattern.framebuffer);
+    gl.viewport(0, 0, DYE_SIZE, DYE_SIZE);
+    gl.uniform1f(orb.time, seconds);
+    gl.uniform1f(orb.hoverLocation, 0);
+    gl.uniform1f(orb.grainLocation, 0);
+    gl.uniform2f(orb.tiltLocation, 0, 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, orb.texture);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  };
+
+  const fillDye = (orb: Orb, seconds: number) => {
+    const fluid = orb.fluid;
+    if (!fluid) return;
+    const { gl } = orb;
+    gl.useProgram(orb.program);
+    gl.uniform1f(orb.time, seconds);
+    gl.uniform1f(orb.hoverLocation, 0);
+    gl.uniform1f(orb.grainLocation, 0);
+    gl.uniform2f(orb.tiltLocation, 0, 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, orb.texture);
+    for (const target of fluid.dyeTargets) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+      gl.viewport(0, 0, DYE_SIZE, DYE_SIZE);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    fluid.dyeCurrent = 0;
+  };
+
+  const drawFluid = (orb: Orb, seconds: number) => {
+    const fluid = orb.fluid;
+    if (!fluid) return;
+    const { gl } = orb;
+    gl.useProgram(fluid.display.program);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, orb.canvas.width, orb.canvas.height);
+    gl.uniform2f(fluid.display.uniforms["uTilt"], orb.tiltX, orb.tiltY);
+    gl.uniform1f(fluid.display.uniforms["uHover"], orb.hover);
+    gl.uniform1f(fluid.display.uniforms["uTime"], seconds);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, fluid.dyeTargets[fluid.dyeCurrent].texture);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+
+  const drawPattern = (orb: Orb, seconds: number) => {
+    const { gl } = orb;
+    gl.useProgram(orb.program);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, orb.canvas.width, orb.canvas.height);
+    gl.uniform1f(orb.time, seconds);
+    gl.uniform1f(orb.hoverLocation, orb.hover);
+    gl.uniform1f(orb.grainLocation, 0.018);
+    gl.uniform2f(orb.tiltLocation, orb.tiltX, orb.tiltY);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, orb.texture);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+
+  const drawInitial = (orb: Orb, seconds: number) => {
+    if (orb.fluid) {
+      renderPattern(orb, seconds);
+      fillDye(orb, seconds);
+      drawFluid(orb, seconds);
+    } else {
+      drawPattern(orb, seconds);
+    }
+  };
+
+  const resetFluid = (orb: Orb) => {
+    const fluid = orb.fluid;
+    if (!fluid) return;
+    const { gl } = orb;
+    gl.clearColor(0, 0, 0, 1);
+    for (const target of [
+      ...fluid.velocity,
+      ...fluid.pressureTargets,
+      fluid.divergenceTarget,
+    ]) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    fluid.velocityCurrent = 0;
+    fluid.pressureCurrent = 0;
+    fluid.dyeCurrent = 0;
+    fluid.forceX = 0;
+    fluid.forceY = 0;
+    fluid.splatStrength = 0;
+    fluid.accumulator = 0;
+    fluid.idle = 0;
+    renderPattern(orb, orb.seed);
+    fillDye(orb, orb.seed);
+  };
+
+  const renderStatic = (orb: Orb) => {
+    resetFluid(orb);
+    if (orb.fluid) drawFluid(orb, orb.seed);
+    else drawPattern(orb, orb.seed);
+  };
+
+  const stepFluid = (orb: Orb, dt: number, seconds: number) => {
+    const fluid = orb.fluid;
+    if (!fluid) return;
+    const { gl } = orb;
+
+    // 1. Advect the velocity field through itself.
+    {
+      const source = fluid.velocity[fluid.velocityCurrent];
+      const destination = fluid.velocity[1 - fluid.velocityCurrent];
+      gl.useProgram(fluid.advect.program);
+      gl.uniform1f(fluid.advect.uniforms["uDt"], dt);
+      gl.uniform1f(fluid.advect.uniforms["uDissipation"], 0.9995);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, source.texture);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, source.texture);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer);
+      gl.viewport(0, 0, SIM_SIZE, SIM_SIZE);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      fluid.velocityCurrent = 1 - fluid.velocityCurrent;
+    }
+
+    // 2. Inject the pointer's drag, a click splat, and the ambient drift.
+    {
+      const source = fluid.velocity[fluid.velocityCurrent];
+      const destination = fluid.velocity[1 - fluid.velocityCurrent];
+      gl.useProgram(fluid.force.program);
+      gl.uniform4f(
+        fluid.force.uniforms["uPointer"],
+        fluid.forceX,
+        fluid.forceY,
+        fluid.forcePointX,
+        fluid.forcePointY,
+      );
+      gl.uniform4f(
+        fluid.force.uniforms["uSplat"],
+        fluid.splatX,
+        fluid.splatY,
+        fluid.splatStrength,
+        0.09,
+      );
+      gl.uniform1f(fluid.force.uniforms["uTime"], seconds);
+      gl.uniform1f(fluid.force.uniforms["uDt"], dt);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, source.texture);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer);
+      gl.viewport(0, 0, SIM_SIZE, SIM_SIZE);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      fluid.velocityCurrent = 1 - fluid.velocityCurrent;
+      fluid.forceX = 0;
+      fluid.forceY = 0;
+      fluid.splatStrength = 0;
+    }
+
+    // 3. Curl and vorticity confinement. The pointer's shear becomes a
+    //    coherent eddy instead of a brief dent the pressure solve smooths.
+    {
+      gl.useProgram(fluid.curl.program);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(
+        gl.TEXTURE_2D,
+        fluid.velocity[fluid.velocityCurrent].texture,
+      );
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fluid.curlTarget.framebuffer);
+      gl.viewport(0, 0, SIM_SIZE, SIM_SIZE);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    {
+      const source = fluid.velocity[fluid.velocityCurrent];
+      const destination = fluid.velocity[1 - fluid.velocityCurrent];
+      gl.useProgram(fluid.vorticity.program);
+      gl.uniform1f(fluid.vorticity.uniforms["uDt"], dt);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, source.texture);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, fluid.curlTarget.texture);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer);
+      gl.viewport(0, 0, SIM_SIZE, SIM_SIZE);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      fluid.velocityCurrent = 1 - fluid.velocityCurrent;
+    }
+
+    // 4. Divergence of the forced field.
+    {
+      gl.useProgram(fluid.divergence.program);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(
+        gl.TEXTURE_2D,
+        fluid.velocity[fluid.velocityCurrent].texture,
+      );
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fluid.divergenceTarget.framebuffer);
+      gl.viewport(0, 0, SIM_SIZE, SIM_SIZE);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+
+    // 5. Jacobi pressure solve. Removing the divergence is what makes the
+    //    pointer's push spread and swirl like a liquid instead of smearing.
+    {
+      gl.useProgram(fluid.pressure.program);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, fluid.divergenceTarget.texture);
+      gl.viewport(0, 0, SIM_SIZE, SIM_SIZE);
+
+      const first = fluid.pressureTargets[fluid.pressureCurrent];
+      gl.bindFramebuffer(gl.FRAMEBUFFER, first.framebuffer);
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      for (let i = 0; i < PRESSURE_ITERATIONS; i++) {
+        const source = fluid.pressureTargets[fluid.pressureCurrent];
+        const destination = fluid.pressureTargets[1 - fluid.pressureCurrent];
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, source.texture);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        fluid.pressureCurrent = 1 - fluid.pressureCurrent;
+      }
+    }
+
+    // 6. Subtract the pressure gradient so the field is divergence-free.
+    {
+      const source = fluid.velocity[fluid.velocityCurrent];
+      const destination = fluid.velocity[1 - fluid.velocityCurrent];
+      gl.useProgram(fluid.gradient.program);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(
+        gl.TEXTURE_2D,
+        fluid.pressureTargets[fluid.pressureCurrent].texture,
+      );
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, source.texture);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer);
+      gl.viewport(0, 0, SIM_SIZE, SIM_SIZE);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      fluid.velocityCurrent = 1 - fluid.velocityCurrent;
+    }
+
+    // 7. Carry the silver dye with the projected velocity, then add back a
+    //    little of the moving pattern so the marbling never fully washes out.
+    {
+      const source = fluid.dyeTargets[fluid.dyeCurrent];
+      const destination = fluid.dyeTargets[1 - fluid.dyeCurrent];
+      gl.useProgram(fluid.dye.program);
+      gl.uniform1f(fluid.dye.uniforms["uDt"], dt);
+      gl.uniform1f(fluid.dye.uniforms["uDissipation"], 0.9995);
+      // While the pointer is stirring, keep the dye so the stroke stays
+      // legible; once it stops, re-seed the pattern so the original flow
+      // returns within a couple of seconds.
+      fluid.idle += dt;
+      const blend = fluid.idle > 0.15 ? 0.035 : 0.0015;
+      gl.uniform1f(fluid.dye.uniforms["uBlend"], blend);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(
+        gl.TEXTURE_2D,
+        fluid.velocity[fluid.velocityCurrent].texture,
+      );
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, source.texture);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, fluid.pattern.texture);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer);
+      gl.viewport(0, 0, DYE_SIZE, DYE_SIZE);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      fluid.dyeCurrent = 1 - fluid.dyeCurrent;
+    }
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, orb.canvas.width, orb.canvas.height);
+  };
+
+  const renderSize = (canvas: HTMLCanvasElement): number => {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cssSize = canvas.clientWidth || 239;
+    return Math.min(1024, Math.max(320, Math.round(cssSize * dpr)));
+  };
+
+  const createOrb = (canvas: HTMLCanvasElement): Orb | null => {
+    const gl2 = canvas.getContext("webgl2", {
+      alpha: true,
+      antialias: false,
+      powerPreference: "high-performance",
+    });
+    const gl = (gl2 ??
+      canvas.getContext("webgl", {
+        alpha: true,
+        antialias: false,
+        powerPreference: "high-performance",
+      })) as WebGLRenderingContext | null;
+    if (!gl) return null;
+
+    const program = link(gl, VERTEX_SHADER, PATTERN_FRAGMENT_SHADER);
+    if (!program) return null;
+
+    gl.useProgram(program);
+
+    const buffer = gl.createBuffer();
+    if (!buffer) {
+      gl.deleteProgram(program);
+      return null;
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 3, -1, -1, 3]),
+      gl.STATIC_DRAW,
+    );
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+    const wrapper = canvas.closest<HTMLElement>("[data-how-orb]");
+    const variant = Number(wrapper?.dataset.howOrbVariant ?? 0);
+    const seed = Number(wrapper?.dataset.howOrbSeed ?? 0);
+
+    gl.uniform1i(gl.getUniformLocation(program, "uTexture"), 0);
+    gl.uniform1f(gl.getUniformLocation(program, "uVariant"), variant);
+    gl.uniform1f(gl.getUniformLocation(program, "uSeed"), seed);
+
+    gl.activeTexture(gl.TEXTURE0);
+    const texture = createTexture(gl, variant);
+    if (!texture) {
+      gl.deleteBuffer(buffer);
+      gl.deleteProgram(program);
+      return null;
+    }
+
+    // The fluid is a WebGL2 path: RG16F velocity and pressure targets plus an
+    // RGBA16F dye target keep the simulation signed and smooth. If the
+    // context cannot render to float textures, the pattern shader is used
+    // directly, exactly as the old fallback did.
+    const fluid = gl2 ? createFluid(gl, gl2) : null;
+
+    const size = renderSize(canvas);
+    canvas.width = size;
+    canvas.height = size;
+    gl.viewport(0, 0, size, size);
+
+    const orb: Orb = {
+      canvas,
+      gl,
+      program,
+      texture,
+      time: gl.getUniformLocation(program, "uTime"),
+      hoverLocation: gl.getUniformLocation(program, "uHover"),
+      tiltLocation: gl.getUniformLocation(program, "uTilt"),
+      grainLocation: gl.getUniformLocation(program, "uGrain"),
+      seed,
+      start: performance.now(),
+      visible: false,
+      lost: false,
+      hover: 0,
+      hoverTarget: 0,
+      tiltX: 0,
+      tiltY: 0,
+      tiltVX: 0,
+      tiltVY: 0,
+      pointerX: 0.5,
+      pointerY: 0.5,
+      pointerInside: false,
+      pointerReady: false,
+      last: 0,
+      fluid,
+    };
+
+    canvas.addEventListener("webglcontextlost", (event) => {
+      event.preventDefault();
+      orb.lost = true;
+      canvas.hidden = true;
+    });
+
+    return orb;
+  };
+
+  const frame = (now: number) => {
+    frameId = 0;
+    let active = false;
+
+    for (const orb of orbs) {
+      if (!orb.visible || orb.lost) continue;
+      active = true;
+      const delta = orb.last ? Math.min((now - orb.last) / 1000, 0.05) : 1 / 60;
+      orb.last = now;
+
+      const rate = orb.hoverTarget > orb.hover ? 9 : 6;
+      orb.hover +=
+        (orb.hoverTarget - orb.hover) * (1 - Math.exp(-delta * rate));
+
+      // A critically damped spring leans the surface toward the pointer.
+      const targetX = orb.pointerInside ? orb.pointerX * 2 - 1 : 0;
+      const targetY = orb.pointerInside ? orb.pointerY * 2 - 1 : 0;
+      const stiffness = 36;
+      const damping = 2 * Math.sqrt(stiffness) * 0.95;
+      orb.tiltVX +=
+        ((targetX - orb.tiltX) * stiffness - orb.tiltVX * damping) * delta;
+      orb.tiltVY +=
+        ((targetY - orb.tiltY) * stiffness - orb.tiltVY * damping) * delta;
+      orb.tiltX += orb.tiltVX * delta;
+      orb.tiltY += orb.tiltVY * delta;
+
+      const seconds = orb.seed + (now - orb.start) / 1000;
+      if (orb.fluid) {
+        renderPattern(orb, seconds);
+        // Fixed-step substepping keeps the liquid moving at real time even
+        // when the page drops frames; a single clamped step would make the
+        // stir sluggish on slow devices.
+        orb.fluid.accumulator += delta;
+        let steps = 0;
+        while (orb.fluid.accumulator >= FLUID_STEP && steps < 6) {
+          stepFluid(orb, FLUID_STEP, seconds);
+          orb.fluid.accumulator -= FLUID_STEP;
+          steps++;
+        }
+        drawFluid(orb, seconds);
+      } else {
+        drawPattern(orb, seconds);
+      }
+    }
+
+    if (active) frameId = window.requestAnimationFrame(frame);
+  };
+
+  const start = () => {
+    if (frameId || reduceMotion.matches) return;
+    frameId = window.requestAnimationFrame(frame);
+  };
+
+  const stop = () => {
+    if (!frameId) return;
+    window.cancelAnimationFrame(frameId);
+    frameId = 0;
+  };
+
+  let initialized = false;
+
+  const init = () => {
+    if (initialized) return;
+    initialized = true;
+
+    for (const canvas of document.querySelectorAll<HTMLCanvasElement>(
+      "[data-how-orb-canvas]",
+    )) {
+      const orb = createOrb(canvas);
+      if (!orb) {
+        canvas.remove();
+        continue;
+      }
+
+      drawInitial(orb, orb.seed);
+      orbs.push(orb);
+    }
+
+    for (const orb of orbs) {
+      const wrapper = orb.canvas.closest<HTMLElement>("[data-how-orb]");
+      if (!wrapper) continue;
+
+      const updatePointer = (event: PointerEvent) => {
+        const rect = wrapper.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        const nx = (event.clientX - rect.left) / rect.width;
+        const ny = 1 - (event.clientY - rect.top) / rect.height;
+
+        // The pointer's screen delta becomes a velocity impulse in the fluid.
+        // The dye is carried by that velocity; it is not a UV offset.
+        if (orb.fluid && orb.pointerReady) {
+          const dx = nx - orb.pointerX;
+          const dy = ny - orb.pointerY;
+          let fx = orb.fluid.forceX + dx * 100;
+          let fy = orb.fluid.forceY + dy * 100;
+          const magnitude = Math.hypot(fx, fy);
+          if (magnitude > 5) {
+            fx *= 5 / magnitude;
+            fy *= 5 / magnitude;
+          }
+          orb.fluid.forceX = fx;
+          orb.fluid.forceY = fy;
+          orb.fluid.forcePointX = nx;
+          orb.fluid.forcePointY = ny;
+          orb.fluid.idle = 0;
+        }
+
+        orb.pointerX = nx;
+        orb.pointerY = ny;
+        orb.pointerReady = true;
+        orb.pointerInside = true;
+      };
+
+      const enter = (event: PointerEvent) => {
+        if (reduceMotion.matches) return;
+        updatePointer(event);
+        orb.hoverTarget = 1;
+        start();
+      };
+
+      const leave = (event: PointerEvent) => {
+        // Ignore a synthesized leave if hit testing still resolves inside the
+        // orb, but honor it at the clipped corners of the circle and triangle.
+        const target = document.elementFromPoint(event.clientX, event.clientY);
+        if (target && wrapper.contains(target)) return;
+        orb.hoverTarget = 0;
+        orb.pointerInside = false;
+        orb.pointerReady = false;
+      };
+
+      const down = (event: PointerEvent) => {
+        if (reduceMotion.matches) return;
+        updatePointer(event);
+        if (orb.fluid) {
+          orb.fluid.splatX = orb.pointerX;
+          orb.fluid.splatY = orb.pointerY;
+          orb.fluid.splatStrength = 1.4;
+          orb.fluid.idle = 0;
+        }
+        orb.hoverTarget = 1;
+        start();
+      };
+
+      wrapper.addEventListener("pointerenter", enter);
+      wrapper.addEventListener("pointermove", enter);
+      wrapper.addEventListener("pointerleave", leave);
+      wrapper.addEventListener("pointerdown", down);
+      wrapper.addEventListener("pointercancel", () => {
+        orb.hoverTarget = 0;
+        orb.pointerInside = false;
+        orb.pointerReady = false;
+      });
+    }
+
+    const resetInteraction = () => {
+      for (const orb of orbs) {
+        orb.hoverTarget = 0;
+        orb.pointerInside = false;
+        orb.pointerReady = false;
+        if (orb.fluid) {
+          orb.fluid.forceX = 0;
+          orb.fluid.forceY = 0;
+          orb.fluid.splatStrength = 0;
+        }
+      }
+    };
+
+    // Drop the interaction state when the page loses focus so the liquid
+    // does not resume from a stale pointer position.
+    window.addEventListener("blur", resetInteraction);
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) return;
+      resetInteraction();
+      for (const orb of orbs) resetFluid(orb);
+    });
+
+    if (typeof IntersectionObserver !== "undefined") {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            const canvas = (entry.target as HTMLElement).querySelector<
+              HTMLCanvasElement
+            >("[data-how-orb-canvas]");
+            const orb = orbs.find((candidate) => candidate.canvas === canvas);
+            if (!orb) continue;
+            orb.visible = entry.isIntersecting;
+            if (!entry.isIntersecting) {
+              orb.hover = 0;
+              orb.hoverTarget = 0;
+              orb.pointerInside = false;
+              orb.pointerReady = false;
+              orb.tiltX = 0;
+              orb.tiltY = 0;
+              orb.tiltVX = 0;
+              orb.tiltVY = 0;
+              resetFluid(orb);
+            }
+          }
+          if (orbs.some((orb) => orb.visible)) start();
+          else stop();
+        },
+        { threshold: 0.01 },
+      );
+
+      for (const orb of orbs) {
+        const wrapper = orb.canvas.closest("[data-how-orb]");
+        if (wrapper) observer.observe(wrapper);
+      }
+    } else {
+      for (const orb of orbs) orb.visible = true;
+    }
+
+    // The static frame above is already drawn; start() is a no-op while the
+    // reduced-motion preference is set.
+    start();
+
+    reduceMotion.addEventListener("change", (event) => {
+      if (event.matches) {
+        stop();
+        for (const orb of orbs) {
+          orb.hover = 0;
+          orb.hoverTarget = 0;
+          orb.pointerInside = false;
+          orb.pointerReady = false;
+          orb.tiltX = 0;
+          orb.tiltY = 0;
+          orb.tiltVX = 0;
+          orb.tiltVY = 0;
+          renderStatic(orb);
+        }
+      } else if (orbs.some((orb) => orb.visible)) {
+        start();
+      }
+    });
+
+    // Keep the render resolution matched to the orb's CSS size on breakpoints
+    // and orientation changes.
+    if (typeof ResizeObserver !== "undefined") {
+      const resizeObserver = new ResizeObserver(() => {
+        for (const orb of orbs) {
+          const size = renderSize(orb.canvas);
+          if (size === orb.canvas.width) continue;
+          orb.canvas.width = size;
+          orb.canvas.height = size;
+          orb.gl.viewport(0, 0, size, size);
+          const seconds =
+            reduceMotion.matches || !orb.visible
+              ? orb.seed
+              : orb.seed + (performance.now() - orb.start) / 1000;
+          if (orb.fluid) drawFluid(orb, seconds);
+          else drawPattern(orb, seconds);
+        }
+      });
+
+      for (const orb of orbs) {
+        const wrapper = orb.canvas.closest("[data-how-orb]");
+        if (wrapper) resizeObserver.observe(wrapper);
+      }
+    }
+  };
+
+  const canvases = Array.from(
+    document.querySelectorAll<HTMLCanvasElement>("[data-how-orb-canvas]"),
+  );
+
+  // The orbs sit below the fold and each one builds a WebGL context, a
+  // 1024px texture, and a fluid solver. Defer that work until the cards are
+  // close to the viewport so the hero stays cheap to render; the CSS fallback
+  // is already painted underneath each canvas.
+  if (typeof IntersectionObserver !== "undefined" && canvases.length) {
+    const lazyObserver = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        lazyObserver.disconnect();
+        init();
+      },
+      { rootMargin: "400px 0px" },
+    );
+    for (const canvas of canvases) {
+      const wrapper = canvas.closest("[data-how-orb]");
+      if (wrapper) lazyObserver.observe(wrapper);
+    }
+  } else {
+    init();
+  }
+</script>
+
+
+<style>
+  /*
+   * ElevenLabs-style orbs: a silver gradient sampled through animated FBM
+   * displacement, a soft sheen, and a fine grain. The circle keeps the
+   * reference's sphere warp; the square and triangle use their own mappings so
+   * the texture fills the shape instead of reading as a clipped circle.
+   */
+  .how-orb {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    overflow: hidden;
+    isolation: isolate;
+    background: #151515;
+    contain: paint;
+  }
+
+  .how-orb--circle {
+    border-radius: 9999px;
+  }
+
+  .how-orb--triangle {
+    clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+  }
+
+  .how-orb__fallback,
+  .how-orb__canvas,
+  .how-orb__grain,
+  .how-orb__sheen {
+    position: absolute;
+    inset: 0;
+  }
+
+  .how-orb__fallback {
+    background:
+      radial-gradient(
+        48% 48% at 30% 24%,
+        #fbfbfb 0%,
+        #d2d2d2 42%,
+        transparent 72%
+      ),
+      radial-gradient(
+        52% 52% at 74% 68%,
+        #3f3f3f 0%,
+        #6a6a6a 45%,
+        transparent 76%
+      ),
+      radial-gradient(
+        46% 46% at 46% 88%,
+        #efefef 0%,
+        #a6a6a6 44%,
+        transparent 74%
+      ),
+      linear-gradient(135deg, #dedede 0%, #a9a9a9 48%, #6a6a6a 100%);
+  }
+
+  .how-orb--square .how-orb__fallback {
+    background:
+      radial-gradient(
+        55% 26% at 30% 28%,
+        rgb(255 255 255 / 0.82) 0%,
+        transparent 70%
+      ),
+      radial-gradient(
+        50% 24% at 74% 70%,
+        rgb(20 20 20 / 0.5) 0%,
+        transparent 72%
+      ),
+      radial-gradient(
+        40% 18% at 52% 92%,
+        rgb(255 255 255 / 0.5) 0%,
+        transparent 74%
+      ),
+      linear-gradient(
+        135deg,
+        #f2f2f2 0%,
+        #cfcfcf 22%,
+        #969696 46%,
+        #dedede 64%,
+        #888 82%,
+        #666 100%
+      );
+  }
+
+  .how-orb--triangle .how-orb__fallback {
+    background:
+      linear-gradient(
+        0deg,
+        rgb(255 255 255 / 0.28) 0%,
+        transparent 45%,
+        rgb(0 0 0 / 0.2) 100%
+      ),
+      linear-gradient(
+        90deg,
+        #f0f0f0 0%,
+        #c6c6c6 18%,
+        #8f8f8f 36%,
+        #e4e4e4 52%,
+        #a3a3a3 68%,
+        #d2d2d2 84%,
+        #707070 100%
+      );
+  }
+
+  .how-orb__canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .how-orb__grain {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 160px 160px;
+    mix-blend-mode: overlay;
+    opacity: 0.12;
+  }
+
+  .how-orb__sheen {
+    background:
+      radial-gradient(
+        72% 72% at 30% 22%,
+        rgb(255 255 255 / 0.22) 0%,
+        transparent 58%
+      ),
+      radial-gradient(
+        130% 130% at 50% 45%,
+        transparent 50%,
+        rgb(0 0 0 / 0.4) 100%
+      );
+    mix-blend-mode: soft-light;
+  }
+
+  .how-orb--square .how-orb__sheen {
+    background: linear-gradient(
+      120deg,
+      rgb(255 255 255 / 0.18) 0%,
+      transparent 36%,
+      transparent 64%,
+      rgb(0 0 0 / 0.28) 100%
+    );
+  }
+
+  .how-orb--triangle .how-orb__sheen {
+    background: linear-gradient(
+      0deg,
+      rgb(255 255 255 / 0.16) 0%,
+      transparent 46%,
+      rgb(0 0 0 / 0.24) 100%
+    );
+  }
+</style>

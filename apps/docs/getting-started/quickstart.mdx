@@ -1,0 +1,103 @@
+---
+title: "Quickstart"
+description: "Go from npx getshrike report to a reviewed cleanup plan in a TypeScript repository without changing project source."
+---
+
+This walkthrough starts read-only. It produces the dead-weight report, the branch delta, and a deletion plan. Nothing here changes project source files.
+
+## Prerequisites
+
+- Node.js 22 or newer.
+- A git repository with a base ref available locally, such as `origin/main`. Fetch it first if needed: `git fetch origin main`.
+- A clean working tree if you plan to continue to [Verified pruning](/guides/verified-pruning).
+
+## 1. Run the report
+
+```bash
+npx getshrike report
+```
+
+Expected: the dead-weight report for the current tree. On a terminal it is interactive; in CI, a pipe, or an agent session it is plain text. Exit `1` means it found removable files or symbols; exit `0` means it found none. Both are normal results.
+
+See [Cleanup report](/guides/cleanup-report) for the metric, groups, protected reasons, and the interactive keys.
+
+## 2. Install locally and initialize
+
+```bash
+npm install -D getshrike
+npx shrike init
+```
+
+Expected: `Created shrike.config.ts and added .shrike/ to .gitignore.` The generated file is a typed partial config with the defaults; see [Configuration](/reference/configuration). Pass `--force` to replace an existing config.
+
+The npm package installs the `shrike` and `getshrike` commands. A native engine is resolved for your platform; see [Installation](/getting-started/installation).
+
+## 3. See current-state evidence
+
+```bash
+npx shrike scan
+```
+
+Expected: a count of deletion candidates in the current tree, plus unused files, advisory diagnostics, and dependency evidence. Exit `1` means it found something; `0` means clean. Add `--json` for the full report.
+
+## 4. Find what this branch orphaned
+
+```bash
+npx shrike report --base origin/main
+```
+
+This is the branch report: it counts only code this branch orphaned and lists pre-existing dead code separately. For the raw delta:
+
+```bash
+npx shrike delta --base origin/main
+```
+
+Expected output:
+
+```console
+$ npx shrike delta --base origin/main
+Shrike delta: 1 newly dead symbol in 1 file
+  src/format.ts#formatInvoice  -3 lines  [src/format.ts]
+  src/format.ts  (file)
+Cascade: 1 symbols, 1 files, 3 lines
+```
+
+The base ref must resolve to a commit Shrike can diff against. Shrike uses `git merge-base <base> HEAD` and falls back to `git rev-parse <base>`. If neither works, it reports that it could not resolve the base ref and exits `4`. When `--base` is omitted, Shrike tries `origin/main`, `main`, `origin/master`, then `master`.
+
+## 5. Build a deletion plan
+
+```bash
+npx shrike plan --base origin/main
+```
+
+Expected: `Plan <id>: N symbols, N files, N lines`, one line per batch, and a `Blocked` count when applicable. The plan is saved under `.shrike/` so `clean`, `prune`, and `verify` can reuse it. Exit `1` means the plan contains symbols; `0` means it is empty.
+
+## 6. Preview the cleanup
+
+```bash
+npx shrike clean --base origin/main --dry-run
+```
+
+Expected: the plan without source changes. Exit `1` means batches are ready; `0` means there is nothing to remove. When the plan looks right, apply it with the command in [Branch cleanup](/guides/branch-cleanup) or [Verified pruning](/guides/verified-pruning).
+
+<Warning>
+  `clean` (without `--dry-run`) changes repository files and creates commits on a new branch. It runs the project's checks before and after each batch and never commits to the base branch. Review the plan first.
+</Warning>
+
+## What changed on disk
+
+- `report`, `scan`, `delta`, `plan`, and `clean --dry-run` do not edit project source or config. Branch-scope commands create and remove a temporary worktree under `.shrike/worktrees/`.
+- They may write content-addressed snapshots to `.shrike/cache/`; `plan` also writes `.shrike/last-plan.json` and a stored plan.
+- `init` writes `shrike.config.ts` and adds `.shrike/` to `.gitignore`.
+- A real `clean` creates commits on a cleanup branch, writes receipts under `.shrike/receipts/`, and removes its temporary worktree after the run.
+
+## Decide whether to continue
+
+- If the report, delta, and plan are empty, there is nothing to remove.
+- If the batches look right and the blocked items are acceptable, continue to [Branch cleanup](/guides/branch-cleanup).
+- If the report shows dead code that predates this branch and you explicitly want to remove it, use [Current-state cleanup](/guides/current-state-cleanup) with `clean --all`.
+- If a symbol is blocked or you want to understand why it is live, run `npx shrike why <path#Name>`. Blocked items are never deleted automatically.
+
+## Next
+
+Set up [GitHub Actions](/guides/github-action) or [coding-agent integrations](/guides/agent-integrations).

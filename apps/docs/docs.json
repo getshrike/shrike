@@ -1,0 +1,58 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Shrike",
+  "colors": {
+    "primary": "#0A0A0A",
+    "light": "#525252",
+    "dark": "#D4D4D4"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get started",
+        "pages": [
+          "index",
+          "getting-started/installation",
+          "getting-started/quickstart"
+        ]
+      },
+      {
+        "group": "The report",
+        "pages": [
+          "guides/cleanup-report",
+          "guides/current-state-cleanup",
+          "reference/report-format"
+        ]
+      },
+      {
+        "group": "Core workflow",
+        "pages": [
+          "guides/verified-pruning",
+          "guides/branch-cleanup"
+        ]
+      },
+      {
+        "group": "Integrations",
+        "pages": [
+          "guides/agent-integrations",
+          "guides/github-action"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/commands",
+          "reference/configuration",
+          "reference/exit-codes"
+        ]
+      },
+      {
+        "group": "Troubleshooting",
+        "pages": [
+          "troubleshooting"
+        ]
+      }
+    ]
+  }
+}

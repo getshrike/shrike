@@ -1,0 +1,163 @@
+---
+title: "Branch cleanup"
+description: "Remove only the code this branch orphaned with clean --base, using the same verified batches, checks, bisection, receipts, and draft-PR flow as prune."
+---
+
+`shrike clean --base <ref>` removes code that this branch made unreachable, anywhere in the repository — including files the branch never touched. Without `--all`, `clean` is the same verified workflow as `prune`; `prune` remains available under its original name.
+
+<Warning>
+  `clean` changes repository files and creates commits on a new branch. Review the delta and plan first. It never commits to the base branch; `--pr` pushes the cleanup branch and opens a draft PR.
+</Warning>
+
+## Before you start
+
+- A base ref present locally, such as `origin/main`. Fetch it first with `git fetch origin main` if needed.
+- A clean working tree. Worktree mode refuses a dirty tree; use `--in-place` with `--allow-dirty` only when you accept in-tree verification.
+- At least one project check, configured or discoverable from `package.json` scripts by tier. With none, the command exits `4`.
+- Agreement on the verified caveat: the configured checks passed after removal relative to a baseline. It does not prove the code is semantically unused in production or that external consumers cannot import it.
+
+## 1. See what the branch orphaned
+
+```bash
+npx shrike report --base origin/main
+```
+
+The branch report labels items as **branch-orphan** and separates dead code that already existed before the branch. For the raw delta:
+
+```bash
+npx shrike delta --base origin/main
+```
+
+Expected output:
+
+```console
+$ npx shrike delta --base origin/main
+Shrike delta: 1 newly dead symbol in 1 file
+  src/format.ts#formatInvoice  -3 lines  [src/format.ts]
+  src/format.ts  (file)
+Cascade: 1 symbols, 1 files, 3 lines
+```
+
+Shrike uses `git merge-base <base> HEAD` and falls back to `git rev-parse <base>`. When `--base` is omitted, it tries `origin/main`, `main`, `origin/master`, then `master`. If the ref cannot be resolved, the command exits `4`.
+
+## 2. Review the plan
+
+```bash
+npx shrike plan --base origin/main
+```
+
+Expected: `Plan <id>: N symbols, N files, N lines`, one line per batch, and a `Blocked` count when applicable. The plan is stored under `.shrike/` for `clean`, `prune`, and `verify`.
+
+A dry run is also available:
+
+```bash
+npx shrike clean --base origin/main --dry-run
+```
+
+A dry run prints the plan, writes no source changes, and exits `0` when the plan is empty or `1` when it contains batches. With `--json` it prints the plan object.
+
+If a symbol is listed as blocked or you want to understand why it is live, ask for the proof:
+
+```bash
+npx shrike why src/format.ts#formatInvoice
+```
+
+`why --json` is exactly the engine's proof object. Blocked items are never deleted automatically.
+
+## 3. Run the verified cleanup
+
+```bash
+npx shrike clean --base origin/main
+```
+
+What happens, in order:
+
+1. Shrike resolves the base, analyzes the merge base and `HEAD`, and asks the engine for the branch orphan delta and deletion plan.
+2. A branch worktree is created under `.shrike/worktrees/`, and the baseline checks run there before any edit.
+3. Each batch is applied in the worktree and the checks run again. A regression triggers bisection; only the passing remainder is committed.
+4. Passing batches are committed on `<branchPrefix>-<plan-id without the plan_ prefix>` (default prefix `shrike/cleanup`). The temporary worktree is removed after the run; the commits and receipts stay.
+5. Add `--pr` to push the branch and open a draft PR with `gh`.
+
+Expected human output:
+
+```text
+Verified batch_1: 3 symbols, 2 files.
+Shrike: 3 symbols removed on shrike/cleanup-1a2b3c4d.
+Worktree: .shrike/worktrees/shrike-cleanup-1a2b3c4d
+Receipts: .shrike/receipts/rcpt_<id>.json (1 batch)
+Next:
+  npx shrike receipt rcpt_<id>
+  gh pr create --draft --head shrike/cleanup-1a2b3c4d
+```
+
+Paths are repository-relative. `--json` returns `{ plan, outcome, receipts, branch, worktree }`.
+
+## Difference from current-state cleanup
+
+| | `clean --base <ref>` | `clean --all` |
+| --- | --- | --- |
+| Scope | Code this branch orphaned, from the graph delta. | Every removable file and symbol in the current tree. |
+| Base | Required or resolved from the default branch. | None; `--base` is rejected. |
+| Use it when | You are cleaning up a pull request or agent change. | You intentionally want to clean pre-existing dead code. |
+
+Do not use `--all` as a substitute for reviewing the branch delta. It can remove code that was already dead before your change.
+
+## Options
+
+| Flag | Effect |
+| --- | --- |
+| `--base <ref>` | Base ref for the delta and plan. |
+| `--dry-run` | Print the plan without applying it; exit `1` when it has batches. |
+| `--json` | Machine-readable output. |
+| `--in-place` | Apply in the current tree instead of a worktree. Requires `--allow-dirty` when the tree is dirty. |
+| `--allow-dirty` | Permit a dirty tree for in-place verification. Worktree mode still refuses a dirty tree. |
+| `--pr` | Push the cleanup branch and open a draft PR with `gh`. |
+| `--tier fast\|standard\|full` | Select the discovered check set. `fast` is typecheck plus lint, `standard` adds test, `full` adds build. |
+| `--build <path>` | Join a Next.js build-evidence export. |
+| `--require-build-evidence` | Fail closed when build evidence is missing or unusable. |
+
+`--no-checks` is rejected: verified deletion needs at least one check.
+
+## 4. Inspect and open the PR
+
+```bash
+npx shrike receipt
+npx shrike receipt rcpt_<id>
+gh pr create --draft --head shrike/cleanup-<plan-id>
+```
+
+Receipts under `.shrike/receipts/` record the base and head commits, plan and batch IDs, removed symbols and files, per-check results, outcome, rejected items, policy, content hash, and a recovery reference when applicable. The PR body is generated from the same receipts when you use `--pr`.
+
+The cleanup branch is local unless `--pr` pushes it. Re-run the project's checks before review; the receipt records what Shrike ran.
+
+## Failure and recovery
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Every batch verified, or there were no deletions. |
+| `1` | `--dry-run` found batches. |
+| `2` | Usage or configuration error, including a dirty tree. |
+| `3` | At least one batch was rejected; changes were reverted. |
+| `4` | Could not run — unresolved base, no checks, stale plan, or an inconclusive bisection. |
+| `5` | Revert failed; manual recovery is required. |
+
+If the command exits `5`, do not edit the worktree. Run the printed restore command:
+
+```bash
+npx shrike recover .shrike/recovery/rec_<id>.json
+```
+
+It restores only the files in the snapshot and rejects absolute or traversal paths.
+
+## Limits and safety
+
+- Only items the engine proves orphaned by this branch are candidates. Protected items, unknown edges, generated files, and public API stay protected.
+- Dependencies are advisory. This command never edits `package.json` for dependency findings.
+- A build graph can add liveness evidence but can never authorize a deletion.
+- Shrike does not commit to `main` and does not open a PR unless you pass `--pr`.
+
+## Next
+
+- [Verified pruning](/guides/verified-pruning) — the batch, check, bisection, and receipt contract.
+- [Cleanup report](/guides/cleanup-report) — read the branch report.
+- [GitHub Action](/guides/github-action) — run the delta or a verified prune in CI.

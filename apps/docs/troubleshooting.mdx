@@ -1,0 +1,121 @@
+---
+title: "Troubleshooting"
+description: "Diagnose engine resolution, base ref, config, check, and revert failures, and know which exit code means what."
+---
+
+Each entry below gives a symptom, the likely cause, and the next command or action. Exit codes are `0` clean, `1` findings, `2` usage/config, `3` verification failed (changes reverted), `4` could not run, and `5` revert failed. See [Exit codes](/reference/exit-codes) for the per-command matrix.
+
+## `shrike-engine was not found` (exit 4)
+
+**Symptom.** Any analysis command fails with a message about resolving the native engine.
+
+**Likely cause.** The optional platform package was skipped during install, the platform is unsupported, or no engine is on `PATH`.
+
+**Next action.** Reinstall with optional dependencies enabled (`npm install -D getshrike`), confirm your OS and CPU are among the five published platform packages, then re-run `npx shrike version`. For a source checkout, build with `cargo build -p shrike-engine` or set `SHRIKE_ENGINE` to a built binary. Details are in [Installation](/getting-started/installation). A checksum mismatch means a broken install — reinstall rather than bypassing the check.
+
+## Could not resolve base ref (exit 4)
+
+**Symptom.** `delta`, `plan`, or `prune` reports that it could not resolve the base ref.
+
+**Likely cause.** The ref is not present locally, or `--base` names a branch that does not exist. Shrike uses `git merge-base <base> HEAD` with a `git rev-parse <base>` fallback.
+
+**Next action.** Fetch the base (`git fetch origin main`) or pass an existing ref explicitly, for example `npx shrike delta --base origin/main`. When `--base` is omitted, Shrike tries `origin/main`, `main`, `origin/master`, then `master`.
+
+## Dirty working tree (exit 2)
+
+**Symptom.** `clean requires a clean working tree`, `prune requires a clean working tree`, or `verify requires a clean working tree`.
+
+**Likely cause.** The repository has changes outside `.shrike/`. Worktree mode cannot reproduce a dirty tree from a commit.
+
+**Next action.** Commit or stash the changes and re-run. `--allow-dirty` enables in-place verification; worktree mode still refuses a dirty tree. A plan computed on a dirty tree must be re-created after the tree is clean. A dirty `report` is labelled `dirty` and is local feedback, not a CI receipt.
+
+## Invalid or timed-out config (exit 2)
+
+**Symptom.** `config must export an object`, `config evaluation failed`, or `config evaluation timed out` naming your config path.
+
+**Likely cause.** The config does not export an object, throws during evaluation, or does too much work in the allowed time.
+
+**Next action.** Open `shrike.config.ts`, confirm the default export is an object and that only documented fields from [Configuration](/reference/configuration) are used, then re-run `npx shrike scan`. For a slow config, raise `SHRIKE_CONFIG_TIMEOUT_MS`. Regenerate a clean starting point with `npx shrike init --force` if needed.
+
+## Engine timeout (exit 4)
+
+**Symptom.** `engine timed out after <ms>ms`, where the default is 60,000 ms.
+
+**Likely cause.** The analysis exceeded the engine request timeout, often on a very large repository.
+
+**Next action.** Re-run once to rule out a transient load spike. If it repeats, raise `SHRIKE_ENGINE_TIMEOUT_MS` for that environment and re-run. Narrow the inventory with `include` and `ignore` in the config if the repository contains generated trees that should not be analyzed.
+
+## Check failures and batch rejection (exit 3)
+
+**Symptom.** `prune` reports a rejected batch, or `verify` reports a re-verification regression; changes were reverted.
+
+**Likely cause.** A configured check produced a new failure relative to the captured baseline. Shrike bisects the batch, reverts the culprit, and retries the remainder.
+
+**Next action.** Read the per-check classification in the receipt (`npx shrike receipt`). Fix the check or the project, then re-plan with `npx shrike plan --base origin/main` and try again. An `error` outcome (inconclusive bisection) exits `4` rather than `3`. See [Verified pruning](/guides/verified-pruning).
+
+## No checks found (exit 4)
+
+**Symptom.** `no verification checks were found; configure checks or add typecheck/lint/test scripts`.
+
+**Likely cause.** Shrike found neither a `checks` array nor discoverable repository scripts.
+
+**Next action.** Add at least one check with an explicit `command` in `shrike.config.ts`, or add typecheck/lint/test scripts to `package.json`. `--no-checks` is not supported for a verified deletion.
+
+## Failed revert (exit 5)
+
+**Symptom.** `revert failed; recovery snapshot: <path>`.
+
+**Likely cause.** Git could not restore the worktree, or files were left modified after the revert.
+
+**Next action.** Do not hand-edit the worktree. Run the printed restore command, `npx shrike recover <snapshot>`, which restores only the files listed in the snapshot. Confirm the tree is clean with `git status`, then re-plan. The recovery format is described in [Verified pruning](/guides/verified-pruning).
+
+
+## The report is plain instead of interactive
+
+**Symptom.** `shrike report` prints the plain report, though you expected the interactive view.
+
+**Likely cause.** `report` is always plain. Only `shrike` with no command opens the interactive view, and even then the view is skipped when stdout or stdin is not a TTY, when `--json` or `--no-tui` is set, in CI, in a known agent session, with `TERM=dumb`, with `SHRIKE_NO_TUI` or `SHRIKE_TUI_DISABLE`, or when the terminal is narrower than 40 columns or shorter than 10 rows.
+
+**Next action.** Run `shrike` in an interactive terminal at a reasonable size and unset the disable variables if you want the view. The plain report is the supported default; it contains the same model and is not an error.
+
+## `report` exits 1
+
+**Symptom.** `npx getshrike report` returns `1` in a script.
+
+**Likely cause.** Exit `1` means the report found removable files or symbols. It is a findings code, not a tool failure.
+
+**Next action.** Treat `1` as data when you want an advisory report, or gate on it deliberately. Check for `2`, `3`, `4`, and `5` as real failures. See [Exit codes](/reference/exit-codes).
+
+## `--all` and `--base` cannot be combined
+
+**Symptom.** `shrike clean --all --base origin/main` exits `2`.
+
+**Likely cause.** Current-state cleanup has no branch base. `clean --all` plans from the current snapshot; `clean --base` plans the branch delta.
+
+**Next action.** Use `npx shrike clean --all` for the whole tree, or `npx shrike clean --base origin/main` for branch orphans. Do not pass both.
+
+## `ci install` refuses to write the workflow
+
+**Symptom.** `shrike ci install` exits `2` and reports `skipped` for `.github/workflows/shrike.yml`.
+
+**Likely cause.** A different file already exists at that path and is not recognizable as Shrike-managed. The installer will not overwrite it.
+
+**Next action.** Inspect the existing workflow, choose another path with `--path`, or rerun with `--force` only after deciding to replace it. The installer never edits other workflow files.
+
+## `install` skips a skill file
+
+**Symptom.** `shrike install` reports `skipped` with a `--force` hint.
+
+**Likely cause.** The existing Shrike-owned file has local edits.
+
+**Next action.** Review the file, then rerun with `--force` to replace it. Managed blocks in `AGENTS.md`, `CLAUDE.md`, `opencode.jsonc`, and similar files are updated in place and preserve surrounding text; malformed markers are skipped for manual repair.
+
+## The report and `scan` disagree
+
+**Likely cause.** `report` without `--base` is current-state scope; `report --base` is branch scope. `scan` reports raw current-state candidates and dependency evidence, while the report applies the eligibility and metric projection. A branch report also excludes pre-existing dead code from the branch metric.
+
+**Next action.** Compare like with like: use `report` and `scan` for the current tree, and `report --base <ref>` and `delta --base <ref>` for a branch. If an item is protected or uncounted, the plain report or `--json` says why.
+
+## Report an issue
+
+If none of these resolve the failure, open an issue at [github.com/getshrike/shrike/issues](https://github.com/getshrike/shrike/issues). Include the Shrike version (`npx shrike version --json`), the command and flags, the exit code, and the relevant output with any private paths or repository content removed.

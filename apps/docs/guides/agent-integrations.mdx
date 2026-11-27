@@ -1,0 +1,175 @@
+---
+title: "Agent integrations"
+description: "Install the portable Shrike skill for coding agents, add optional adapters and a bounded post-agent hook, and use the read-only MCP server."
+---
+
+Shrike can teach a coding agent when to use it, hand that agent a bounded cleanup brief after it stops, and expose read-only analysis through MCP. None of these paths deletes code.
+
+## Install the agent skill
+
+```bash
+npx getshrike install
+```
+
+The default install writes the portable skill directory at
+`.agents/skills/shrike/`: a short `SKILL.md` plus four references for commands,
+workflows, safety, and setup. When it detects an agent-specific marker in the
+repository, it also writes that target's adapter and hook configuration.
+Detection reads repository files only; the installer never runs analysis,
+project scripts, or network requests.
+
+```console
+$ npx getshrike install
+Shrike install
+  created   .agents/skills/shrike/SKILL.md
+  created   .agents/skills/shrike/references/commands.md
+  created   .agents/skills/shrike/references/safety.md
+  created   .agents/skills/shrike/references/setup.md
+  created   .agents/skills/shrike/references/workflows.md
+
+Next: npx getshrike report
+```
+
+The directory is one unit. An agent loads `SKILL.md` when the skill triggers and
+reads a reference only when a task needs exact flags, a workflow, a protected
+reason, or setup detail. Target adapters point at the portable `SKILL.md`
+instead of duplicating its content.
+
+### Install with the Agent Skills CLI
+
+The same canonical directory can be installed without the Shrike CLI:
+
+```bash
+npx skills add getshrike/shrike
+```
+
+Both paths install the same `SKILL.md` and references. The Shrike installer adds
+target adapters, hooks, and optional package scripts; the Agent Skills CLI only
+places the skill directory.
+
+### Targets
+
+| Target | Marker used for detection | Adapter |
+| --- | --- | --- |
+| `agents` | Default when nothing else is detected | `.agents/skills/shrike/` with `SKILL.md` and four references |
+| `claude` | `.claude/` or `CLAUDE.md` | `.claude/skills/shrike/SKILL.md`, plus a managed block in `CLAUDE.md` when present |
+| `cursor` | `.cursor/` or `.cursorrules` | `.cursor/rules/shrike.mdc`, plus a managed block in `.cursorrules` when present |
+| `opencode` | `opencode.jsonc`, `opencode.json`, or `.opencode/` | A managed comment block in `opencode.jsonc` when present |
+| `codex` | `.codex/` | A managed block in `AGENTS.md` when present |
+| `gemini` | `.gemini/` or `GEMINI.md` | `.gemini/skills/shrike/SKILL.md`, plus a managed block in `GEMINI.md` when present |
+| `copilot` | `.github/copilot-instructions.md` | A managed block in `.github/copilot-instructions.md` |
+
+Select targets explicitly with a repeatable or comma-separated flag:
+
+```bash
+npx getshrike install --target claude --target cursor
+npx getshrike install --target claude,cursor
+```
+
+The boolean shortcuts `--claude`, `--cursor`, and `--opencode` also work. Any explicit target disables marker detection for the whole run; only the listed targets are installed.
+
+### What the installer changes
+
+- **Skill files** are Shrike-owned whole files. Reinstalling identical content
+  reports `unchanged`. If any file differs and `--force` is not set, no skill
+  file is written: the conflicting file is `skipped` with a `--force` hint, and
+  pending files are `skipped` with a mixed-version explanation. This
+  all-or-nothing rule prevents a new `SKILL.md` from pointing at a reference
+  that was not updated. With `--force`, differing files are replaced and missing
+  files are created.
+- **Managed blocks** are inserted between `shrike:begin` and `shrike:end` markers. Text outside the markers is preserved. A file without markers gets the block appended. A file with malformed markers is skipped.
+- **Hooks** are installed for selected `claude`, `cursor`, and `opencode` targets. Existing hook entries are preserved; only Shrike-managed entries are replaced. Use `--no-hook` to skip them.
+- **Package scripts** are opt-in with `--scripts`. The installer adds only missing `shrike:report`, `shrike:clean`, and `shrike:ci` entries and never overwrites an existing script name.
+- **Safety.** Paths are resolved inside the repository. A symlink that escapes the repository is refused. Writes are atomic. `--dry-run` writes nothing; `--json` returns a deterministic action list.
+
+```bash
+npx getshrike install --dry-run
+npx getshrike install --target codex --no-hook
+npx getshrike install --scripts --json
+npx getshrike install --force
+```
+
+| Flag | Effect |
+| --- | --- |
+| `--target <name>` | Select one or more targets. Repeatable; comma-separated values are accepted. |
+| `--claude`, `--cursor`, `--opencode` | Shortcuts for a single target. |
+| `--dry-run` | Preview actions; write nothing. |
+| `--force` | Replace Shrike-owned files that have local edits. |
+| `--no-skill` | Skip the skill directory and adapter files. |
+| `--no-hook` | Skip hook installation. |
+| `--scripts` / `--no-scripts` | Add the optional package scripts, or explicitly skip them. |
+| `--json` | Machine-readable result. |
+
+The installer exits `4` if any action fails. A skipped file with local edits is not a failure; rerun with `--force` after reviewing it.
+
+## Post-agent hook
+
+The hook computes the orphan delta, runs the configured fast checks against a stored baseline when one is available, and writes a bounded `CleanupBrief` to `.shrike/brief.json`. It never applies a deletion, commits, or changes project source. Installing it edits the client's configuration file; running it writes the brief and the CLI's normal cache snapshots.
+
+`shrike install` installs the hook for selected `claude`, `cursor`, and `opencode` targets unless you pass `--no-hook`. To install only one hook directly:
+
+<Tabs>
+  <Tab title="Claude Code">
+
+    ```bash
+    npx getshrike hook install --claude
+    ```
+
+    Adds a `Stop` hook in `.claude/settings.json` that runs the installed Shrike hook quietly.
+
+  </Tab>
+  <Tab title="Cursor">
+
+    ```bash
+    npx getshrike hook install --cursor
+    ```
+
+    Adds hooks for `afterFileEdit` and `stop` in `.cursor/hooks.json`.
+
+  </Tab>
+  <Tab title="OpenCode">
+
+    ```bash
+    npx getshrike hook install --opencode
+    ```
+
+    Installs a `session.idle` plugin in `.opencode/plugins/shrike-hook.js` and registers it in `opencode.json`.
+
+  </Tab>
+</Tabs>
+
+Use `npx getshrike hook uninstall --claude|--cursor|--opencode` to remove only Shrike-managed entries. Reinstalling is idempotent; existing hooks are preserved. `hook install` and `hook uninstall` change configuration only; they do not analyze the repository.
+
+### Budget and output
+
+- 60-second total budget, 40 seconds for fast checks, and a 55-second cap on the delta child process.
+- On timeout the hook degrades to delta-only and exits `0`; a failed check never blocks the agent.
+- The brief is capped at 20 items and 32 KB and treats repository-derived strings as untrusted data.
+- The human summary ends with `Next: shrike plan --base <base>`.
+
+<Note>
+  The hook does not capture a baseline itself. The baseline is captured by `clean` or `prune`; when a stored baseline is present, the hook uses it to explain pre-existing failures.
+</Note>
+
+## MCP server
+
+```bash
+npx getshrike mcp serve
+```
+
+The server speaks JSON-RPC over stdio, with one request per line. It offers four read-only tools:
+
+| Tool | Arguments | What it returns |
+| --- | --- | --- |
+| `shrike_delta` | `base` (optional) | Whole-graph PR orphan delta. |
+| `shrike_plan` | `base` (optional) | Deletion batches and blast radius. |
+| `shrike_proof` | `symbol` (required, `path#Name`) | Witness path or proof trace for a symbol. |
+| `shrike_receipt` | `id` (optional) | A receipt, or the receipt list. |
+
+No tool applies deletions or runs project checks. Tools may write engine cache snapshots, and `shrike_plan` stores plan artifacts under `.shrike/`. No tool reads `.env`. Output is truncated at 256 KB with a marker, and `base`, `symbol`, and `id` arguments are validated before use. The server still needs the native engine available to the CLI.
+
+## Next
+
+- [Commands](/reference/commands) — full command and flag reference.
+- [GitHub Action](/guides/github-action) — put the delta or a verified prune in CI.
+- [Cleanup report](/guides/cleanup-report) — what the agent should read first.
