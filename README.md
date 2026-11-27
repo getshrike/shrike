@@ -1,14 +1,14 @@
 <h1 align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="public/shrike-logo-paper.svg">
-    <source media="(prefers-color-scheme: light)" srcset="public/shrike-logo.svg">
-    <img src="public/shrike-logo.svg" alt="Shrike" width="440">
+    <source media="(prefers-color-scheme: dark)" srcset="apps/site/public/brand/shrike-logo-paper.svg">
+    <source media="(prefers-color-scheme: light)" srcset="apps/site/public/brand/shrike-logo.svg">
+    <img src="apps/site/public/brand/shrike-logo.svg" alt="Shrike" width="440">
   </picture>
 </h1>
 
 <p align="center">
-  <strong>Verified dead-code cleanup for TypeScript and JavaScript.</strong><br>
-  Delete what a pull request orphaned. Prove the project still passes its checks.
+  <strong>Your agent writes dead code. Shrike deletes it — and proves the app still builds.</strong><br>
+  The cleanup layer for AI-built TypeScript apps.
 </p>
 
 <p align="center">
@@ -28,14 +28,14 @@
 
 ## Why Shrike
 
-Agents and pull requests add code much faster than they remove it. A deleted
-caller leaves its helper behind. A replaced data path leaves the old hook
-behind. A removed route leaves its components behind. Tests and lint stay green
-because the leftover code is unreachable, not wrong, and the next agent builds
-on top of it.
+AI agents add code much faster than they remove it. A deleted caller leaves its
+helper behind. A replaced data path leaves the old hook behind. A removed route
+leaves its components behind. Tests and lint stay green because the leftover
+code is unreachable, not wrong, and the next agent builds on top of it.
 
-Most dead-code tools stop at detection. Shrike owns the risky part: the removal
-and the proof.
+Shrike measures the **dead weight** — removable source lines divided by
+analyzed non-generated source lines — then removes what the engine proves is
+orphaned and runs your checks before and after.
 
 - **Whole-graph orphan delta.** Compares the merge-base graph with the PR head
   graph, so it finds code that became dead anywhere in the repository —
@@ -46,46 +46,85 @@ and the proof.
 - **Portable receipt.** Records graph hashes, witnesses, patches, baseline and
   after checks, build evidence, and the outcome as content-addressed JSON.
 
+Dependencies are reported separately and are advisory. Shrike never removes a
+dependency automatically.
+
 ## Quick start
 
 Requires Node.js 22+. The npm package is `getshrike`; it installs the `shrike`
 and `getshrike` commands and resolves a native engine for your platform.
 
+Start read-only with the report:
+
+```bash
+npx getshrike report
+```
+
+It prints the deterministic plain report. To open the read-only interactive
+view, run `npx getshrike` with no arguments on an interactive TTY (both stdin
+and stdout, at least 40×10 columns, no CI or agent markers); in CI, a pipe, or
+an agent session it falls back to plain output. To make the commands local:
+
 ```bash
 npm install -D getshrike
-npx shrike init
+npx getshrike init
 ```
 
-`init` writes `shrike.config.ts` and adds `.shrike/` to `.gitignore`. Start
-read-only:
+`init` writes `shrike.config.ts` and adds `.shrike/` to `.gitignore`. Then:
 
 ```bash
-npx shrike scan                      # current-state dead-code evidence
-npx shrike delta --base origin/main  # what this branch orphaned
-npx shrike plan --base origin/main   # deletion batches and blast radius
+npx getshrike report                    # dead weight for the current tree
+npx getshrike report --base origin/main # dead weight this branch orphaned
+npx getshrike scan                      # current-state dead-code evidence
+npx getshrike delta --base origin/main  # what this branch orphaned
+npx getshrike plan --base origin/main   # deletion batches and blast radius
 ```
 
-`scan`, `delta`, and `plan` exit `1` when they find something, so they can gate
-CI as-is. A real delta looks like this:
+A report looks like this at 80 columns:
 
-```console
-$ npx shrike delta --base origin/main
-Shrike delta: 1 newly dead symbol in 1 file
-  src/format.ts#formatInvoice  -3 lines  [src/format.ts]
-  src/format.ts  (file)
-Cascade: 1 symbols, 1 files, 3 lines
+```text
+Shrike report · current state · 9f2c1ab
+
+  Dead weight  4.8%
+  1,284 removable lines / 26,900 analyzed source lines
+  ██████████████░░░░░░░░░░░░░░░░░░░░░░░░
+
+  38 files · 61 symbols (58 exports) · 4 dependencies (advisory)
+  12 protected · 7 diagnostics (2 actionable)
+
+  src/features/billing                  412 lines   9 symbols   3 files
+  src/features/onboarding               238 lines   6 symbols   4 files
+  src/components/legacy                 197 lines   4 symbols   2 files
+
+  Protected reasons
+    public-api    7
+    entry-role    3
+    unknown-edge  2
+  Diagnostics  7 (2 actionable)
+    parse: 4 · asset-import: 3
+
+  Next: npx getshrike clean --all
+        npx getshrike report --verbose
 ```
+
+`report`, `scan`, `delta`, and `plan` exit `1` when they find something, so they
+can gate CI as-is; `delta --fail-on never` opts out and exits `0` even with
+findings. A branch report labels the newly dead delta separately from dead code
+that already existed before the branch.
 
 When the plan looks right:
 
 ```bash
-npx shrike prune --base origin/main
+npx getshrike clean --base origin/main   # branch-scoped verified cleanup
+npx getshrike clean --all --dry-run      # preview current-state cleanup
 ```
 
-`prune` applies each batch in a worktree under `.shrike/worktrees/`, runs your
-checks against a baseline, commits only batches that pass, and writes a receipt
-per batch under `.shrike/receipts/`. It never commits to the base branch. Add
-`--pr` to open a draft PR with `gh`.
+`clean` without `--all` is the same verified workflow as `prune`. `clean --all`
+is explicit current-state cleanup through the same worktree, baseline,
+bisection, revert, and receipt machinery. Both apply each batch in a worktree
+under `.shrike/worktrees/`, run your checks against a baseline, commit only
+batches that pass, and write a receipt per batch under `.shrike/receipts/`.
+They never commit to the base branch. Add `--pr` to open a draft PR with `gh`.
 
 ## How it works
 
@@ -128,14 +167,20 @@ build graph can add liveness evidence but can never authorize a deletion.
 
 | Command | What it does |
 | --- | --- |
+| `shrike report` | Dead-weight report for the current tree; `--base <ref>` reports the branch delta |
 | `shrike init` | Create `shrike.config.ts` and ignore `.shrike/` |
 | `shrike scan` | Current-state evidence and deletion candidates |
 | `shrike deps` | Unused and unlisted dependency evidence |
-| `shrike delta --base <ref>` | Whole-graph PR orphan delta |
+| `shrike delta --base <ref>` | Whole-graph PR orphan delta; `--fail-on never` exits `0` |
 | `shrike plan --base <ref>` | Deletion batches, impact, and blast radius |
+| `shrike clean --base <ref>` | Apply, verify, and commit branch-orphaned batches; alias of `prune` |
+| `shrike clean --all` | Explicit current-state cleanup through the same verified pipeline |
 | `shrike prune --base <ref>` | Apply, verify, and commit batches in a branch worktree; `--pr` opens a draft PR |
+| `shrike why <path#Name>` | Human proof for one symbol; `--json` is the engine proof |
+| `shrike install` | Write the agent skill directory and optional hook |
+| `shrike ci install` | Write the advisory-by-default GitHub Actions workflow; `--gate` makes it blocking |
 | `shrike verify --plan <id>` | Re-run verification for a saved plan |
-| `shrike proof <symbol>` | Witness path or proof trace for a symbol |
+| `shrike proof <path#Name>` | Witness path or proof trace for a symbol |
 | `shrike receipt [id]` | Show a receipt |
 | `shrike recover <snapshot>` | Restore files after a failed revert |
 | `shrike evidence --build <path>` | Join a build-evidence export |
@@ -166,18 +211,30 @@ file that merely looks like a route in an unrelated package stays analyzable.
 
 ## Integrations
 
-- **Post-agent hook.** `npx shrike hook install --claude` (also `--cursor` and
-  `--opencode`) installs a hook that runs after the agent stops. It computes the
-  delta, runs fast checks against a baseline, and writes a bounded
-  `CleanupBrief`. It never applies a deletion, has a 60-second budget, and
-  degrades to delta-only on timeout.
-- **GitHub Action.** [`packages/action/`](packages/action/action.yml) wraps the
-  CLI. `mode: delta` is read-only and can fail a PR with `fail-on: newly-dead`
-  or when `max-items` is exceeded. `mode: prune` produces a verified cleanup PR
+- **Agent skill.** `npx getshrike install` writes the canonical
+  `.agents/skills/shrike/SKILL.md` and its four references, so an agent loads a
+  short body and reads exact flags, workflows, safety rules, or setup detail
+  only when needed. Optional adapters cover Claude Code, Cursor, OpenCode,
+  Codex, Gemini CLI, and GitHub Copilot. Add `--scripts` for package scripts;
+  the installer is idempotent and previewable with `--dry-run`, requires
+  `--force` to replace local edits, and blocks the whole directory on a
+  conflict instead of mixing versions. The same skill installs with
+  `npx skills add getshrike/shrike`.
+- **Post-agent hook.** `npx getshrike hook install --claude` (also `--cursor` and
+  `--opencode`, or via `shrike install --target`) installs a hook that runs
+  after the agent stops. It computes the delta, runs fast checks against a
+  baseline, and writes a bounded `CleanupBrief`. It never applies a deletion,
+  has a 60-second budget, and degrades to delta-only on timeout.
+- **GitHub Action.** `npx getshrike ci install` writes an advisory workflow
+  (`.github/workflows/shrike.yml`) with `contents: read` and
+  `fail-on: never`; `--gate` makes newly dead code blocking and adds the
+  documented `pull-requests: write` permission. The action wraps the CLI:
+  `mode: delta` is read-only, and `mode: prune` produces a verified cleanup PR
   and refuses fork PRs.
-- **MCP server.** `npx shrike mcp serve` exposes four read-only tools —
+- **MCP server.** `npx getshrike mcp serve` exposes four read-only tools —
   `shrike_delta`, `shrike_plan`, `shrike_proof`, and `shrike_receipt` — over
-  stdio. No tool mutates the repository, runs project checks, or reads `.env`.
+  stdio. Only `shrike_plan` writes plan artifacts under `.shrike/`; no tool
+  edits project source, runs checks, or reads `.env`.
 
 ## Performance
 
@@ -222,6 +279,7 @@ The full manual starts at [`docs/README.md`](docs/README.md).
 ```text
 crates/        Rust engine: syntax, resolve, graph, delta, plan, evidence, protocol
 packages/      TypeScript host: cli, verifier, receipts, agent, action, testkit
+apps/          site (Astro) and docs (Mintlify consumer documentation)
 schemas/       JSON Schema contract between the two runtimes
 fixtures/      Delta, verification, build-evidence, receipt, and corpus fixtures
 benchmarks/    Deterministic generator and competitor harness

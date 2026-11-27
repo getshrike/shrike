@@ -1,0 +1,116 @@
+---
+title: "Exit codes"
+description: "What each Shrike exit code means, which commands use it, and how to interpret findings, verification failures, and fail-closed errors in CI."
+---
+
+Every Shrike command returns one of six process exit codes. `0` and `1` are normal outcomes; `2` through `5` are failures. JSON on stdout does not change the exit code.
+
+## The six codes
+
+| Exit | Name | Meaning |
+| --- | --- | --- |
+| `0` | OK | The command completed and found nothing actionable, or the operation was a clean read-only success. |
+| `1` | Findings | The command completed and reported something actionable. This is not necessarily a tool failure. |
+| `2` | Usage | Invalid arguments, conflicting flags, an invalid configuration, a dirty tree where one is required, or a refused operation. |
+| `3` | Verification failed | At least one deletion batch regressed and was reverted. The repository is left without the rejected changes. |
+| `4` | Could not run | Shrike failed closed: missing engine, unresolved base, no checks, inconclusive bisection, a failed installer action, or another condition that prevents a trustworthy result. |
+| `5` | Revert failed | A revert could not restore the tree. Manual recovery is required before continuing. |
+
+A rejection (`3`) means Shrike ran and made a decision. A `4` means Shrike could not make a trustworthy decision. Do not treat them as interchangeable in automation.
+
+## Per command
+
+| Command | `0` | `1` | Notes |
+| --- | --- | --- | --- |
+| `report` | No removable files or symbols. | Removable files or symbols found. | `--json` keeps the same exit code. |
+| `scan` | No candidates, unused files, unused dependencies, or unlisted dependencies. | Any of those findings exist. | |
+| `deps` | No unused or unlisted dependencies. | Unused or unlisted dependencies found. | Transitive findings alone do not set `1`. |
+| `delta` | No newly dead items, or `--fail-on never`. | Newly dead symbols or files found. | The default is `--fail-on newly-dead`; dependencies are not part of the delta. |
+| `plan` | The plan contains no symbols. | The plan contains symbols. | Blocked items alone do not set `1`. |
+| `clean` / `prune` | Every batch verified, or there were no deletions. | `--dry-run` found batches. | A real run returns `3` or `4` on failure, not `1`. |
+| `clean --all` | Every batch verified, or there were no deletions. | `--dry-run` found batches. | `--all` with `--base` is `2`. |
+| `verify --plan` | Re-verification passed. | — | A regression returns `3`; a stale or unreadable plan returns `4`. |
+| `verify <receipt-id>` | The receipt outcome is `verified`. | — | Any other receipt outcome returns `3`; an unreadable receipt returns `4`. |
+| `why` | The proof was printed, whether the symbol is live or dead. | — | Use the output, not the exit code, to decide liveness. |
+| `init` | The config was written (or replaced with `--force`) and `.shrike/` ensured in `.gitignore`. | — | An existing config without `--force` returns `2`. |
+| `install` | All requested files and hooks were written or unchanged. | — | Any failed action returns `4`; skipped files with local edits are not failures. |
+| `ci install` | The workflow was created, updated, or already unchanged. | — | An unmanaged workflow without `--force` returns `2`. |
+| `receipt` | The receipt or receipt list was printed. | — | A missing receipt returns `4`. |
+| `recover` | The snapshot was restored. | — | A missing or invalid snapshot returns `4`; a failed restore path returns `5`. |
+| `hook run` | The brief or a delta-only degradation completed. | — | A check failure never blocks the agent. |
+| `mcp serve` | The server shut down normally. | — | Protocol errors are reported inside JSON-RPC. |
+
+Partial results still follow the table: if a report has one removable file and one diagnostic, the exit code is `1`, not `4`. A diagnostic does not by itself change the exit code.
+
+## Configuration and usage errors
+
+Exit `2` covers conditions that are the caller's responsibility:
+
+- Unknown flags, missing flag values, or conflicting flags such as `--all` with `--base`, or `--verbose` with `--quiet`.
+- A config that does not export an object, throws during evaluation, or times out. The message names the config path.
+- A dirty working tree for `clean`/`prune` in worktree mode, or for `verify` without `--allow-dirty`.
+- `ci install` refusing to overwrite an existing workflow that is not Shrike-managed; rerun with `--force` after reviewing it.
+- `--no-checks`, which is rejected because a verified deletion needs at least one project check.
+
+An engine response with a `config_error` or `invalid_*` code is also a usage error, not an internal failure.
+
+## Fail-closed conditions
+
+Exit `4` is deliberate. Examples:
+
+- `shrike-engine was not found`, an unsupported platform, or a checksum mismatch in the installed engine.
+- An engine timeout (`SHRIKE_ENGINE_TIMEOUT_MS`) or a protocol mismatch.
+- A base ref that cannot be resolved by `git merge-base` or `git rev-parse`.
+- No verification checks were found, and `--no-checks` is not supported.
+- A batch could not be bisected conclusively.
+- A requested build-evidence export is missing or unusable with `--require-build-evidence`.
+- An installer action failed, including a path that would escape the repository through a symlink.
+- A `verify` plan is stale because `HEAD`, the merge base, or the tree changed.
+
+Fix the cause and re-run. Do not rewrite the command to ignore the failure.
+
+## Verification and revert failures
+
+Exit `3` means at least one batch regressed and Shrike reverted it. Passing batches may still have been committed. Read the receipts to see which check failed and which symbols were rejected, then fix the project or the check and re-plan.
+
+Exit `5` means the revert itself failed. Stop. The normal worktree and branch cleanup must not continue until the tree is restored:
+
+```bash
+npx shrike recover .shrike/recovery/rec_<id>.json
+```
+
+Use the snapshot path printed by the failing command. `recover` restores only the files listed in the snapshot and rejects absolute or traversal paths. Do not hand-edit the worktree.
+
+## CI interpretation
+
+| Goal | Command | Treat as failure |
+| --- | --- | --- |
+| Report dead weight without blocking | `shrike report --json` | `2`, `3`, `4`, `5`; inspect `1` as data. |
+| Block newly dead code | `shrike delta --base origin/main` | Any non-zero code. |
+| Block only above a cap | Action `mode: delta` with `max-items` | Any non-zero code. |
+| Produce a verified cleanup PR | Action `mode: prune` | Any non-zero code. |
+| Re-check a saved plan | `shrike verify --plan <id>` | Any non-zero code. |
+
+The Shrike Action maps these codes into its step result. `fail-on: never` is advisory: it reports the delta without failing on findings. `fail-on: newly-dead` fails when anything is newly dead. `max-items` fails when the count exceeds the cap.
+
+In shell scripts, do not rely on `set -e` alone if `1` is an expected finding:
+
+```bash
+set +e
+npx shrike delta --base origin/main
+status=$?
+set -e
+if [ "$status" -eq 1 ]; then
+  echo "newly dead code found"
+elif [ "$status" -ne 0 ]; then
+  echo "shrike failed with exit $status" >&2
+  exit "$status"
+fi
+```
+
+## Next
+
+- [Commands](/reference/commands) — full command and flag reference.
+- [Cleanup report](/guides/cleanup-report) — interpreting findings.
+- [Verified pruning](/guides/verified-pruning) — exits `3`, `4`, and `5` during cleanup.
+- [Troubleshooting](/troubleshooting) — fixes for common failures.

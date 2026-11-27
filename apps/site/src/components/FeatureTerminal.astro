@@ -1,0 +1,99 @@
+---
+import { Picture } from "astro:assets";
+import terminalBackdrop from "../assets/images/terminal-backdrop.jpg";
+
+interface Props {
+  id: string;
+  initial: string;
+}
+
+const { id, initial } = Astro.props;
+---
+
+<div
+  class="feature-preview relative aspect-[2888/3808] w-full overflow-hidden rounded-lg border border-white/10 bg-[#c9c9c9] sm:aspect-[16/10] lg:aspect-[1304/600]"
+>
+  <Picture
+    src={terminalBackdrop}
+    alt=""
+    aria-hidden="true"
+    formats={["webp"]}
+    widths={[480, 720, 960, 1300]}
+    sizes="(min-width: 1024px) 1100px, (min-width: 640px) calc(100vw - 64px), 480px"
+    quality={65}
+    loading="lazy"
+    decoding="async"
+    class="absolute inset-0 h-full w-full object-cover object-center"
+  />
+  <div class="absolute inset-0 bg-black/20"></div>
+
+  <div class="absolute inset-0 flex p-3 sm:p-5 lg:p-8">
+    <div
+      class="feature-terminal relative flex h-full w-full flex-col overflow-hidden rounded-lg border border-white/10 bg-[#0A0A0A] shadow-[0_24px_80px_rgba(0,0,0,0.45)] sm:rounded-xl"
+      data-feature-terminal={id}
+      data-terminal-initial={initial}
+      aria-hidden="true"
+    >
+      <div
+        class="relative flex h-9 shrink-0 items-center justify-center border-b border-white/[0.07] sm:h-10"
+      >
+        <div
+          class="absolute top-1/2 left-3 flex -translate-y-1/2 items-center gap-1.5 sm:left-4"
+        >
+          <span class="terminal-dot"></span>
+          <span class="terminal-dot"></span>
+          <span class="terminal-dot"></span>
+        </div>
+        <span
+          class="font-sans text-[10px] font-medium text-white/50 sm:text-[11px]"
+          data-terminal-size>Sample output - 0x0</span
+        >
+      </div>
+
+      <div class="flex h-8 shrink-0 border-b border-white/[0.07] sm:h-9">
+        <div class="relative flex flex-1 items-center justify-center overflow-hidden">
+          <span
+            class="font-sans text-[11px] font-medium text-[#EDEDED] sm:text-[12px]"
+            data-terminal-tab>~</span
+          >
+        </div>
+        <div
+          class="flex w-8 shrink-0 items-center justify-center border-l border-white/[0.07] text-white/40"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path
+              fill-rule="evenodd"
+              clip-rule="evenodd"
+              d="M13 6C13 5.448 12.552 5 12 5C11.448 5 11 5.448 11 6V11H6C5.448 11 5 11.448 5 12C5 12.552 5.448 13 6 13H11V18C11 18.552 11.448 19 12 19C12.552 19 13 18.552 13 18V13H18C18.552 13 19 12.552 19 12C19 11.448 18.552 11 18 11H13V6Z"
+              fill="currentColor"></path>
+          </svg>
+        </div>
+      </div>
+
+      <div class="relative min-h-0 flex-1">
+        <div class="terminal-screen" data-terminal-screen>
+          <div class="terminal-line">
+            <span class="terminal-dim">$ </span><span>{initial}</span><span
+              class="terminal-cursor"></span
+            >
+          </div>
+        </div>
+        <div
+          class="pointer-events-none absolute inset-x-0 top-0 h-5 bg-gradient-to-b from-[#0A0A0A] to-transparent"
+        >
+        </div>
+        <div
+          class="pointer-events-none absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-[#0A0A0A] to-transparent"
+        >
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

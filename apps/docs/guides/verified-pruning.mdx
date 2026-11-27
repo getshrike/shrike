@@ -1,0 +1,97 @@
+---
+title: "Verified pruning"
+description: "Apply deletion batches in a worktree, verify them against a baseline, read receipts, and recover from a failed revert."
+---
+
+Pruning is the mutating half of Shrike. It applies the batches from a plan, checks each one, commits only what passes, and writes a receipt.
+
+`prune` and `clean --base` are the same branch cleanup implementation; `clean` is the public name. Every `prune` example on this page works the same way with `clean`. For cleanup of code that already existed before this branch, see [Current-state cleanup](/guides/current-state-cleanup) and `clean --all`.
+
+<Warning>
+  `prune` and `clean` change repository files and create commits on a new branch. By default they work in a branch worktree under `.shrike/worktrees/` and never commit to the base branch. Review the plan before you run either one.
+</Warning>
+
+## Prerequisites
+
+- A plan: `npx shrike plan --base origin/main` — see [Quickstart](/getting-started/quickstart).
+- A clean working tree for worktree mode. `--allow-dirty` permits in-place verification, but worktree mode still refuses a dirty tree.
+- At least one verification check: either configured in `shrike.config.ts` or discovered from repository scripts by tier. With none, the command exits `4`.
+- Acceptance of what "verified" means: the configured checks passed after removal relative to a baseline. It does not prove the code is semantically unused in production or that external consumers cannot import it.
+
+## 1. Review the plan
+
+```bash
+npx shrike plan --base origin/main
+```
+
+Read each batch's symbol and file counts, the blast-radius caps, and the `Blocked` list. Blocked items are reported with a reason and are not deleted. `shrike proof <symbol>` prints a witness path or proof trace for a symbol you are unsure about.
+
+## 2. Run the verified cleanup
+
+```bash
+npx shrike clean --base origin/main
+```
+
+`npx shrike prune --base origin/main` is the same operation under the original name.
+
+<Warning>
+  This is the mutating step. If you want the plan emitted without applying it, run `npx shrike clean --base origin/main --dry-run` first.
+</Warning>
+
+Expected human output includes one `Verified <batch-id>: N symbols, N files.` line per passing batch, then the branch and worktree path. With `--json` the result is `{ plan, outcome, receipts, branch, worktree }`.
+
+What happens, in order:
+
+1. Shrike re-plans against the same pair of snapshots and stores the plan.
+2. A baseline of the configured checks is captured (or reused) at `.shrike/baseline.json` before any edit.
+3. Each batch is applied in the worktree. The checks run again and are compared with the baseline by name, command, and signature.
+4. A regression triggers bisection: the failing units are reverted, the remainder is retried, and only passing edits are committed. Outcomes are recorded as `verified`, `flaky`, `rejected`, `interaction-failure`, `error`, or `revert-failed`.
+5. Passing batches are committed on a branch named `<branchPrefix>-<plan-id without the plan_ prefix>` (default prefix `shrike/cleanup`). Add `--pr` to push the branch and open a draft PR with `gh`.
+
+## 3. Read the receipts
+
+```bash
+npx shrike receipt
+npx shrike receipt rcpt_<id>
+```
+
+Receipts are content-addressed JSON files under `.shrike/receipts/`. Each one records the base and head commits, plan and batch IDs, build evidence, removed symbols and files, per-check results (status, baseline comparison, classification), the outcome, rejected items, the policy, a content hash, and a recovery reference when applicable. `--json` prints the whole receipt.
+
+`npx shrike verify --plan <plan-id>` re-runs verification for a saved plan in a fresh worktree and writes new receipts. If the plan was computed on a dirty tree, or HEAD or the merge base no longer matches, verification exits `4` and asks you to re-plan.
+
+## 4. Recover from a failed revert
+
+<Warning>
+  Stop and recover before doing anything else if `clean` or `prune` exits `5`. Do not hand-edit the worktree.
+</Warning>
+
+Before each batch, Shrike writes a snapshot of the exact bytes of the files it can touch under `.shrike/recovery/`. When a revert fails, the error and JSON output include the snapshot path and a restore command:
+
+```bash
+npx shrike recover .shrike/recovery/rec_<id>.json
+```
+
+Expected: `Restored N files from <path>.` The command restores only files listed in the snapshot and rejects absolute or traversal paths.
+
+## Limits and exit codes
+
+- Items that are entries, public API, generated, unparsed, or reachable through an unknown edge are blocked, not deleted.
+- A build graph can add liveness evidence but can never authorize a deletion.
+- Shrike does not auto-commit to `main`, and does not open a PR unless you pass `--pr`.
+
+| Exit | Meaning in `clean` / `prune` |
+| --- | --- |
+| `0` | All batches verified, or no deletions to verify. |
+| `1` | `--dry-run` found batches; no source changes were made. |
+| `2` | Usage error, such as `--no-checks`, an unknown flag, or a dirty worktree. |
+| `3` | At least one batch was rejected; changes were reverted. |
+| `4` | Could not run — for example no checks found, a stale plan, or an inconclusive bisection. |
+| `5` | Revert failed; manual recovery is required. |
+
+See [Exit codes](/reference/exit-codes) for the full matrix.
+
+## Next
+
+- [Branch cleanup](/guides/branch-cleanup) — the public `clean` workflow and draft PRs.
+- [Current-state cleanup](/guides/current-state-cleanup) — `clean --all`.
+- [GitHub Actions](/guides/github-action) or [configuration](/reference/configuration).

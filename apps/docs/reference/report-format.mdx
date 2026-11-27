@@ -1,0 +1,187 @@
+---
+title: "Report format"
+description: "The cleanup-report JSON contract: scope, summary fields, groups, items, protected reasons, advisory dependencies, diagnostics, determinism, and an example."
+---
+
+`shrike report --json` prints one object described by [`schemas/cleanup-report.schema.json`](https://github.com/getshrike/shrike/blob/main/schemas/cleanup-report.schema.json). The report is a deterministic projection of engine facts: it groups, counts, and explains; it never adds a deletion candidate.
+
+The schema version is `"1.0"` and the top-level object is closed (`additionalProperties: false`). Consumers should branch on `mode`, ignore unknown future schema versions explicitly, and treat every string as data.
+
+## Top-level fields
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `schemaVersion` | `"1.0"` | Report schema version. |
+| `mode` | `"current"` or `"branch"` | Current-tree report or branch orphan report. |
+| `base` | object or `null` | Base ref, commit, and optional graph hash. `null` in current mode. |
+| `head` | object | Head commit, dirty flag, and optional graph hash. |
+| `summary` | object | Counts and the dead-weight metric. |
+| `groups` | array | Removable items grouped by directory. |
+| `preexisting` | object, branch only | Dead code that existed before the branch; not counted in the branch metric. |
+| `protected` | array | Items protected from deletion, with a reason. |
+| `dependencies` | array | Advisory dependency findings. |
+| `diagnostics` | object | Diagnostic totals and grouped diagnostics. |
+
+`base.ref` is the ref you passed when it is known, otherwise `null`; `base.commit` and `head.commit` are full commit IDs. `graphHash` is present when the engine returned one. Paths are repository-relative POSIX strings. Symbol keys are `path#Name`.
+
+A dirty tree sets `head.dirty: true`. The report is still deterministic, but it is local feedback rather than a CI receipt.
+
+## `summary`
+
+| Field | Meaning |
+| --- | --- |
+| `analyzedFiles` | Eligible source files in the analyzed snapshot. |
+| `analyzedLines` | Lines in those files; the denominator of the metric. |
+| `removableFiles` | Files that can be removed whole. |
+| `removableSymbols` | Removable symbol count. |
+| `removableExports` | How many of those symbols are exported. |
+| `removableLines` | Union of removable symbol spans plus whole removable files; the numerator of the metric. |
+| `deadWeightBasisPoints` | `round(removableLines * 10000 / analyzedLines)`, or `0` when there are no analyzed lines. |
+| `unusedDependencies` | Number of advisory dependency rows. |
+| `protectedItems` | Number of protected rows. |
+| `uncountedRemovableSymbols` | Removable symbols that could not be placed in an eligible file. A non-zero value means the displayed groups do not account for every symbol in the metric. |
+| `diagnostics` | `{ total, actionable, informational }`. |
+
+The displayed percentage is `deadWeightBasisPoints / 100`, rounded to one decimal place. The raw fraction always accompanies it. `removableLines` can never exceed `analyzedLines`; if it would, the command fails closed instead of reporting an impossible metric.
+
+## `groups[]` and `items[]`
+
+Each group has a `directory`, `removableLines`, `removableSymbols`, `removableFiles`, and `items`. Groups are sorted by directory; use the item arrays for deterministic detail.
+
+An item has:
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Stable `symbol:<key>` or `file:<path>` identifier. |
+| `kind` | `symbol`, `file`, or `dependency`. |
+| `classification` | `branch-orphan`, `never-used`, or `advisory`. |
+| `path` | Repository-relative path. |
+| `symbol` | `path#Name` for symbol items. |
+| `name` | Symbol name. |
+| `lines` | Removable lines attributed to the item. |
+| `reason` | `no-witness`, `whole-file`, `unused-dependency`, `unlisted-dependency`, or `transitive-dependency`. |
+| `confidence` | `certain`, `probable`, or `unknown`. |
+| `trigger` | Optional branch-orphan explanation, including an optional `edge` witness identifier. |
+
+A branch item's `trigger` names the file, a kind (`removed-import`, `removed-call`, `removed-jsx`, `removed-route`, `renamed-export`, `removed-re-export`, `changed-dynamic`, `indirect`), a human `change`, and `certainty`. It is explainability, not deletion authority.
+
+A whole file has `kind: "file"`, `reason: "whole-file"`, and counts its declared lines once. It never also appears as a symbol item for the same file.
+
+## `preexisting`
+
+Branch reports include `{ symbols, files, lines }`: dead code present at `HEAD` that the plan does not attribute to this branch. These lines are excluded from `summary.removableLines`, so a branch report measures the branch, not the repository's history.
+
+## `protected[]`
+
+Protected rows have `path`, an optional `symbol`, a `reason`, and an optional `detail`. Reasons are `entry-role`, `public-api`, `unknown-edge`, `probable-edge`, `unparsed-file`, `generated-file`, `test-entry`, `external-referrer`, `blast-radius`, `workspace-boundary`, `policy`, `oversized`, and `other`. Protected items are never in a deletion batch.
+
+## `dependencies[]`
+
+Each row has `package`, `directory`, `name`, `kind` (`unused`, `unlisted`, or `transitive`), and `"advisory": true`. Dependencies are reported separately and are advisory. Shrike never removes or edits a dependency in this report or in `clean`.
+
+## `diagnostics`
+
+`total`, `actionable`, and `informational` are counts. `groups` contains up to six grouped entries, each with `category`, `code`, `count`, `actionable`, and the sorted `files` that contributed. They describe analysis coverage and unresolved conditions; they do not change the metric.
+
+## Determinism
+
+- Identical input produces byte-identical JSON.
+- No timestamps, random IDs, locale-dependent numbers, or absolute host paths appear in the report.
+- Arrays are sorted with stable, case-sensitive comparisons: groups by directory, items by path then symbol then id, protected items by path then symbol then reason, dependencies by package then name then kind then directory.
+- The report is built from one analysis. It does not re-read source files for line counts.
+- Adding a field is a schema change. Consumers should use `schemaVersion` and tolerate additive fields only after the schema version is bumped and documented.
+
+## Example
+
+This is a complete, schema-valid current report with one group:
+
+```json
+{
+  "schemaVersion": "1.0",
+  "mode": "current",
+  "base": null,
+  "head": {
+    "commit": "9f2c1ab4d1c2b4f9a7e6d5c4b3a2918070605040",
+    "dirty": false,
+    "graphHash": "blake3:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "summary": {
+    "analyzedFiles": 38,
+    "analyzedLines": 26900,
+    "removableFiles": 1,
+    "removableSymbols": 1,
+    "removableExports": 1,
+    "removableLines": 12,
+    "deadWeightBasisPoints": 4,
+    "unusedDependencies": 1,
+    "protectedItems": 1,
+    "uncountedRemovableSymbols": 0,
+    "diagnostics": {
+      "total": 1,
+      "actionable": 1,
+      "informational": 0
+    }
+  },
+  "groups": [
+    {
+      "directory": "src/features/billing",
+      "removableLines": 12,
+      "removableSymbols": 1,
+      "removableFiles": 1,
+      "items": [
+        {
+          "id": "symbol:src/features/billing/format.ts#formatInvoice",
+          "kind": "symbol",
+          "classification": "never-used",
+          "path": "src/features/billing/format.ts",
+          "symbol": "src/features/billing/format.ts#formatInvoice",
+          "name": "formatInvoice",
+          "lines": 12,
+          "reason": "no-witness",
+          "confidence": "certain"
+        }
+      ]
+    }
+  ],
+  "protected": [
+    {
+      "path": "packages/ui/src/Button.tsx",
+      "symbol": "packages/ui/src/Button.tsx#Button",
+      "reason": "public-api"
+    }
+  ],
+  "dependencies": [
+    {
+      "package": "web",
+      "directory": ".",
+      "name": "left-pad",
+      "kind": "unused",
+      "advisory": true
+    }
+  ],
+  "diagnostics": {
+    "total": 1,
+    "actionable": 1,
+    "informational": 0,
+    "groups": [
+      {
+        "category": "parse",
+        "code": "parse_error",
+        "count": 1,
+        "actionable": true,
+        "files": [
+          "src/broken.ts"
+        ]
+      }
+    ]
+  }
+}
+```
+
+The `head.graphHash` and `base.graphHash` fields are optional. The `preexisting` field is omitted from current reports. Optional item fields (`symbol`, `name`, `trigger`) are omitted when they do not apply.
+
+## Next
+
+- [Cleanup report](/guides/cleanup-report) — how to read the human view.
+- [Commands](/reference/commands) — command syntax and mutation notes.
+- [Exit codes](/reference/exit-codes) — CI interpretation.

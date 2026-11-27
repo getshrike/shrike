@@ -1,0 +1,105 @@
+---
+title: "Configuration"
+description: "Where Shrike reads configuration, every supported field and default, and how validation failures surface."
+---
+
+Shrike reads a config from the repository root. It checks `shrike.config.ts`, `shrike.config.js`, `shrike.config.mjs`, then `shrike.config.json`, in that order. The first one found wins. `shrike init` creates `shrike.config.ts`; the contract is the JSON Schema at [`schemas/config.schema.json`](https://github.com/getshrike/shrike/blob/main/schemas/config.schema.json).
+
+<Note>
+  An empty config is valid. Defaults are applied by both the host and the engine, so you only need to set what you want to change.
+</Note>
+
+## Minimal valid config
+
+```ts
+import type { ShrikeConfig } from "getshrike/config";
+
+const config: Partial<ShrikeConfig> = {};
+
+export default config;
+```
+
+The `shrike init` template starts from the same defaults and shows the commonly changed fields:
+
+```ts
+import type { ShrikeConfig } from "getshrike/config";
+
+const config: Partial<ShrikeConfig> = {
+  entryPolicy: "local",
+  testEntries: true,
+  includeGenerated: false,
+  batchPolicy: { maxSymbols: 50, maxFiles: 10, maxLiveGraphPercent: 5, allowOversized: false },
+  checks: [],
+};
+
+export default config;
+```
+
+A `shrike.config.json` file with `{}` is also valid.
+
+## Top-level fields
+
+| Field | Default | Purpose |
+| --- | --- | --- |
+| `schemaVersion` | `"1.0"` | Configuration schema version. |
+| `include` | `["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs", "**/*.mdx", "**/*.svelte", "**/*.vue", "**/*.astro", "**/index.html"]` | Glob set to inventory. |
+| `ignore` | `["node_modules/**", ".git/**", ".next/**", ".shrike/**", "dist/**", "build/**", "out/**", "coverage/**", ".turbo/**", ".vercel/**", "*.min.js", "*.generated.*"]` | Glob set skipped during inventory; wins over `include`. |
+| `tsconfig` | `"tsconfig.json"` | tsconfig used for paths and `baseUrl`. `null` disables it. |
+| `cacheDir` | `".shrike/cache"` | Content-addressed cache directory; safe to delete. |
+| `entryPolicy` | `"local"` | `local` includes test and local-tooling entries; `production` excludes test-only entries. |
+| `testEntries` | `true` | Include test, Storybook, and fixture entries when `entryPolicy` is `local`. |
+| `includeGenerated` | `false` | Treat generated files as deletion candidates. Generated files are always parsed for edges. |
+| `clientBoundaryPolicy` | `"graph"` | `graph` lets import reachability decide liveness; `protect` seeds every export in a `"use client"` file as an entry. |
+| `serverActionPolicy` | `"graph"` | `graph` reports unreferenced `"use server"` exports; `protect` seeds every such export as an entry. |
+| `ignoreDependencies` | `[]` | Dependency names never reported as unused by `scan` or `deps`. |
+| `publicApi` | `[]` | Extra repository-relative globs whose exports are never deletion candidates. |
+| `generated` | `[]` | Extra repository-relative globs treated as generated. |
+| `batchPolicy` | see below | Blast-radius caps for deletion batches. |
+| `entryAdapters` | `["next-app", "next-pages", "react", "packages", "tests", "configs"]` | Framework adapters to enable; unknown names are ignored with a warning. |
+| `checks` | `[]` | Project checks in execution order. When non-empty, these replace script discovery. |
+| `pr` | see below | Pull-request options. |
+| `verification` | see below | Verifier options. |
+| `build` | see below | Optional Next.js build-graph evidence. |
+
+### Nested defaults
+
+| Object | Fields and defaults |
+| --- | --- |
+| `batchPolicy` | `maxSymbols: 50`, `maxFiles: 10`, `maxLiveGraphPercent: 5`, `allowOversized: false`. |
+| `pr` | `draft: true`, `labels: ["shrike", "cleanup"]`, `branchPrefix: "shrike/cleanup"`, `commentReceipt: true`, `base: null`, `title: "Shrike: verified cleanup"`. |
+| `verification` | `mode: "worktree"`, `allowDirty: false`, `tier: "standard"`, `baselinePath: ".shrike/baseline.json"`. |
+| `build` | `evidence: false`, `snapshot: ".next/analyze.jsonl"`, `requireEvidence: false`. |
+| `checks[]` | Required: `name` (`^[a-z][a-z0-9-]*$`) and `command`. Optional: `timeoutMs: 600000`, `required: true`, `reruns: 0`, `tier: "standard"`, `cwd: "."`. |
+
+`verification.tier` selects the check set: `fast` is typecheck plus lint, `standard` adds test, and `full` adds build. `mode: "worktree"` applies edits in a branch worktree; `in-place` requires a clean tree unless `allowDirty` is set.
+
+## How the config is loaded
+
+An executable config is evaluated in a child process with a bounded environment and a hard timeout (5 seconds by default, overridable with `SHRIKE_CONFIG_TIMEOUT_MS`). It must export an object as its default (or `config`) export. The CLI removes host-only fields — `checks`, `pr`, `verification`, `build`, `cacheDir`, `schemaVersion`, and `ignoreDependencies` — before sending the engine payload.
+
+## Validation errors
+
+A malformed config exits `2`. Common messages:
+
+- `config must export an object: <path>` — the evaluated config was not an object.
+- `config evaluation failed: <path>` — the config threw or could not be evaluated.
+- `config evaluation timed out after <ms>ms: <path>` — reduce work in the config or raise `SHRIKE_CONFIG_TIMEOUT_MS`.
+- `could not load <path>` — the file could not be read or parsed.
+- An engine `config_error` / `invalid_*` response — a field value violated the engine's config contract.
+
+## Environment variables
+
+| Variable | Effect |
+| --- | --- |
+| `SHRIKE_ENGINE` | Explicit path to the native engine binary; checked first. |
+| `SHRIKE_ENGINE_TIMEOUT_MS` | Per-request engine timeout, default `60000` ms. |
+| `SHRIKE_CONFIG_TIMEOUT_MS` | Timeout for evaluating an executable config, default `5000` ms. |
+| `SHRIKE_HOOK_BASE` | Base ref used by `shrike hook run` instead of the resolved default branch. |
+| `SHRIKE_HOOK_TOTAL_BUDGET_MS` | Hook total budget, capped at `60000` ms. |
+| `SHRIKE_HOOK_CHECKS_BUDGET_MS` | Hook checks budget, capped at `40000` ms and the total budget. |
+| `SHRIKE_NO_TUI`, `SHRIKE_TUI_DISABLE` | Any value disables the interactive report view. |
+| `COLUMNS` | Fallback terminal width when stdout is not a TTY. |
+
+`CI`, known agent-session variables, `TERM=dumb`, and terminals smaller than 40×10 also fall back to the plain report.
+
+See [Troubleshooting](/troubleshooting) for recovery steps, and [Verified pruning](/guides/verified-pruning) for how checks and verification settings are used.

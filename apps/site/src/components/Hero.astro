@@ -1,0 +1,705 @@
+---
+import { Picture } from "astro:assets";
+import terminalBackdrop from "../assets/images/terminal-backdrop.jpg";
+---
+
+<section
+  class="relative w-full overflow-hidden bg-[#FCFCFC] pt-10 pb-16 sm:pt-12 sm:pb-20 lg:pt-14 lg:pb-24"
+>
+  <img
+    src="/patterns/hero-pattern-bg-1.svg"
+    alt=""
+    aria-hidden="true"
+    class="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-50"
+  />
+
+  <div
+    class="hero-blur-reveal hero-blur-reveal--active relative z-10 mx-auto max-w-[1400px] px-6 sm:px-8 lg:px-12"
+  >
+    <div class="mx-auto flex max-w-3xl flex-col items-center text-center">
+      <header class="w-full">
+        <h1
+          class="font-sans text-[2.25rem] leading-[1.1] font-normal tracking-[-0.04em] sm:text-[2.75rem] md:text-[3.25rem] lg:text-[3.5rem] xl:text-[3.75rem]"
+        >
+          <span class="block">
+            <span
+              class="hero-blur-reveal-word text-[#252525]"
+              style="--word-index:0">Your&nbsp;</span
+            ><span
+              class="hero-blur-reveal-word text-[#252525]"
+              style="--word-index:1">agent&nbsp;</span
+            ><span
+              class="hero-blur-reveal-word text-[#252525]"
+              style="--word-index:2">left&nbsp;</span
+            ><span
+              class="hero-blur-reveal-word text-[#252525]"
+              style="--word-index:3">dead&nbsp;</span
+            ><span
+              class="hero-blur-reveal-word text-[#252525]"
+              style="--word-index:4">code.</span
+            >
+          </span>
+          <span class="block">
+            <span
+              class="hero-blur-reveal-word text-[#252525]"
+              style="--word-index:5">Shrike&nbsp;</span
+            ><span
+              class="hero-blur-reveal-word text-[#787C85]"
+              style="--word-index:6">removes&nbsp;</span
+            ><span
+              class="hero-blur-reveal-word text-[#787C85]"
+              style="--word-index:7">it.</span
+            >
+          </span>
+        </h1>
+      </header>
+
+      <p
+        class="hero-blur-reveal-block mt-5 max-w-2xl text-[15px] leading-relaxed text-[#252525] sm:mt-6 sm:text-[17px]"
+        style="--block-delay:460ms"
+      >
+        Shrike is an open-source CLI that finds what a PR orphaned, even in
+        files the PR never touched. It deletes that code in verified batches
+        and leaves a receipt. Nothing is committed until your checks pass.
+      </p>
+
+      <div
+        id="install"
+        class="hero-blur-reveal-block mt-6 w-full max-w-2xl sm:mt-8"
+        style="--block-delay:580ms"
+        data-install-widget
+      >
+        <button
+          type="button"
+          class="flex w-full cursor-pointer items-center gap-3 border border-neutral-200 bg-white px-4 py-3 text-left transition-colors hover:border-neutral-300 hover:bg-neutral-50 sm:px-5 sm:py-3.5"
+          data-copy-command
+        >
+          <span class="sr-only">Copy command: </span>
+          <code
+            class="pointer-events-none flex-1 overflow-x-auto font-mono text-[13px] whitespace-nowrap text-neutral-800 sm:text-sm"
+          >
+            <span class="text-neutral-400">$ </span><span data-command-text
+              >npm install -D getshrike</span
+            >
+          </code>
+          <span class="pointer-events-none shrink-0 p-1.5 text-neutral-400">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="h-4 w-4"
+              aria-hidden="true"
+              data-copy-icon
+            >
+              <rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
+              <path
+                d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
+              ></path>
+            </svg>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="hidden h-4 w-4"
+              aria-hidden="true"
+              data-check-icon
+            >
+              <path d="M20 6 9 17l-5-5"></path>
+            </svg>
+          </span>
+        </button>
+
+        <div class="mt-2 flex justify-center">
+          <div
+            class="inline-flex border border-neutral-200 bg-white p-0.5"
+            role="tablist"
+            aria-label="Install command package manager"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected="true"
+              data-tab
+              data-command="npm install -D getshrike"
+              class="bg-neutral-900 px-3 py-1.5 font-mono text-[11px] text-white transition-colors sm:text-xs"
+            >
+              npm
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected="false"
+              data-tab
+              data-command="pnpm add -D getshrike"
+              class="px-3 py-1.5 font-mono text-[11px] text-neutral-500 transition-colors hover:text-neutral-800 sm:text-xs"
+            >
+              pnpm
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div
+      class="hero-blur-reveal-block mt-10 sm:mt-12 lg:mt-16"
+      style="--block-delay:730ms"
+    >
+      <div
+        class="relative aspect-[2888/3808] w-full overflow-hidden rounded-lg border border-neutral-300/80 bg-[#c9c9c9] sm:aspect-[1304/680]"
+        data-terminal-shell
+        aria-hidden="true"
+      >
+        <Picture
+          src={terminalBackdrop}
+          alt=""
+          formats={["webp"]}
+          widths={[480, 720, 960, 1300]}
+          sizes="(min-width: 1536px) 1304px, (min-width: 1024px) calc(100vw - 96px), (min-width: 640px) calc(100vw - 64px), 480px"
+          quality={65}
+          priority
+          class="absolute inset-0 h-full w-full object-cover object-center"
+        />
+        <div class="absolute inset-0 bg-black/20"></div>
+
+        <div class="absolute inset-0 flex p-3 sm:p-6 lg:p-9 xl:p-12 xl:pb-8">
+          <div
+            class="relative flex h-full w-full flex-col overflow-hidden rounded-lg border border-white/10 bg-[#0A0A0A] shadow-[0_24px_80px_rgba(0,0,0,0.45)] sm:rounded-xl"
+            data-terminal
+          >
+            <div
+              class="relative flex h-10 shrink-0 items-center justify-center border-b border-white/[0.07] sm:h-11"
+            >
+              <div
+                class="absolute top-1/2 left-3 flex -translate-y-1/2 items-center gap-1.5 sm:left-4 sm:gap-2 xl:left-5 xl:gap-2.5"
+              >
+                <span class="terminal-dot"></span>
+                <span class="terminal-dot"></span>
+                <span class="terminal-dot"></span>
+              </div>
+              <span
+                class="font-sans text-[11px] font-medium text-white/50 sm:text-[13px] lg:text-[14px] xl:text-[16px]"
+                data-terminal-size>Terminal - 1206x522</span
+              >
+            </div>
+
+            <div class="flex h-[38px] shrink-0 border-b border-white/[0.07]">
+              <div
+                class="relative flex flex-1 items-center justify-center overflow-hidden"
+              >
+                <span
+                  class="font-sans text-[12px] font-medium text-[#EDEDED] sm:text-[14px] lg:text-[15px] xl:text-[17px]"
+                  data-terminal-tab>~</span
+                >
+              </div>
+              <div
+                class="flex w-9 shrink-0 items-center justify-center border-l border-white/[0.07] text-white/40 sm:w-10"
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    clip-rule="evenodd"
+                    d="M13 6C13 5.448 12.552 5 12 5C11.448 5 11 5.448 11 6V11H6C5.448 11 5 11.448 5 12C5 12.552 5.448 13 6 13H11V18C11 18.552 11.448 19 12 19C12.552 19 13 18.552 13 18V13H18C18.552 13 19 12.552 19 12C19 11.448 18.552 11 18 11H13V6Z"
+                    fill="currentColor"></path>
+                </svg>
+              </div>
+            </div>
+
+            <div class="relative min-h-0 flex-1">
+              <div class="terminal-screen" data-terminal-screen>
+                <div class="terminal-line"><span class="terminal-dim">$ </span><span>npx getshrike report</span><span class="terminal-cursor"></span></div>
+              </div>
+              <div
+                class="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-[#0A0A0A] to-transparent"
+              >
+              </div>
+              <div
+                class="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-[#0A0A0A] to-transparent"
+              >
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  const widget = document.querySelector<HTMLElement>("[data-install-widget]");
+
+  if (widget) {
+    const commandText = widget.querySelector<HTMLElement>("[data-command-text]");
+    const copyButton =
+      widget.querySelector<HTMLButtonElement>("[data-copy-command]");
+    const copyIcon = widget.querySelector<HTMLElement>("[data-copy-icon]");
+    const checkIcon = widget.querySelector<HTMLElement>("[data-check-icon]");
+    const tabs = Array.from(
+      widget.querySelectorAll<HTMLButtonElement>("[data-tab]"),
+    );
+
+    let command = commandText?.textContent?.trim() ?? "";
+
+    const selectTab = (tab: HTMLButtonElement) => {
+      for (const candidate of tabs) {
+        const selected = candidate === tab;
+        candidate.setAttribute("aria-selected", String(selected));
+        candidate.classList.toggle("bg-neutral-900", selected);
+        candidate.classList.toggle("text-white", selected);
+        candidate.classList.toggle("text-neutral-500", !selected);
+        candidate.classList.toggle("hover:text-neutral-800", !selected);
+      }
+
+      command = tab.dataset.command ?? command;
+      if (commandText) commandText.textContent = command;
+    };
+
+    for (const tab of tabs) {
+      tab.addEventListener("click", () => selectTab(tab));
+    }
+
+    copyButton?.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(command);
+        copyIcon?.classList.add("hidden");
+        checkIcon?.classList.remove("hidden");
+        window.setTimeout(() => {
+          copyIcon?.classList.remove("hidden");
+          checkIcon?.classList.add("hidden");
+        }, 1500);
+      } catch {
+        // Clipboard access can be blocked; leave the command visible to copy.
+      }
+    });
+  }
+</script>
+
+<script>
+  const terminal = document.querySelector<HTMLElement>("[data-terminal]");
+  const shell = document.querySelector<HTMLElement>("[data-terminal-shell]");
+
+  if (terminal && shell) {
+    const screen = terminal.querySelector<HTMLElement>(
+      "[data-terminal-screen]",
+    );
+    const tab = terminal.querySelector<HTMLElement>("[data-terminal-tab]");
+    const size = terminal.querySelector<HTMLElement>("[data-terminal-size]");
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
+    if (screen && tab) {
+      const wait = (ms: number) =>
+        new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
+      const updateSize = () => {
+        if (!size) return;
+        size.textContent = `Terminal - ${Math.round(terminal.clientWidth)}x${Math.round(terminal.clientHeight)}`;
+      };
+      updateSize();
+      if (typeof ResizeObserver !== "undefined") {
+        new ResizeObserver(updateSize).observe(terminal);
+      }
+
+      let scrollFrame = 0;
+      const follow = () => {
+        window.cancelAnimationFrame(scrollFrame);
+        const step = () => {
+          const max = screen.scrollHeight - screen.clientHeight;
+          const diff = max - screen.scrollTop;
+          if (diff > 0.5) {
+            screen.scrollTop += Math.max(0.5, diff * 0.12);
+            scrollFrame = window.requestAnimationFrame(step);
+          }
+        };
+        scrollFrame = window.requestAnimationFrame(step);
+      };
+
+      const addLine = (html: string, className = "") => {
+        const line = document.createElement("div");
+        line.className = `terminal-line ${className}`.trim();
+        line.innerHTML = html;
+        screen.append(line);
+        follow();
+        return line;
+      };
+
+      const reveal = (line: HTMLElement, duration = 420) => {
+        if (reduceMotion) return;
+        line.animate(
+          [
+            { opacity: 0, filter: "blur(6px)", transform: "translateY(8px)" },
+            { opacity: 1, filter: "blur(0px)", transform: "translateY(0)" },
+          ],
+          {
+            duration,
+            easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+            fill: "both",
+          },
+        );
+      };
+
+      const add = async (
+        html: string,
+        {
+          className = "",
+          pause = 80,
+          duration = 420,
+        }: { className?: string; pause?: number; duration?: number } = {},
+      ) => {
+        const line = addLine(html, className);
+        reveal(line, duration);
+        await wait(pause);
+        return line;
+      };
+
+      const setTab = async (label: string) => {
+        if (tab.textContent === label) return;
+        if (reduceMotion) {
+          tab.textContent = label;
+          return;
+        }
+        await tab.animate(
+          [
+            { opacity: 1, filter: "blur(0px)", transform: "translateY(0)" },
+            { opacity: 0, filter: "blur(4px)", transform: "translateY(-3px)" },
+          ],
+          { duration: 140, easing: "ease-out", fill: "both" },
+        ).finished;
+        tab.textContent = label;
+        await tab.animate(
+          [
+            { opacity: 0, filter: "blur(4px)", transform: "translateY(3px)" },
+            { opacity: 1, filter: "blur(0px)", transform: "translateY(0)" },
+          ],
+          {
+            duration: 220,
+            easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+            fill: "both",
+          },
+        ).finished;
+      };
+
+      const typeCommand = async (command: string) => {
+        const line = addLine(
+          `<span class="terminal-dim">$ </span><span data-typed></span><span class="terminal-cursor" data-cursor></span>`,
+        );
+        reveal(line, 300);
+        const typed = line.querySelector<HTMLElement>("[data-typed]");
+        const cursor = line.querySelector<HTMLElement>("[data-cursor]");
+        if (!typed) return;
+        for (const char of command) {
+          typed.textContent = `${typed.textContent ?? ""}${char}`;
+          await wait(char === " " ? 34 : 18);
+        }
+        await wait(180);
+        cursor?.remove();
+      };
+
+      const renderStatic = async () => {
+        screen.replaceChildren();
+        screen.style.opacity = "";
+        screen.scrollTop = 0;
+        await setTab("report");
+        const lines = [
+          "$ npx getshrike report",
+          "Shrike report · current state · 9f2c1ab",
+          "Dead weight  4.8%",
+          "1,284 removable lines / 26,900 analyzed source lines",
+          "1 file · 61 symbols · 4 dependencies (advisory)",
+          "$ npx getshrike delta --base origin/main",
+          "Shrike delta: 14 newly dead symbols in 6 files",
+          "Cascade: 3 symbols, 1 files, 18 lines",
+          "$ npx getshrike plan --base origin/main",
+          "Plan 9f2c: 61 symbols, 10 files, 1,284 lines",
+          "$ npx getshrike clean --base origin/main",
+          "Verified batch-1: 28 symbols, 4 files.",
+          "Shrike: 58 symbols removed on shrike/cleanup.",
+          "$ npx getshrike receipt 1",
+          "1 verified",
+        ];
+        for (const line of lines) {
+          addLine(`<span class="terminal-dim">${line}</span>`);
+        }
+        follow();
+      };
+
+      const play = async () => {
+        screen.replaceChildren();
+        screen.scrollTop = 0;
+        await setTab("~");
+        await wait(160);
+
+        // 1. Report the dead weight.
+        await typeCommand("npx getshrike report");
+        await wait(260);
+        await setTab("report");
+        await add(
+          `<span class="terminal-dim">Shrike report · current state · 9f2c1ab</span>`,
+          { pause: 100 },
+        );
+        await add("", { className: "terminal-spacer", pause: 20 });
+        await add(
+          `<span class="terminal-muted">Dead weight</span>  <span class="terminal-bright">4.8%</span>`,
+          { pause: 90 },
+        );
+        await add(
+          `<span class="terminal-muted">1,284 removable lines</span> <span class="terminal-dim">/ 26,900 analyzed source lines</span>`,
+          { pause: 80 },
+        );
+        await add(
+          `<span class="terminal-dim">███████████████████░░░░░░░░░░░░░░░░░░░░░░░░░</span>`,
+          { pause: 80 },
+        );
+        await add("", { className: "terminal-spacer", pause: 20 });
+        await add(
+          `<span class="terminal-muted">1 file · 61 symbols · 4 dependencies (advisory)</span>`,
+          { pause: 80 },
+        );
+        await add(
+          `<span class="terminal-muted">12 protected</span> <span class="terminal-dim">· 7 diagnostics (2 actionable)</span>`,
+          { pause: 80 },
+        );
+        await add("", { className: "terminal-spacer", pause: 20 });
+        await add(
+          `<span class="terminal-dim">src/features/billing    12 lines   1 symbol   1 file</span>`,
+          { pause: 60 },
+        );
+        await add(
+          `<span class="terminal-dim">src/features/onboarding 238 lines   6 symbols</span>`,
+          { pause: 60 },
+        );
+        await add(
+          `<span class="terminal-dim">src/components/legacy   197 lines   4 symbols</span>`,
+          { pause: 60 },
+        );
+        await add(`<span class="terminal-dim">... 3 more groups (--verbose)</span>`, {
+          pause: 80,
+        });
+        await add("", { className: "terminal-spacer", pause: 20 });
+        await add(`<span class="terminal-muted">Protected reasons</span>`, {
+          pause: 60,
+        });
+        await add(`<span class="terminal-dim">  public-api   7</span>`, {
+          pause: 60,
+        });
+        await add(`<span class="terminal-dim">  entry-role  3</span>`, {
+          pause: 60,
+        });
+        await add(`<span class="terminal-dim">  test-entry  2</span>`, {
+          pause: 80,
+        });
+        await add("", { className: "terminal-spacer", pause: 20 });
+        await add(
+          `<span class="terminal-dim">Next: npx getshrike delta --base origin/main</span>`,
+          { pause: 120 },
+        );
+        await wait(650);
+
+        // 2. See what the change orphaned.
+        await setTab("delta");
+        await typeCommand("npx getshrike delta --base origin/main");
+        await wait(240);
+        await add(
+          `<span class="terminal-bright">Shrike delta: 14 newly dead symbols in 6 files</span>`,
+          { pause: 100 },
+        );
+        await add("", { className: "terminal-spacer", pause: 20 });
+        await add(
+          `<span class="terminal-muted">src/lib/currency.ts#formatInvoice</span>  <span class="terminal-dim">-12 lines  [removed-import]</span>`,
+          { className: "terminal-wide-only", pause: 60 },
+        );
+        await add(
+          `<span class="terminal-muted">src/lib/currency.ts#formatCents</span>  <span class="terminal-dim">-6 lines  [indirect]</span>`,
+          { className: "terminal-wide-only", pause: 60 },
+        );
+        await add(
+          `<span class="terminal-muted">src/features/billing/legacy.tsx#render</span>  <span class="terminal-dim">-48 lines  [removed-jsx]</span>`,
+          { className: "terminal-wide-only", pause: 60 },
+        );
+        await add(
+          `<span class="terminal-muted">src/components/old-header.tsx</span>  <span class="terminal-dim">(file)</span>`,
+          { className: "terminal-wide-only", pause: 60 },
+        );
+        await add("", { className: "terminal-spacer", pause: 20 });
+        await add(
+          `<span class="terminal-bright">Cascade: 3 symbols, 1 files, 18 lines</span>`,
+          { pause: 140 },
+        );
+        await wait(650);
+
+        // 3. Plan the batches.
+        await setTab("plan");
+        await typeCommand("npx getshrike plan --base origin/main");
+        await wait(220);
+        await add(
+          `<span class="terminal-dim">Plan 9f2c: 61 symbols, 10 files, 1,284 lines</span>`,
+          { pause: 90 },
+        );
+        await add(
+          `<span class="terminal-dim">  batch-1: 28 symbols, 4 files, 412 lines</span>`,
+          { pause: 60 },
+        );
+        await add(
+          `<span class="terminal-dim">  batch-2: 21 symbols, 3 files, 238 lines</span>`,
+          { pause: 60 },
+        );
+        await add(
+          `<span class="terminal-dim">  batch-3: 12 symbols, 3 files, 197 lines</span>`,
+          { pause: 60 },
+        );
+        await add(`<span class="terminal-dim">Blocked: 2 items</span>`, {
+          pause: 140,
+        });
+        await wait(650);
+
+        // 4. Apply and verify.
+        await setTab("clean");
+        await typeCommand("npx getshrike clean --base origin/main");
+        await wait(240);
+        await add(
+          `<span class="terminal-check">✓</span> <span class="terminal-muted">Verified batch-1: 28 symbols, 4 files.</span>`,
+          { pause: 90 },
+        );
+        await add(
+          `<span class="terminal-check">✓</span> <span class="terminal-muted">Verified batch-2: 21 symbols, 3 files.</span>`,
+          { pause: 90 },
+        );
+        await add(
+          `<span class="terminal-muted">Shrike: batch-3 rejected (new-failure); changes reverted.</span>`,
+          { className: "terminal-wide-only", pause: 90 },
+        );
+        await add(
+          `<span class="terminal-muted">Shrike: rejected 3 symbols from batch-3 (test).</span>`,
+          { className: "terminal-wide-only", pause: 90 },
+        );
+        await add(
+          `<span class="terminal-check">✓</span> <span class="terminal-muted">Verified 9 of 12 symbols from batch-3.</span>`,
+          { pause: 90 },
+        );
+        await add("", { className: "terminal-spacer", pause: 20 });
+        await add(
+          `<span class="terminal-bright">Shrike: 58 symbols removed on shrike/cleanup.</span>`,
+          { pause: 90 },
+        );
+        await add(
+          `<span class="terminal-dim">Receipts: .shrike/receipts/1.json, 2.json (3 batches)</span>`,
+          { className: "terminal-wide-only", pause: 90 },
+        );
+        await add(`<span class="terminal-dim">Next:</span>`, { pause: 60 });
+        await add(
+          `<span class="terminal-dim">  npx getshrike receipt 1</span>`,
+          { pause: 60 },
+        );
+        await add(
+          `<span class="terminal-dim">  gh pr create --draft --head shrike/cleanup</span>`,
+          { className: "terminal-wide-only", pause: 120 },
+        );
+        await wait(650);
+
+        // 5. Re-check the plan and inspect the receipt.
+        await setTab("verify");
+        await typeCommand("npx getshrike verify --plan 9f2c");
+        await wait(220);
+        await add(
+          `<span class="terminal-check">✓</span> <span class="terminal-muted">Verified batch-1: 28 symbols, 4 files.</span>`,
+          { pause: 80 },
+        );
+        await add(
+          `<span class="terminal-check">✓</span> <span class="terminal-muted">Verified batch-2: 21 symbols, 3 files.</span>`,
+          { pause: 80 },
+        );
+        await add(
+          `<span class="terminal-muted">Shrike: re-verification verified; 3 receipts.</span>`,
+          { pause: 140 },
+        );
+        await setTab("receipt");
+        await typeCommand("npx getshrike receipt 1");
+        await wait(220);
+        await add(`<span class="terminal-bright">1 verified</span>`, {
+          pause: 120,
+        });
+        const success = addLine(
+          `<div class="terminal-success"><span class="terminal-success-mark">✓</span><span class="terminal-success-copy"><span class="terminal-bright">Verified cleanup</span><span class="terminal-dim">58 symbols · 3 batches · receipt 1</span></span></div>`,
+          "terminal-card",
+        );
+        reveal(success, 520);
+        addLine(
+          `<span class="terminal-dim">$ </span><span class="terminal-cursor"></span>`,
+          "terminal-prompt",
+        );
+        await wait(2600);
+
+        const fade = screen.animate(
+          [
+            { opacity: 1, filter: "blur(0px)" },
+            { opacity: 0, filter: "blur(4px)" },
+          ],
+          { duration: 340, easing: "ease-in", fill: "both" },
+        );
+        await fade.finished;
+        screen.style.opacity = "0";
+        fade.cancel();
+        await wait(180);
+        screen.style.opacity = "";
+      };
+
+      const loop = async () => {
+        try {
+          while (true) {
+            await play();
+          }
+        } catch {
+          await renderStatic();
+        }
+      };
+
+      let started = false;
+      const start = () => {
+        if (started) return;
+        started = true;
+        if (reduceMotion) {
+          void renderStatic();
+        } else {
+          void loop();
+        }
+      };
+
+      if (reduceMotion) {
+        start();
+      } else if (typeof IntersectionObserver !== "undefined") {
+        const observer = new IntersectionObserver(
+          (entries) => {
+            if (entries.some((entry) => entry.isIntersecting)) {
+              observer.disconnect();
+              window.setTimeout(start, 650);
+            }
+          },
+          { threshold: 0.2 },
+        );
+        observer.observe(shell);
+      } else {
+        window.setTimeout(start, 650);
+      }
+    }
+  }
+</script>

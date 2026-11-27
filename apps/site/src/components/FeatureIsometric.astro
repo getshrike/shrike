@@ -1,0 +1,22 @@
+---
+import deltaArt from "/src/assets/illustrations/shrike/orphan-delta.svg?raw";
+import batchesArt from "/src/assets/illustrations/shrike/verified-batches.svg?raw";
+import speedArt from "/src/assets/illustrations/shrike/deterministic-engine.svg?raw";
+
+interface Props {
+  name: "delta" | "batches" | "speed";
+}
+
+const { name } = Astro.props;
+
+/* Original SVG line art, inline so the page can reveal each figure on scroll. */
+const art = {
+  delta: deltaArt,
+  batches: batchesArt,
+  speed: speedArt,
+}[name];
+---
+
+<figure class="feature-figure" data-feature-figure aria-hidden="true">
+  <Fragment set:html={art} />
+</figure>

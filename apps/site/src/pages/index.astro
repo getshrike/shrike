@@ -1,0 +1,23 @@
+---
+import AnnouncementBar from "../components/AnnouncementBar.astro";
+import CtaSection from "../components/CtaSection.astro";
+import FeatureScroll from "../components/FeatureScroll.astro";
+import Hero from "../components/Hero.astro";
+import SiteFooter from "../components/SiteFooter.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout
+  title="Shrike: Find what a PR orphaned. Delete it with proof."
+  description="Shrike is an open-source CLI that finds what a PR orphaned, deletes it in verified batches, and leaves a receipt. It runs locally on your TypeScript repo."
+>
+  <AnnouncementBar />
+  <SiteHeader />
+  <main id="main">
+    <Hero />
+    <FeatureScroll />
+    <CtaSection />
+  </main>
+  <SiteFooter />
+</BaseLayout>

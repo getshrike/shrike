@@ -1,0 +1,330 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Overused Grotesk";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("/fonts/OverusedGrotesk-Variable.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "GeistMono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/GeistMono-Variable.woff2") format("woff2");
+}
+
+@theme {
+  --font-sans: "Overused Grotesk", "Inter", sans-serif;
+  --font-mono: "GeistMono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html {
+  background: #fcfcfc;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.navbar-logo {
+  image-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 1000;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid #252525;
+  background: #fcfcfc;
+  color: #252525;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transform: translateY(-200%);
+  transition: transform 150ms ease-out;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 2px solid #252525;
+  outline-offset: 2px;
+}
+
+/*
+ * Hero blur reveal, mirrored from the reference implementation:
+ * each word blurs and rises in sequence, then the supporting blocks follow.
+ */
+@keyframes hero-blur-in {
+  0% {
+    opacity: 0;
+    filter: blur(10px);
+    transform: translateY(20%);
+  }
+
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+@keyframes hero-blur-in-block {
+  0% {
+    opacity: 0;
+    visibility: hidden;
+    filter: blur(10px);
+    transform: translateY(20%);
+  }
+
+  to {
+    opacity: 1;
+    visibility: visible;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+.hero-blur-reveal-word {
+  display: inline-block;
+}
+
+.hero-blur-reveal .hero-blur-reveal-block,
+.hero-blur-reveal .hero-blur-reveal-word {
+  opacity: 0;
+  filter: blur(10px);
+  transform: translateY(20%);
+}
+
+.hero-blur-reveal .hero-blur-reveal-block {
+  visibility: hidden;
+}
+
+.hero-blur-reveal--active .hero-blur-reveal-word {
+  animation: hero-blur-in var(--hero-blur-duration, 0.62s)
+    cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(
+    var(--hero-blur-base-delay, 80ms) + var(--hero-blur-stagger, 50ms) *
+      var(--word-index, 0)
+  );
+}
+
+.hero-blur-reveal--active .hero-blur-reveal-block {
+  animation: hero-blur-in-block var(--hero-blur-block-duration, 0.7s)
+    cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: var(--block-delay, 0s);
+}
+
+@media (max-width: 768px) {
+  .hero-blur-reveal .hero-blur-reveal-block,
+  .hero-blur-reveal .hero-blur-reveal-word {
+    filter: blur(6px);
+  }
+
+  .hero-blur-reveal--active .hero-blur-reveal-word {
+    --hero-blur-duration: 0.52s;
+    --hero-blur-stagger: 35ms;
+  }
+}
+
+@media (scripting: none) {
+  .hero-blur-reveal .hero-blur-reveal-block,
+  .hero-blur-reveal .hero-blur-reveal-word {
+    opacity: 1;
+    visibility: visible;
+    filter: none;
+    transform: none;
+  }
+}
+
+/*
+ * Terminal preview. The chrome follows the react.doctor terminal; the
+ * backdrop is Polar's landing texture behind a dark, inset surface.
+ */
+.terminal-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background: #3a3a3a;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04);
+}
+
+.terminal-screen {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 18px 16px 34px;
+  color: #c9c7c1;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  touch-action: pan-y;
+}
+
+.terminal-line {
+  white-space: pre;
+}
+
+.terminal-dim {
+  color: #85837d;
+}
+
+.terminal-muted {
+  color: #aaa8a2;
+}
+
+.terminal-bright {
+  color: #f7f5ef;
+}
+
+.terminal-check {
+  color: #f7f5ef;
+}
+
+.terminal-minus {
+  color: #85837d;
+}
+
+.terminal-gap {
+  margin-top: 0.95em;
+}
+
+.terminal-spacer {
+  height: 0.8em;
+}
+
+.terminal-indent {
+  padding-left: 1.2em;
+}
+
+.terminal-diff {
+  border-left: 1px solid rgb(255 255 255 / 0.12);
+  padding-left: 1.2em;
+}
+
+.terminal-card {
+  margin-top: 0.95em;
+}
+
+.terminal-cursor {
+  display: inline-block;
+  width: 0.58em;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: -0.12em;
+  background: #f7f5ef;
+  animation: terminal-blink 1.05s steps(1, end) infinite;
+}
+
+.terminal-success {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.03);
+  white-space: normal;
+}
+
+.terminal-success-mark {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 9999px;
+  color: #f7f5ef;
+  font-size: 15px;
+}
+
+.terminal-prompt {
+  margin-top: 0.6em;
+}
+
+.terminal-success-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.35;
+}
+
+@keyframes terminal-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (min-width: 640px) {
+  .terminal-dot {
+    width: 14px;
+    height: 14px;
+  }
+
+  .terminal-screen {
+    padding: 22px 22px 38px;
+    font-size: 13px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .terminal-screen {
+    padding: 26px 28px 40px;
+    font-size: 17px;
+  }
+}
+
+@media (min-width: 1536px) {
+  .terminal-screen {
+    padding: 28px 30px 42px;
+    font-size: 24px;
+  }
+
+  .terminal-dot {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+@media (max-width: 639px) {
+  .terminal-line {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .terminal-wide-only {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-blur-reveal.hero-blur-reveal--active .hero-blur-reveal-block,
+  .hero-blur-reveal.hero-blur-reveal--active .hero-blur-reveal-word {
+    opacity: 1;
+    visibility: visible;
+    filter: none;
+    animation: none;
+    transform: none;
+  }
+
+  .terminal-cursor {
+    animation: none;
+    opacity: 1;
+  }
+}

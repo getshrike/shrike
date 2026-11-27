@@ -1,0 +1,282 @@
+---
+const links = [
+  {
+    label: "How It Works",
+    href: "https://github.com/getshrike/shrike#how-it-works",
+  },
+  {
+    label: "Docs",
+    href: "https://github.com/getshrike/shrike#documentation",
+  },
+  {
+    label: "Benchmarks",
+    href: "https://github.com/getshrike/shrike#performance",
+  },
+  {
+    label: "Changelog",
+    href: "https://github.com/getshrike/shrike/blob/main/CHANGELOG.md",
+  },
+];
+
+const github = "https://github.com/getshrike/shrike";
+const getStarted = "#install";
+---
+
+<header
+  class="site-header sticky top-0 z-[300] w-full border-b-[0.5px] backdrop-blur-[12px]"
+  data-site-header
+  data-header-theme="light"
+>
+  <nav
+    aria-label="Main navigation"
+    class="mx-auto flex h-14 w-full max-w-[1400px] items-center justify-between px-6 sm:px-8 lg:px-12"
+  >
+    <div class="flex shrink-0 items-center">
+      <a class="flex items-center" href="/" aria-label="Shrike home">
+        <img
+          src="/brand/shrike-logo.svg"
+          alt="Shrike"
+          width="94"
+          height="32"
+          class="navbar-logo h-8 w-auto origin-left"
+        />
+      </a>
+    </div>
+
+    <div
+      class="hidden h-full flex-1 items-center justify-end min-[1000px]:flex"
+    >
+      <div
+        class="flex h-full items-center gap-6 text-[14.5px] font-normal"
+      >
+        {
+          links.map((link) => (
+            <a class="site-header-link" href={link.href}>
+              {link.label}
+            </a>
+          ))
+        }
+      </div>
+    </div>
+
+    <div
+      class="ml-5 hidden shrink-0 items-center gap-3 min-[1000px]:flex"
+    >
+      <a
+        target="_blank"
+        rel="noreferrer"
+        class="site-header-github inline-flex h-[34px] w-[8.75rem] items-center justify-center gap-1 whitespace-nowrap border px-3 text-[14px] font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
+        href={github}
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          class="h-[15px] w-[15px] shrink-0"
+          aria-hidden="true"
+        >
+          <path
+            d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.72-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.84 1.18 3.1 0 4.41-2.69 5.38-5.25 5.67.41.35.78 1.05.78 2.12 0 1.53-.01 2.76-.01 3.14 0 .31.21.67.8.56A10.52 10.52 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"
+          ></path>
+        </svg>
+        <span class="leading-none">GitHub</span>
+      </a>
+      <a
+        class="site-header-start inline-flex h-[34px] w-[8.75rem] items-center justify-center gap-1 whitespace-nowrap border px-3 text-[14px] font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
+        href={getStarted}
+      >
+        <span class="leading-none">Install Shrike</span>
+      </a>
+    </div>
+
+    <details class="relative min-[1000px]:hidden">
+      <summary
+        class="flex cursor-pointer list-none p-1 [&::-webkit-details-marker]:hidden"
+        aria-label="Open mobile menu"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="h-5 w-5 sm:h-6 sm:w-6"
+          aria-hidden="true"
+        >
+          <path d="M4 12h16"></path>
+          <path d="M4 18h16"></path>
+          <path d="M4 6h16"></path>
+        </svg>
+      </summary>
+      <div
+        class="absolute right-0 top-full z-[400] mt-2 w-60 border border-neutral-200 bg-white p-2 shadow-[0_8px_24px_rgba(0,0,0,0.12)]"
+      >
+        <div class="flex flex-col">
+          {
+            links.map((link) => (
+              <a
+                class="px-3 py-2 text-sm text-[#333333] transition-colors hover:bg-neutral-100"
+                href={link.href}
+              >
+                {link.label}
+              </a>
+            ))
+          }
+        </div>
+        <div class="mt-2 flex flex-col gap-2 border-t border-neutral-200 p-1 pt-3">
+          <a
+            class="inline-flex h-[34px] items-center justify-center gap-1 border border-neutral-300 bg-white px-3 text-[14px] font-medium text-neutral-900"
+            href={github}
+            target="_blank"
+            rel="noreferrer"
+          >
+            GitHub
+          </a>
+          <a
+            class="inline-flex h-[34px] items-center justify-center border border-neutral-900 bg-neutral-900 px-3 text-[14px] font-medium text-white"
+            href={getStarted}
+          >
+            Install Shrike
+          </a>
+        </div>
+      </div>
+    </details>
+  </nav>
+</header>
+
+<script>
+  const header = document.querySelector<HTMLElement>("[data-site-header]");
+
+  if (header) {
+    const surfaces = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-header-surface]"),
+    );
+
+    const update = () => {
+      const probe = header.getBoundingClientRect().bottom;
+      let theme = "light";
+      for (const surface of surfaces) {
+        const rect = surface.getBoundingClientRect();
+        if (rect.top <= probe && rect.bottom > probe) {
+          theme =
+            surface.dataset.headerSurface === "dark" ? "dark" : "light";
+          break;
+        }
+      }
+      if (header.dataset.headerTheme !== theme) {
+        header.dataset.headerTheme = theme;
+      }
+    };
+
+    let ticking = false;
+    const requestUpdate = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(() => {
+        update();
+        ticking = false;
+      });
+    };
+
+    window.addEventListener("scroll", requestUpdate, { passive: true });
+    window.addEventListener("resize", requestUpdate);
+    update();
+  }
+</script>
+
+<style>
+  .site-header {
+    --header-bg: rgba(252, 252, 252, 0.8);
+    --header-border: #d0d0d0;
+    --header-fg: #333333;
+    --header-link: #333333;
+    --header-link-hover: #666666;
+    --header-github-bg: #ffffff;
+    --header-github-border: #d4d4d4;
+    --header-github-fg: #171717;
+    --header-github-hover-border: #a3a3a3;
+    --header-start-bg: #171717;
+    --header-start-border: #171717;
+    --header-start-fg: #ffffff;
+    --header-start-hover-bg: #262626;
+    background-color: var(--header-bg);
+    border-color: var(--header-border);
+    color: var(--header-fg);
+    transition:
+      background-color 300ms cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 300ms cubic-bezier(0.4, 0, 0.2, 1),
+      color 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .site-header[data-header-theme="dark"] {
+    --header-bg: rgba(9, 9, 9, 0.95);
+    --header-border: rgba(255, 255, 255, 0.15);
+    --header-fg: #f5f5f5;
+    --header-link: #f5f5f5;
+    --header-link-hover: #cccccc;
+    --header-github-bg: transparent;
+    --header-github-border: rgba(255, 255, 255, 0.3);
+    --header-github-fg: #ffffff;
+    --header-github-hover-border: rgba(255, 255, 255, 0.5);
+    --header-start-bg: #ffffff;
+    --header-start-border: #ffffff;
+    --header-start-fg: #171717;
+    --header-start-hover-bg: #e5e5e5;
+  }
+
+  .navbar-logo {
+    transition: filter 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .site-header[data-header-theme="dark"] .navbar-logo {
+    filter: invert(1);
+  }
+
+  .site-header-link {
+    color: var(--header-link);
+    transition: color 200ms ease-out;
+  }
+
+  .site-header-link:hover {
+    color: var(--header-link-hover);
+  }
+
+  .site-header-github {
+    background-color: var(--header-github-bg);
+    border-color: var(--header-github-border);
+    color: var(--header-github-fg);
+    transition:
+      background-color 300ms cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 300ms cubic-bezier(0.4, 0, 0.2, 1),
+      color 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .site-header-github:hover {
+    border-color: var(--header-github-hover-border);
+  }
+
+  .site-header-start {
+    background-color: var(--header-start-bg);
+    border-color: var(--header-start-border);
+    color: var(--header-start-fg);
+    transition:
+      background-color 300ms cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 300ms cubic-bezier(0.4, 0, 0.2, 1),
+      color 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .site-header-start:hover {
+    background-color: var(--header-start-hover-bg);
+  }
+
+  .site-header[data-header-theme="dark"] .site-header-github:focus-visible,
+  .site-header[data-header-theme="dark"] .site-header-start:focus-visible {
+    outline-color: #ffffff;
+  }
+</style>

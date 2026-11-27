@@ -1,0 +1,64 @@
+name: site-docs
+
+# Focused gate for the public landing site and consumer documentation.
+# Site-only and docs-only changes do not run the full engine/CLI matrix.
+on:
+  push:
+    branches: [main, implementation]
+    paths:
+      - "apps/site/**"
+      - "apps/docs/**"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/site-docs.yml"
+  pull_request:
+    paths:
+      - "apps/site/**"
+      - "apps/docs/**"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/site-docs.yml"
+
+permissions:
+  contents: read
+
+env:
+  # Pinned to the stable CLI version selected when the docs site was added.
+  # Do not float this: the docs gate must not change underneath the lockfile.
+  MINT_VERSION: 4.3.86
+
+jobs:
+  site:
+    name: site (typecheck, lint, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 12.18.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @shrike/site typecheck
+      - run: pnpm --filter @shrike/site lint
+      - run: pnpm --filter @shrike/site build
+
+  docs:
+    name: docs (validate, broken links)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: Install Mintlify CLI
+        run: npm install --global mint@${{ env.MINT_VERSION }}
+      - name: Validate docs
+        working-directory: apps/docs
+        # JSON mode keeps mint's spinner out of the non-TTY CI log.
+        run: mint validate --format json
+      - name: Check broken links
+        working-directory: apps/docs
+        run: mint broken-links

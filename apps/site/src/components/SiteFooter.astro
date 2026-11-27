@@ -1,0 +1,159 @@
+---
+// Geometry reverse-engineered from polar.sh with REA at a 1920px viewport:
+//   footer: max-width 1280px, border-top 1px #212121, padding 96px 0, margin-top 32px
+//   inner grid: 2 x 632px columns, 16px gap
+//   column: heading 16px/24px #858585, 12px to links, links 16px/24px #fff with 4px gaps
+// Shrike keeps one link layer (Features + Resources) and uses its own brand and font.
+// The 32px top margin is dropped so the dark footer stays flush with the CTA.
+
+const github = "https://github.com/getshrike/shrike";
+
+const features = [
+  { label: "Measure", href: "#measure" },
+  { label: "Find", href: "#find" },
+  { label: "Clean", href: "#clean" },
+  { label: "Prove", href: "#prove" },
+  { label: "Protect", href: "#protect" },
+  { label: "Orphan delta", href: `${github}#how-it-works` },
+  { label: "Verified batches", href: `${github}#what-verified-means` },
+  { label: "Receipts", href: `${github}#what-verified-means` },
+  { label: "Build evidence", href: `${github}#framework-coverage` },
+  { label: "MCP server", href: `${github}#integrations` },
+];
+
+const resources = [
+  { label: "Docs", href: `${github}#documentation` },
+  { label: "Quick start", href: `${github}#quick-start` },
+  { label: "Benchmarks", href: `${github}#performance` },
+  { label: "Changelog", href: `${github}/blob/main/CHANGELOG.md` },
+  { label: "GitHub", href: github },
+];
+---
+
+<footer
+  class="site-footer w-full border-t border-[#212121] bg-[#090909] font-sans text-white"
+  data-header-surface="dark"
+>
+  <div
+    class="mx-auto grid w-full max-w-[1280px] grid-cols-1 gap-12 px-6 py-24 sm:px-8 lg:grid-cols-[632px_632px] lg:gap-4 lg:px-0"
+  >
+    <div class="flex flex-col justify-between gap-12 lg:gap-0">
+      <a class="inline-flex w-fit" href="/" aria-label="Shrike home">
+        <img
+          src="/brand/shrike-logo.svg"
+          alt="Shrike"
+          width="880"
+          height="300"
+          class="site-footer-logo h-[34px] w-auto origin-left"
+        />
+      </a>
+
+      <div class="flex flex-col items-start gap-6">
+        <a
+          class="site-footer-cta"
+          href={`${github}#quick-start`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <span>Read the quick start</span>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            class="h-[14px] w-[14px] shrink-0"
+            aria-hidden="true"
+          >
+            <path
+              d="M6 6v2h8.59L5 17.59 6.41 19 16 9.41V18h2V6z"></path>
+          </svg>
+        </a>
+        <p class="site-footer-copy">© Shrike contributors. MIT licensed.</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-8 sm:grid-cols-2 sm:gap-4">
+      <div class="flex flex-col gap-3">
+        <h3 class="site-footer-heading">Features</h3>
+        <div class="flex flex-col gap-1">
+          {
+            features.map((feature) => (
+              <a class="site-footer-link" href={feature.href}>
+                {feature.label}
+              </a>
+            ))
+          }
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-3">
+        <h3 class="site-footer-heading">Resources</h3>
+        <div class="flex flex-col gap-1">
+          {
+            resources.map((resource) => (
+              <a class="site-footer-link" href={resource.href}>
+                {resource.label}
+              </a>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<style>
+  .site-footer-logo {
+    filter: invert(1);
+  }
+
+  .site-footer-heading,
+  .site-footer-link,
+  .site-footer-cta,
+  .site-footer-copy {
+    font-size: 16px;
+    line-height: 24px;
+    font-weight: 450;
+    letter-spacing: 0.24px;
+  }
+
+  .site-footer-heading {
+    color: #858585;
+  }
+
+  .site-footer-link {
+    color: #ffffff;
+    transition: color 200ms ease-out;
+  }
+
+  .site-footer-link:hover {
+    color: #a3a3a3;
+  }
+
+  .site-footer-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    width: fit-content;
+    padding-bottom: 2px;
+    border-bottom: 1px solid currentColor;
+    color: #ffffff;
+    transition: color 200ms ease-out;
+  }
+
+  .site-footer-cta:hover {
+    color: #a3a3a3;
+  }
+
+  .site-footer-copy {
+    color: #858585;
+  }
+
+  @media (max-width: 639px) {
+    .site-footer-link,
+    .site-footer-cta,
+    .site-footer-copy,
+    .site-footer-heading {
+      font-size: 15px;
+    }
+  }
+</style>

@@ -1,0 +1,127 @@
+---
+title: "Current-state cleanup"
+description: "Remove dead code that already existed before this branch with clean --all, through the same worktree, baseline, check, bisection, revert, and receipt pipeline."
+---
+
+`shrike clean --all` is current-state cleanup: it plans every removable file and symbol in the current tree, not just what this branch orphaned. It is explicit, mutating, and verified by the project's own checks.
+
+<Warning>
+  `clean --all` changes repository files and creates commits on a new branch. Preview it with `--dry-run` first, and review the plan before applying it. It never commits to the base branch.
+</Warning>
+
+## Before you start
+
+- A clean working tree. Worktree mode refuses a dirty tree; `--allow-dirty` with `--in-place` is the alternative.
+- At least one verification check: configured in `shrike.config.ts`, or discoverable from the repository's typecheck, lint, or test scripts by tier. With none, the command exits `4`.
+- A baseline is captured before any edit, so pre-existing failures are separated from new ones.
+- Agreement that **verified** means the configured checks passed after removal relative to that baseline. It does not prove the code is semantically unused in production or that external consumers cannot import it.
+
+Do not use `clean --all` as a routine formatting or lint step. It is cleanup of code the engine proves is orphaned in the current graph.
+
+## 1. Preview the plan
+
+```bash
+npx shrike clean --all --dry-run
+```
+
+Expected: the plan summary and one block per batch. A dry run writes no source changes and returns:
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | The plan has no batches. |
+| `1` | The plan has batches (findings). |
+
+Add `--json` to print the plan object instead of the human summary. The dry run is the read-only equivalent of `shrike plan` for current-state cleanup; it can still write engine snapshots to `.shrike/cache/`.
+
+Review the batch counts and the blocked items. A whole file appears as a file item; a symbol appears as `path#Name`. Protected items are not in the plan.
+
+## 2. Run the verified cleanup
+
+```bash
+npx shrike clean --all
+```
+
+What happens, in order:
+
+1. Shrike analyzes the current tree once and builds a current-state plan from the snapshot. It never reads a branch base; `--all` and `--base` cannot be combined.
+2. A branch worktree is created under `.shrike/worktrees/` from the current `HEAD`, and the baseline checks run there before any edit.
+3. Each batch is applied in the worktree — symbol spans and eligible whole files — and the checks run again.
+4. A regression triggers bisection. Shrike reverts the failing unit, retries the remainder, and commits only the edits that pass. Outcomes are recorded as `verified`, `flaky`, `rejected`, `interaction-failure`, `error`, or `revert-failed`.
+5. Passing batches are committed on a branch named `<branchPrefix>-<plan-id without the plan_ prefix>` (default prefix `shrike/cleanup`). The temporary worktree is removed after the run; the commits and receipts stay.
+6. Add `--pr` to push the branch and open a draft PR with `gh`.
+
+Expected human output includes `Verified <batch-id>: N symbols, N files.` for passing batches, then the removed count, the branch, and the receipt paths:
+
+```text
+Shrike: 61 symbols removed on shrike/cleanup-1a2b3c4d.
+Receipts: .shrike/receipts/rcpt_<id>.json (3 batches)
+Next:
+  npx shrike receipt rcpt_<id>
+  gh pr create --draft --head shrike/cleanup-1a2b3c4d
+```
+
+`--json` returns `{ plan, outcome, receipts, branch, worktree }`, plus `"scope": "current"`. Receipt and worktree paths are repository-relative and sorted. `receipts` is `[]` when nothing passed.
+
+## Options
+
+| Flag | Effect |
+| --- | --- |
+| `--dry-run` | Print the plan without applying it; exit `1` when it has batches. |
+| `--json` | Machine-readable output. |
+| `--in-place` | Apply in the current tree instead of a worktree. Requires `--allow-dirty` when the tree is dirty. |
+| `--allow-dirty` | Permit a dirty tree for in-place verification. Worktree mode still refuses a dirty tree. |
+| `--pr` | Push the cleanup branch and open a draft PR with `gh`. |
+| `--tier fast\|standard\|full` | Select the discovered check set. `fast` is typecheck plus lint, `standard` adds test, `full` adds build. |
+| `--build <path>` | Join a Next.js build-evidence export. Evidence can add liveness facts; it never authorizes a deletion. |
+| `--require-build-evidence` | Fail closed when the requested build evidence is missing or unusable. |
+
+`--no-checks` is rejected: a verified deletion requires at least one project check. `--all` cannot be combined with `--base`; current-state cleanup has no branch base.
+
+## Whole files
+
+A file is removed only when every one of these holds: the engine reports no witness for the module, the file is eligible (not generated, not public API, parsed successfully), and the file is not live. Whole-file deletion uses the same checks, bisection, revert, and receipt path as symbol deletion. It never follows a path outside the repository.
+
+## 3. Inspect the result
+
+```bash
+npx shrike receipt
+git log --oneline --decorate -5
+git diff --stat HEAD~1
+```
+
+- Receipts are content-addressed JSON under `.shrike/receipts/`. Each records the graph hashes, plan and batch IDs, removed symbols and files, per-check status and baseline comparison, outcome, rejected items, policy, content hash, and a recovery reference when applicable.
+- The branch is local until you push it. `clean --all` never rewrites or commits to `main`.
+- Re-run the project's checks yourself before opening the PR. The receipt records what Shrike ran, not a guarantee that the tests are adequate.
+
+## Failure and recovery
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Every batch verified, or there were no deletions. |
+| `1` | `--dry-run` found batches. |
+| `2` | Usage or configuration error, for example `--all` with `--base`, or a dirty tree. |
+| `3` | At least one batch was rejected; changes were reverted. |
+| `4` | Could not run — no checks, an inconclusive bisection, or another fail-closed condition. |
+| `5` | Revert failed; manual recovery is required. |
+
+If the command exits `5`, stop and run the printed restore command:
+
+```bash
+npx shrike recover .shrike/recovery/rec_<id>.json
+```
+
+Do not hand-edit the worktree. `recover` restores only the files listed in the snapshot and rejects absolute or traversal paths. See [Troubleshooting](/troubleshooting) for the other failure modes.
+
+## Limits and safety
+
+- Protected items — entries, public API, generated files, unparsed files, unknown or probable edges, test entries, workspace boundaries, blast-radius caps, and policy protections — are reported and not deleted.
+- Dependencies are advisory. `clean --all` never edits `package.json` to remove a dependency.
+- A build graph can add liveness evidence but can never authorize a deletion.
+- The command cannot prove that code is unused in production; it proves that the configured checks still pass after removal relative to the baseline.
+- The default worktree is temporary. If you want to inspect changes before they are committed elsewhere, use `--dry-run` and review the plan, or run the cleanup on a dedicated branch.
+
+## Next
+
+- [Verified pruning](/guides/verified-pruning) — how batches, bisection, receipts, and recovery work.
+- [Branch cleanup](/guides/branch-cleanup) — remove only what this branch orphaned.
+- [Configuration](/reference/configuration) — checks, tiers, batch policy, and build evidence.

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" fill="none" role="img" aria-label="Isometric reachability graph with one disconnected orphan node">
+  <title>Pull request orphan delta</title>
+  <g stroke-linejoin="round" stroke-linecap="round">
+    <path d="m200 78 151 86v12l-151 88L49 176v-12l151-86Z" fill="#090a0b" stroke="#23252a"/>
+    <path d="m49 164 151 87v12L49 176v-12Z" fill="#0b0c0e" stroke="#24262b"/>
+    <path d="m351 164-151 87v12l151-87v-12Z" fill="#08090a" stroke="#24262b"/>
+    <path d="m200 87 139 79-139 80-139-80 139-79Z" fill="#0d0e10" stroke="#303237"/>
+    <path d="m200 101 114 65-114 65-114-65 114-65Z" stroke="#202226" stroke-dasharray="2 7"/>
+    <path d="m145 138 50 29 50-29" stroke="#303237" stroke-width="1.2"/>
+    <path d="m195 167 54 31" stroke="#303237" stroke-width="1.2" stroke-dasharray="3 5"/>
+    <path d="m242 196 9 5" stroke="#45484e" stroke-width="1.4"/>
+    <circle cx="255" cy="204" r="2.1" fill="#3b3e44" stroke="none"/>
+    <g transform="translate(145 124)">
+      <path d="m0 0 24 14v30L0 58l-24-14V14L0 0Z" fill="#0b0c0e" stroke="#34373d"/>
+      <path d="m0 0 24 14L0 28l-24-14L0 0Z" fill="#111215" stroke="#3a3d43"/>
+      <path d="M0 28v30m0-30 24-14m-24 14-24-14" stroke="#292b30"/>
+      <path d="m-8 13 8 5 8-5M-8 18l8 5 8-5" stroke="#303338" stroke-width=".9"/>
+    </g>
+    <g transform="translate(195 153)">
+      <path d="m0 0 24 14v30L0 58l-24-14V14L0 0Z" fill="#0b0c0e" stroke="#34373d"/>
+      <path d="m0 0 24 14L0 28l-24-14L0 0Z" fill="#111215" stroke="#3a3d43"/>
+      <path d="M0 28v30m0-30 24-14m-24 14-24-14" stroke="#292b30"/>
+      <path d="m-8 13 8 5 8-5M-8 18l8 5 8-5" stroke="#303338" stroke-width=".9"/>
+    </g>
+    <g transform="translate(245 124)">
+      <path d="m0 0 24 14v30L0 58l-24-14V14L0 0Z" fill="#0b0c0e" stroke="#34373d"/>
+      <path d="m0 0 24 14L0 28l-24-14L0 0Z" fill="#111215" stroke="#3a3d43"/>
+      <path d="M0 28v30m0-30 24-14m-24 14-24-14" stroke="#292b30"/>
+      <path d="m-8 13 8 5 8-5M-8 18l8 5 8-5" stroke="#303338" stroke-width=".9"/>
+    </g>
+    <g transform="translate(278 190)">
+      <path d="m0 0 18 10v22L0 43l-18-11V10L0 0Z" fill="#0b0c0e" stroke="#45484e" stroke-dasharray="3 3"/>
+      <path d="m0 0 18 10L0 21l-18-11L0 0Z" fill="#111215" stroke="#45484e" stroke-dasharray="3 3"/>
+      <path d="M0 21v22m0-22 18-11m-18 11-18-11" stroke="#34373d" stroke-dasharray="3 3"/>
+      <path d="m-5 10 5 3 5-3" stroke="#45484e" stroke-width=".9"/>
+    </g>
+    <path d="m67 167 5 3m251-3 5-3M200 235v5" stroke="#292b30"/>
+  </g>
+</svg>

@@ -1,0 +1,83 @@
+---
+title: "Commands"
+description: "Every public Shrike command, its syntax, what it changes, and whether it supports JSON output."
+---
+
+Run `shrike --help` for the built-in summary. All commands accept `--help`. Read-only commands accept `--json`; `mcp serve` uses JSON-RPC over stdio instead.
+
+The `getshrike` binary is equivalent to `shrike`. The examples use `shrike` after a local install; `npx getshrike ...` works the same way.
+
+## Command reference
+
+| Command | Syntax | Purpose | Mutates | `--json` |
+| --- | --- | --- | --- | --- |
+| `init` | `shrike init [--force]` | Create `shrike.config.ts` and ignore `.shrike/` | Config and `.gitignore` | Yes |
+| `report` | `shrike report [--base <ref>] [--verbose] [--quiet] [--width <n>] [--no-tui] [--allow-dirty]` | Dead-weight report (always plain; run `shrike` with no command for the TUI) | Cache only; branch scope also uses a temporary worktree | Yes |
+| `scan` | `shrike scan` | Current-state dead-code evidence and candidates | Cache only | Yes |
+| `deps` | `shrike deps` | Unused and unlisted dependency evidence | Cache only | Yes |
+| `delta` | `shrike delta --base <ref> [--fail-on newly-dead\|never]` | Whole-graph PR orphan delta | Cache only | Yes |
+| `plan` | `shrike plan --base <ref>` | Deletion batches, impact, blast radius; stores the plan | Cache and `.shrike/` plan artifacts | Yes |
+| `clean` | `shrike clean [--base <ref>] [--dry-run] [--json] [--in-place] [--allow-dirty] [--pr] [--tier <tier>] [--build <path>] [--require-build-evidence]` | Apply, verify, and commit branch-orphaned batches; same workflow as `prune` | Worktree, branch commits, receipts, recovery snapshots | Yes |
+| `clean --all` | `shrike clean --all [--dry-run] [--json] [--in-place] [--allow-dirty] [--pr] [--tier <tier>] [--build <path>] [--require-build-evidence]` | Current-state cleanup through the same verified pipeline; incompatible with `--base` | Worktree, branch commits, receipts, recovery snapshots | Yes |
+| `prune` | `shrike prune --base <ref> [same options as clean]` | Original name for the branch cleanup workflow | Worktree, branch commits, receipts, recovery snapshots | Yes |
+| `why` | `shrike why <path#Name> [--json]` | Human proof for one symbol; `--json` is exactly the engine proof object | Cache only | Yes |
+| `verify` | `shrike verify --plan <id> [--in-place] [--allow-dirty] [--tier <tier>] [--quiet]` | Re-run verification for a saved plan, or show a receipt by ID | Worktree and receipts (in-place restores the tree) | Yes |
+| `receipt` | `shrike receipt [id]` | List receipts or show one | No | Yes |
+| `recover` | `shrike recover <snapshot>` | Restore files from a recovery snapshot | Files | Yes |
+| `proof` | `shrike proof <symbol>` | Witness path or proof trace for `path#Name` | Cache only | Yes |
+| `evidence` | `shrike evidence [--build <path>] [--require-build-evidence] [--run-build] [--build-command <cmd>] [--no-client-boundary-leaks]` | Join a Next.js build-evidence export | Cache only | Yes |
+| `install` | `shrike install [--target <target>]... [--dry-run] [--force] [--no-skill] [--no-hook] [--no-scripts] [--scripts] [--claude] [--cursor] [--opencode]` | Write the portable agent skill directory (`SKILL.md` plus four references) and optional adapters or hooks | Agent config files and optional `package.json` scripts | Yes |
+| `ci install` | `shrike ci install [--gate] [--dry-run] [--force] [--path <workflow-path>] [--base <ref>] [--max-items <n>]` | Write the GitHub Actions workflow | `.github/workflows/` | Yes |
+| `hook install` | `shrike hook install --claude\|--cursor\|--opencode` | Install a client hook directly | Client config file | Yes |
+| `hook uninstall` | `shrike hook uninstall --claude\|--cursor\|--opencode` | Remove only Shrike-managed client hook entries | Client config file | Yes |
+| `hook run` | `shrike hook run [--quiet]` | Compute delta and write a bounded cleanup brief | `.shrike/brief.json` and cache | Yes |
+| `mcp serve` | `shrike mcp serve` | Read-only MCP server over stdio | No | No — JSON-RPC |
+| `cache clean` | `shrike cache clean` | Delete the configured cache directory | Cache (deletes it) | Yes |
+| `cache verify` | `shrike cache verify` | Check cached snapshots for the expected schema version | No | Yes |
+| `version` | `shrike version` | Host version, protocol version, and engine name | No | Yes |
+
+`delta`, `plan`, `clean`, and `prune` accept `--base <ref>`. If omitted, Shrike tries `origin/main`, `main`, `origin/master`, then `master`. `clean --all` is the exception: it has no branch base and rejects `--base`.
+
+## Aliases and related commands
+
+| Alias | Equivalent | Notes |
+| --- | --- | --- |
+| `getshrike` | `shrike` | Both bins are installed by the npm package. |
+| `clean` | `prune` | Same branch cleanup workflow; `clean` is the public name. `clean --all` is different. |
+| `why <path#Name>` | — | Human-readable proof. `why --json` is the raw engine proof object; `proof` exposes the same object directly, while `why` adds symbol metadata in text form. |
+
+`scan`, `delta`, `plan`, and `report` are read-only with respect to project source. They may write snapshots to `.shrike/cache/`; `plan` also stores the plan for later commands. Branch-scope commands (`report --base`, `delta`, `plan`, and dry-run cleanup) create and remove a temporary worktree under `.shrike/worktrees/`.
+
+## Cleanup scope
+
+| Command | Scope | Base required |
+| --- | --- | --- |
+| `clean` / `prune` | Code this branch orphaned, from the graph delta. | Yes, or resolved from the default branch. |
+| `clean --all` | Every removable file and symbol in the current tree. | No; `--base` is rejected. |
+
+Both paths use the same worktree, baseline, checks, bisection, revert, receipt, and optional `--pr` machinery. Neither commits to the base branch.
+
+## Exit codes
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Clean — no findings, or the operation completed. |
+| `1` | Findings — something was reported, or a dry run found batches. |
+| `2` | Usage or configuration error. |
+| `3` | Verification failed; changes were reverted. |
+| `4` | Could not run; Shrike failed closed. |
+| `5` | Revert failed; manual recovery is required. |
+
+The per-command nuances — including why `report` returns `1` for findings but `why` returns `0` for a dead symbol — are in [Exit codes](/reference/exit-codes).
+
+## Where to go deeper
+
+- [Cleanup report](/guides/cleanup-report) — read the report and the metric.
+- [Current-state cleanup](/guides/current-state-cleanup) — `clean --all`.
+- [Branch cleanup](/guides/branch-cleanup) — `clean --base` and draft PRs.
+- [Verified pruning](/guides/verified-pruning) — batches, checks, receipts, and `recover`.
+- [Report format](/reference/report-format) — the JSON contract.
+- [Agent integrations](/guides/agent-integrations) — `install`, hooks, and `mcp serve`.
+- [GitHub Action](/guides/github-action) — `ci install` and CI modes.
+- [Configuration](/reference/configuration) — config fields and defaults.
+- [Troubleshooting](/troubleshooting) — common failure messages and fixes.
