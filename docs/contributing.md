@@ -13,7 +13,7 @@
 ## Before opening a PR
 
 ```bash
-pnpm run typecheck && pnpm run lint && pnpm test
+pnpm -r typecheck && pnpm run lint && pnpm test
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 node scripts/check.mjs

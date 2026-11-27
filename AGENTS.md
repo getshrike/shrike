@@ -12,7 +12,8 @@ for the task you are doing before you edit code.
 - Analysis output is deterministic. Same input must produce byte-identical JSON;
   no timestamps, unordered sets, or host-specific paths in artifacts.
 - Never commit directly to `main`. Work one concern per branch and use
-  Conventional Commit titles (`feat:`, `fix:`, `docs:`, `test:`, `chore:`, ...).
+  Conventional Commit titles (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`,
+  `perf:`, `build:`, `ci:`, `chore:`, ...).
 - Never hand-edit generated output: `packages/action/dist/main.cjs`,
   `packages/*/dist/`, platform `bin/`, or `Cargo.lock` unless a dependency changed.
 - A behavior change needs a test or fixture and a recorded gate run. Report
@@ -24,7 +25,7 @@ for the task you are doing before you edit code.
 pnpm install
 cargo build --release -p shrike-engine   # host commands need the native engine
 
-pnpm run typecheck && pnpm run lint && pnpm test
+pnpm -r typecheck && pnpm run lint && pnpm test
 cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings
 node scripts/check.mjs                   # schemas, fixtures, corpus, e2e gates
 node scripts/check-docs.mjs && node scripts/check-links.mjs

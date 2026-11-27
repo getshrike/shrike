@@ -22,8 +22,9 @@ That updates all package manifests, `packages/cli/src/version.ts`, and
 3. The `release` job builds all five native targets, packs the CLI and platform
    tarballs, attaches SHA-256 sidecars, attestations, and keyless signing, and
    drafts the GitHub release.
-4. Publishing to npm is a separate, explicit `workflow_dispatch` with
-   `publish: true`, so an attested artifact can be inspected before publish.
+4. A `v*` tag push publishes to npm automatically after the release job. For
+   `workflow_dispatch`, npm publishing requires `publish: true`; without it only
+   the attested GitHub release is drafted.
 
 `pnpm run release:notes` drafts notes from the changelog; `pnpm run check:package`
 and `node scripts/test-install.mjs` are the local tarball and clean-machine

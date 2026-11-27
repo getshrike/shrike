@@ -4,6 +4,67 @@ All notable changes to Shrike are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `shrike report`: a deterministic dead-weight report for the current tree or
+  a branch delta, with a schema-valid `--json` form and a plain renderer for
+  CI, pipes, and agent sessions.
+- An interactive, read-only report view loaded lazily from `dist/tui.js`; it
+  never loads for JSON, CI, non-TTY, agent sessions, or terminals smaller than
+  40 columns by 10 rows, and the plain report is the fallback.
+- `shrike clean` as the public name for the verified branch cleanup workflow,
+  with `prune` kept as an alias, and `shrike why` as the human proof view over
+  the existing `proof` data.
+- `shrike clean --all`: explicit current-state cleanup through the same
+  worktree, baseline, checks, bisection, revert, and receipt pipeline, with
+  whole-file removal and a dry-run plan.
+- `shrike install`: a portable agent skill directory with `SKILL.md` and four
+  references, target adapters, managed blocks, optional hooks, and opt-in
+  package scripts, with dry-run, idempotency, path safety, all-or-nothing
+  conflict handling, and `--json` output.
+- `shrike ci install`: an advisory-by-default GitHub Actions workflow with
+  `contents: read`; `--gate` makes newly dead code blocking and adds
+  `pull-requests: write`.
+- `schemas/cleanup-report.schema.json`, report fixtures, and the report, TUI,
+  current-state, install, and CI-install test suites.
+- Docs for the report, report format, current-state cleanup, branch cleanup,
+  exit codes, agent installation, and CI installation.
+
+### Changed
+
+- The README, root docs, CLI help, package description, and Mintlify pages now
+  lead with the agent-first cleanup story and the dead-weight metric.
+
+### Fixed
+
+- Deletion planning keeps a file's selected declarations and their same-file
+  users together, attaches every dead re-export specifier to its declaration,
+  and no longer counts the same file twice against the batch file cap. A live
+  barrel cannot point at a symbol removed in an earlier batch, and a type
+  cannot outlive its same-file users. These are the Requo `batch_14` and
+  `MessageComplexity` failures.
+- The cleanup applier no longer removes the declaration that follows a
+  removable symbol when the engine's exclusive byte span reaches past the
+  symbol's inclusive `endLine`. It uses the reported line span and translates
+  UTF-8 byte offsets before slicing source text, so non-ASCII files are edited
+  safely too.
+- A local `export { Name }` specifier is removed together with its declaration,
+  and deleting the only specifier of a re-export statement removes the whole
+  statement, so cleanup does not leave a dangling export or an empty
+  `export { }` that fails typecheck. An import specifier that names a deleted
+  symbol is removed from a file that is retained for its side effects, so the
+  retained module does not fail typecheck on a missing export.
+- The cleanup applier re-analyzes the restored tree before each batch. A file
+  that contributes symbols to more than one batch (a barrel, or a declaration
+  file linked by re-export edges) is edited with current spans instead of
+  plan-time offsets, which is what rejected Requo `batch_16` with
+  `invalid span for lib/ai/index.ts#QualityGateEvent`.
+- The lazy TUI bundle now provides a Node `require` shim, so Ink's dependencies
+  can load Node builtins at render time instead of falling back to the plain
+  report.
+
 ## [1.0.1] — 2026-11-23
 
 ### Fixed
@@ -28,7 +89,7 @@ gates and release steps are recorded in [`docs/release.md`](docs/release.md).
 - Content-addressed portable receipts with graph hashes, patches, check records,
   build evidence, policy, outcome, and rejected sets, plus Markdown PR rendering.
 - Rust engine and TypeScript host with a versioned JSON protocol; `scan`,
-  `delta`, `plan`, `proof`, `prune`, `apply`, `hook`, `mcp`, `cache`, `recover`,
+  `delta`, `plan`, `proof`, `prune`, `hook`, `mcp`, `cache`, `recover`,
   and `version` commands.
 - Next.js App Router and Pages Router depth: route entries, framework export
   surfaces, route-tree conflicts, segment configuration, server actions, RSC

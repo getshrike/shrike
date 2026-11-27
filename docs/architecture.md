@@ -8,12 +8,12 @@ schemas ──► crates (Rust engine) ──► engine binary
    └────────► packages (TypeScript host) ◄┘
                       │
                       ▼
-        fixtures / benchmarks / scripts / .github
+        fixtures / benchmarks / scripts / skills / .github
 ```
 
-- `schemas/` is the contract: six JSON Schema 2020-12 files for the protocol,
-  graph snapshot, delta, deletion plan, receipt, and config. Changing one is a
-  protocol change; update both runtimes in the same PR.
+- `schemas/` is the contract: seven JSON Schema 2020-12 files for the protocol,
+  graph snapshot, delta, deletion plan, receipt, config, and cleanup report.
+  Changing one is a protocol change; update both runtimes in the same PR.
 - Rust crates never depend on TypeScript packages. The host talks to the engine
   over newline-delimited JSON, never by linking it.
 - Fixtures and benchmarks are consumers of the engine/host, not libraries.
@@ -71,8 +71,13 @@ cache and protocol output. No crate spawns project processes or opens sockets.
 ESM, Node 22+, strict TypeScript. The published CLI is a bundle with no runtime
 `@shrike/*` dependencies: `scripts/build-cli.mjs` inlines `verifier`, `receipts`,
 `agent`, and `testkit` from workspace devDependencies; the Action bundle is
-built separately by `scripts/build-action.mjs`. Keep those packages free of
-undeclared cross-imports, and regenerate both bundles after changes.
+built separately by `scripts/build-action.mjs`. The same build copies the
+canonical public skill from `skills/` to `packages/cli/dist/skills/`; the
+installer loads that copy and fails closed when it is missing. The CLI also
+ships a lazily loaded `dist/tui.js` for the interactive report;
+`scripts/build-cli.mjs` produces it and `check-package.mjs` checks it. Keep
+those packages free of undeclared cross-imports, and regenerate the bundles
+after changes.
 
 ## Where to make a change
 

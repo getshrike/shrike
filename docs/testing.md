@@ -10,14 +10,21 @@
 | Fixture matrix | `node scripts/run-fixtures.mjs --engine` | Delta, verification, build, build-graph fixtures |
 | Fixture contract | `node scripts/verify-fixtures.mjs` | Fixture manifests and expected outputs |
 | End-to-end prune | `node scripts/e2e-prune.mjs` | Apply, verify, revert, receipt on real scenarios |
+| End-to-end clean --all | `node scripts/e2e-clean-all.mjs` | Dry-run, current-state deletion, receipt, protected/live code |
 | Corpus | `node scripts/check-corpus.mjs`, `node scripts/corpus-runner.mjs` | Must-not-report false-positive corpus |
 | Differential | `node scripts/differential.mjs` (add `--fixture fixtures/differential-glob`) | Agreement with competitor tools |
-| Everything local | `node scripts/check.mjs` | Schemas, receipts, package, corpus, fixtures, e2e |
+| Public skill | `node scripts/check-skills.mjs` | Frontmatter, links, command allowlist, budgets, LF, and source/dist parity |
+| Skill evals | `evals/skills/shrike/` | Manual trigger/safety matrix; the deterministic report/delta smoke test runs in `scripts/test-install.mjs` |
+| Everything local | `node scripts/check.mjs` | Schemas, receipts, package, corpus, fixtures, e2e, skills |
 
 CI (`.github/workflows/ci.yml`) adds `cargo fmt --check`, clippy with
-`-D warnings`, `cargo audit`, `pnpm audit --prod`, typecheck, locked installs,
-clean-machine package installs, and a byte-identical determinism check. Run the
-local equivalents before opening a PR.
+`-D warnings`, `cargo audit`, `cargo deny check`, `cargo check --workspace` on
+macOS and Windows, `pnpm audit --prod`, `pnpm -r typecheck`, locked installs,
+clean-machine package installs, the `node scripts/check.mjs` gate suite (run
+in the node job), the fixture contract gate
+(`node scripts/verify-fixtures.mjs`), schema/fixture/corpus/e2e-prune gates,
+and a byte-identical determinism check. Run the local equivalents before
+opening a PR.
 
 ## Adding regression coverage
 
@@ -32,11 +39,15 @@ Choose the smallest layer that pins the behavior:
   with its manifest and expected output, then run
   `node scripts/run-fixtures.mjs --engine`.
 - **Verification behavior:** add a scenario under `fixtures/verification/` and
-  run `node scripts/e2e-prune.mjs`.
+  run `node scripts/e2e-prune.mjs`; for current-state cleanup, also run
+  `node scripts/e2e-clean-all.mjs`.
 - **Competitor disagreement:** add to `fixtures/differential/` (or the glob
   variant) and run `node scripts/differential.mjs`.
 - **Pure function or protocol bug:** a Rust `#[test]` or a `*.test.mjs` beside
   the package source is enough.
+- **Public skill behavior:** edit `skills/shrike/`, then run
+  `node scripts/check-skills.mjs` and the install tests. A new shipped skill
+  needs a malformed-case in the validator self-test and an eval entry.
 
 Rules of thumb:
 
@@ -48,8 +59,9 @@ Rules of thumb:
    (also available as `pnpm run check:schemas`) and
    `node scripts/validate-instances.mjs`. The first checks that schema files and
    fixture JSON parse; the second validates real engine output, the default
-   config, and receipts against their schemas and includes a negative
-   self-test. Both run in `node scripts/check.mjs` and in the `fixtures` CI job.
+   config, receipts, and the cleanup-report fixtures under `fixtures/report/`
+   against the cleanup-report schema, and includes a negative self-test. Both
+   run in `node scripts/check.mjs` and in the `fixtures` CI job.
 
 ## Determinism
 
