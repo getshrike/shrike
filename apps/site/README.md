@@ -20,7 +20,8 @@ and so on.
 
 The site is a fully prerendered Astro app deployed as a Workers static assets
 Worker named `getshrike-site`. Production deploys run in Cloudflare Workers
-Builds from the GitHub repository on every push to `main`:
+Builds from the GitHub repository when a push to `main` changes the site or
+its build inputs:
 
 ```text
 build command:      pnpm install --frozen-lockfile && pnpm --filter @shrike/site build
@@ -28,6 +29,17 @@ deploy command:     pnpm --filter @shrike/site run deploy
 root directory:     /
 build output:       apps/site/dist
 ```
+
+Cloudflare Workers Builds watches these paths:
+
+- `apps/site/*`
+- `pnpm-lock.yaml`
+- `pnpm-workspace.yaml`
+- `package.json`
+
+Changes outside those paths, such as docs or other packages, do not trigger a
+site deploy. Cloudflare still builds on empty pushes and very large pushes
+(3,000+ files or 20+ commits).
 
 Cloudflare fetches the committed source, builds it, and publishes the output;
 there is no local upload in the normal path. `wrangler.jsonc` defines the
