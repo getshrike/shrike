@@ -18,23 +18,28 @@ and so on.
 
 ## Deployment
 
-The site is a fully prerendered Astro app, so it deploys as a
-[Workers static assets](https://developers.cloudflare.com/workers/static-assets/)
-Worker with the Cloudflare CLI (`cf`):
+The site is a fully prerendered Astro app. Production deploys are built from
+the GitHub repository by the `getshrike-site` Cloudflare Pages project, which
+watches `main` and runs:
 
-```bash
-# Select the account that owns the getshrike.dev zone when CLOUDFLARE_ACCOUNT_ID
-# is set to a different account in your environment.
-CLOUDFLARE_ACCOUNT_ID=<account-id> cf deploy ./dist
+```text
+build command:      pnpm install --frozen-lockfile && pnpm --filter @shrike/site build
+root directory:     /
+build output:       apps/site/dist
 ```
 
-`cloudflare.config.ts` names the Worker `getshrike-site` and attaches the
-`getshrike.dev` and `www.getshrike.dev` custom domains. Cloudflare creates the
-DNS records and TLS certificates for those hostnames, so any pre-existing
-A/AAAA/CNAME records for them must be removed first. `cf deploy ./dist` uploads
-the existing `dist/` output without rebuilding; run the build step above first.
-Build output and generated files live in ignored `dist/`, `.astro/`, and
-`.cloudflare/` directories.
+Cloudflare fetches the committed source, builds it, and publishes the output;
+there is no local upload in the normal path. The custom domains
+`getshrike.dev` and `www.getshrike.dev` are attached to the project, so their
+DNS records and TLS certificates are managed by Cloudflare and pre-existing
+A/AAAA/CNAME records for those hostnames must be removed first.
+
+`cloudflare.config.ts` retains the Worker name and domain declaration for
+local `cf` deploys. To deploy a local build explicitly, run the build step
+above and then `cf deploy ./dist` from this directory, selecting the account
+that owns the zone when `CLOUDFLARE_ACCOUNT_ID` points elsewhere. Build output
+and generated files live in ignored `dist/`, `.astro/`, and `.cloudflare/`
+directories.
 
 ## Structure
 
