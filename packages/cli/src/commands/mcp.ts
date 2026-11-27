@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -31,7 +32,8 @@ export function validateMcpArgument(name: string, value: string): void {
 
 export async function mcpCommand(root: string, args: ParsedArgs): Promise<number> {
   if (args.positionals[0] !== "serve") throw new UsageError("usage: shrike mcp serve");
-  const cli = join(import.meta.dirname, "..", "main.ts");
+  const bundled = join(import.meta.dirname, "main.js");
+  const cli = existsSync(bundled) ? bundled : join(import.meta.dirname, "..", "main.ts");
   const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
   for await (const line of rl) {
     if (!line.trim()) continue;
