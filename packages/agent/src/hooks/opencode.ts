@@ -16,7 +16,7 @@ export const ShrikeHook = async ({ $ } = {}) => {
       running = true
       try {
         if (typeof $ === "function") {
-          await $\`npx shrike hook run --quiet\`.quiet().nothrow()
+          await $\`npx getshrike hook run --quiet\`.quiet().nothrow()
         }
       } catch {
         // A hook must never block the agent.
