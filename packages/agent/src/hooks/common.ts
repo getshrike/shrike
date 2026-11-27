@@ -22,7 +22,7 @@ export class HookConfigError extends Error {
   }
 }
 
-export const HOOK_COMMAND = "npx shrike hook run --quiet";
+export const HOOK_COMMAND = "npx getshrike hook run --quiet";
 export const OPENCODE_PLUGIN_MARKER = "// shrike-hook v1";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
