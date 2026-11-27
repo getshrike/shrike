@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "skills": {
+    "seo-in-astro": {
+      "source": "dlcastillop/seo-in-astro",
+      "commit": "5e3cc08ab2c661a34ca62ab4da29f75dd9ef771a",
+      "sourceType": "github",
+      "skillPath": "skills/seo-in-astro/SKILL.md",
+      "computedHash": "2f395a7d80d22fdc67c88d9a87a0677512fff07129e6ade25f9e3bdc2fc792f1",
+      "installMode": "copy"
+    }
+  }
+}

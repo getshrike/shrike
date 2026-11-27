@@ -1,0 +1,4 @@
+{
+  "publicApi": ["src/public-api.ts"],
+  "generated": ["src/generated/**"]
+}
