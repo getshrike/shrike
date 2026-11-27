@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 export function git(root: string, args: string[], allowFailure = false): string {
@@ -73,6 +73,22 @@ function worktreeDirectory(root: string, label: string): string {
   return mkdtempSync(join(directory, `${label}-`));
 }
 
+/**
+ * Cleanup worktrees are named after the content-addressed plan, so their path
+ * is deterministic and safe to print in JSON. A leftover directory is a real
+ * local change; refuse to delete it silently.
+ */
+function branchWorktreeDirectory(root: string, label: string): string {
+  const directory = join(root, ".shrike", "worktrees");
+  mkdirSync(directory, { recursive: true });
+  git(root, ["worktree", "prune"], true);
+  const target = join(directory, label);
+  if (existsSync(target)) {
+    throw new Error(`worktree directory already exists: ${target}; remove it and retry`);
+  }
+  return target;
+}
+
 /** Create a detached worktree for a commit. */
 export function createWorktree(root: string, commit: string, label: string): Worktree {
   const directory = worktreeDirectory(root, label);
@@ -97,7 +113,7 @@ export function createWorktree(root: string, commit: string, label: string): Wor
 
 /** Create a new branch in a temporary worktree (default prune mode). */
 export function createBranchWorktree(root: string, branch: string, commit: string): Worktree {
-  const directory = worktreeDirectory(root, branch.replace(/[^a-zA-Z0-9]+/g, "-"));
+  const directory = branchWorktreeDirectory(root, branch.replace(/[^a-zA-Z0-9]+/g, "-"));
   const exists = git(root, ["rev-parse", "--verify", branch], true);
   try {
     if (exists) git(root, ["worktree", "add", directory, branch]);

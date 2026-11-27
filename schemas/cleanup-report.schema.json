@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shrike.dev/schemas/cleanup-report.schema.json",
+  "title": "Shrike cleanup report",
+  "description": "A deterministic projection of the current snapshot or the branch orphan delta. It never adds a deletion candidate; it only groups, counts, and explains engine facts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "mode",
+    "base",
+    "head",
+    "summary",
+    "groups",
+    "protected",
+    "dependencies",
+    "diagnostics"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["current", "branch"]
+    },
+    "base": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/base" }
+      ]
+    },
+    "head": {
+      "$ref": "#/$defs/head"
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "groups": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/group" }
+    },
+    "preexisting": {
+      "$ref": "#/$defs/preexisting"
+    },
+    "protected": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/protected" }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dependency" }
+    },
+    "diagnostics": {
+      "$ref": "#/$defs/diagnostics"
+    }
+  },
+  "$defs": {
+    "filePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^#]+$",
+      "description": "Repository-relative POSIX path."
+    },
+    "symbolKey": {
+      "type": "string",
+      "pattern": "^[^#]+#[^#]+$"
+    },
+    "base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "commit"],
+      "properties": {
+        "ref": { "type": ["string", "null"], "minLength": 1 },
+        "commit": { "type": "string", "minLength": 1 },
+        "graphHash": { "type": "string" }
+      }
+    },
+    "head": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "dirty"],
+      "properties": {
+        "commit": { "type": "string", "minLength": 1 },
+        "dirty": { "type": "boolean" },
+        "graphHash": { "type": "string" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "analyzedFiles",
+        "analyzedLines",
+        "removableFiles",
+        "removableSymbols",
+        "removableExports",
+        "removableLines",
+        "deadWeightBasisPoints",
+        "unusedDependencies",
+        "protectedItems",
+        "uncountedRemovableSymbols",
+        "diagnostics"
+      ],
+      "properties": {
+        "analyzedFiles": { "type": "integer", "minimum": 0 },
+        "analyzedLines": { "type": "integer", "minimum": 0 },
+        "removableFiles": { "type": "integer", "minimum": 0 },
+        "removableSymbols": { "type": "integer", "minimum": 0 },
+        "removableExports": { "type": "integer", "minimum": 0 },
+        "removableLines": { "type": "integer", "minimum": 0 },
+        "deadWeightBasisPoints": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "unusedDependencies": { "type": "integer", "minimum": 0 },
+        "protectedItems": { "type": "integer", "minimum": 0 },
+        "uncountedRemovableSymbols": { "type": "integer", "minimum": 0 },
+        "diagnostics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["total", "actionable", "informational"],
+          "properties": {
+            "total": { "type": "integer", "minimum": 0 },
+            "actionable": { "type": "integer", "minimum": 0 },
+            "informational": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "classification",
+        "path",
+        "lines",
+        "reason",
+        "confidence"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "type": "string",
+          "enum": ["symbol", "file", "dependency"]
+        },
+        "classification": {
+          "type": "string",
+          "enum": ["branch-orphan", "never-used", "advisory"]
+        },
+        "path": { "type": "string", "minLength": 1 },
+        "symbol": { "$ref": "#/$defs/symbolKey" },
+        "name": { "type": "string", "minLength": 1 },
+        "lines": { "type": "integer", "minimum": 0 },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "no-witness",
+            "whole-file",
+            "unused-dependency",
+            "unlisted-dependency",
+            "transitive-dependency"
+          ]
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["certain", "probable", "unknown"]
+        },
+        "trigger": {
+          "$ref": "#/$defs/trigger"
+        }
+      }
+    },
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "kind", "change", "certainty"],
+      "properties": {
+        "file": { "$ref": "#/$defs/filePath" },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "removed-import",
+            "removed-call",
+            "removed-jsx",
+            "removed-route",
+            "renamed-export",
+            "removed-re-export",
+            "changed-dynamic",
+            "indirect"
+          ]
+        },
+        "change": { "type": "string", "minLength": 1 },
+        "edge": { "type": "string" },
+        "certainty": {
+          "type": "string",
+          "enum": ["certain", "probable", "unknown"]
+        }
+      }
+    },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "directory",
+        "removableLines",
+        "removableSymbols",
+        "removableFiles",
+        "items"
+      ],
+      "properties": {
+        "directory": { "type": "string", "minLength": 1 },
+        "removableLines": { "type": "integer", "minimum": 0 },
+        "removableSymbols": { "type": "integer", "minimum": 0 },
+        "removableFiles": { "type": "integer", "minimum": 0 },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/item" }
+        }
+      }
+    },
+    "preexisting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbols", "files", "lines"],
+      "properties": {
+        "symbols": { "type": "integer", "minimum": 0 },
+        "files": { "type": "integer", "minimum": 0 },
+        "lines": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "protected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "reason"],
+      "properties": {
+        "path": { "$ref": "#/$defs/filePath" },
+        "symbol": { "$ref": "#/$defs/symbolKey" },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "entry-role",
+            "public-api",
+            "unknown-edge",
+            "probable-edge",
+            "unparsed-file",
+            "generated-file",
+            "test-entry",
+            "external-referrer",
+            "blast-radius",
+            "workspace-boundary",
+            "policy",
+            "oversized",
+            "other"
+          ]
+        },
+        "detail": { "type": "string" }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "directory", "name", "kind", "advisory"],
+      "properties": {
+        "package": { "type": "string", "minLength": 1 },
+        "directory": { "type": "string" },
+        "name": { "type": "string", "minLength": 1 },
+        "kind": {
+          "type": "string",
+          "enum": ["unused", "unlisted", "transitive"]
+        },
+        "advisory": { "type": "boolean", "const": true }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "actionable", "informational", "groups"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "actionable": { "type": "integer", "minimum": 0 },
+        "informational": { "type": "integer", "minimum": 0 },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["category", "code", "count", "actionable", "files"],
+            "properties": {
+              "category": { "type": "string", "minLength": 1 },
+              "code": { "type": "string", "minLength": 1 },
+              "count": { "type": "integer", "minimum": 1 },
+              "actionable": { "type": "boolean" },
+              "files": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

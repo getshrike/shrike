@@ -396,6 +396,7 @@ test("MCP advertises exactly four read-only tools and rejects unknown tools", ()
       { jsonrpc: "2.0", id: 2, method: "tools/list" },
       { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "shrike_delete", arguments: {} } },
       { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "shrike_delta", arguments: { base: "../main" } } },
+      { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "shrike_receipt", arguments: {} } },
     ].map((request) => JSON.stringify(request)).join("\n");
     const child = spawnSync(process.execPath, [cli, "mcp", "serve"], {
       cwd: directory,
@@ -405,7 +406,7 @@ test("MCP advertises exactly four read-only tools and rejects unknown tools", ()
     });
     assert.equal(child.status, 0, child.stderr);
     const responses = child.stdout.trim().split("\n").map((line) => JSON.parse(line));
-    assert.equal(responses.length, 4);
+    assert.equal(responses.length, 5);
 
     const initialized = responses.find((response) => response.id === 1);
     assert.equal(initialized.result.serverInfo.name, "shrike");
@@ -422,6 +423,10 @@ test("MCP advertises exactly four read-only tools and rejects unknown tools", ()
     const traversal = responses.find((response) => response.id === 4);
     assert.equal(traversal.error.code, -32602);
     assert.match(traversal.error.message, /invalid base ref/);
+
+    const receipt = responses.find((response) => response.id === 5);
+    assert.equal(receipt.result.isError, false, JSON.stringify(receipt));
+    assert.match(receipt.result.content[0].text, /receipts/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -442,7 +447,8 @@ test("hook install is idempotent, preserves foreign hooks, and uninstalls only S
     assert.equal(installed.keep, true);
     assert.equal(installed.hooks.Stop.length, 2);
     assert.ok(installed.hooks.Stop.some((entry) => entry.hooks?.[0]?.command === "echo foreign"));
-    assert.ok(installed.hooks.Stop.some((entry) => entry.hooks?.[0]?.command?.includes("shrike hook run")));
+    assert.ok(installed.hooks.Stop.some((entry) => entry.hooks?.[0]?.command === "npx getshrike hook run --quiet"));
+    assert.doesNotMatch(JSON.stringify(installed), /npx shrike/);
 
     const second = run(directory, ["hook", "install", "--claude", "--json"]);
     assert.equal(second.status, 0, second.stderr);
@@ -466,8 +472,9 @@ test("cursor and opencode hook installs are reversible", () => {
     assert.equal(cursorInstall.status, 0, cursorInstall.stderr);
     const cursor = JSON.parse(readFileSync(join(directory, ".cursor", "hooks.json"), "utf8"));
     assert.equal(cursor.version, 1);
-    assert.ok(cursor.hooks.afterFileEdit[0].command.includes("shrike hook run"));
-    assert.ok(cursor.hooks.stop[0].command.includes("shrike hook run"));
+    assert.equal(cursor.hooks.afterFileEdit[0].command, "npx getshrike hook run --quiet");
+    assert.equal(cursor.hooks.stop[0].command, "npx getshrike hook run --quiet");
+    assert.doesNotMatch(JSON.stringify(cursor), /npx shrike/);
 
     const cursorRemove = run(directory, ["hook", "uninstall", "--cursor", "--json"]);
     assert.equal(cursorRemove.status, 0, cursorRemove.stderr);
@@ -478,7 +485,10 @@ test("cursor and opencode hook installs are reversible", () => {
     const opencodeInstall = run(directory, ["hook", "install", "--opencode", "--json"]);
     assert.equal(opencodeInstall.status, 0, opencodeInstall.stderr);
     const pluginPath = join(directory, ".opencode", "plugins", "shrike-hook.js");
-    assert.match(readFileSync(pluginPath, "utf8"), /shrike-hook v1/);
+    const plugin = readFileSync(pluginPath, "utf8");
+    assert.match(plugin, /shrike-hook v1/);
+    assert.match(plugin, /npx getshrike hook run --quiet/);
+    assert.doesNotMatch(plugin, /npx shrike/);
     const opencode = JSON.parse(readFileSync(join(directory, "opencode.json"), "utf8"));
     assert.deepEqual(opencode.plugin, ["./.opencode/plugins/shrike-hook.js"]);
 
@@ -801,6 +811,62 @@ test("verify --plan fails closed for missing, corrupt, and stale plans", { skip:
     const stale = run(directory, ["verify", "--plan", plan.id, "--json"]);
     assert.equal(stale.status, 4, stale.stderr);
     assert.match(`${stale.stderr}${stale.stdout}`, /targets .* but HEAD is/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("clean --help prints the cleanup help instead of the global help", () => {
+  const directory = makeRepo("clean-help");
+  try {
+    const result = run(directory, ["clean", "--help"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /shrike clean — verified dead-code cleanup/);
+    assert.match(result.stdout, /shrike clean --all/);
+    assert.doesNotMatch(result.stdout, /Usage: shrike <command> \[options\]/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("clean --all rejects a branch base", () => {
+  const directory = makeRepo("clean-all-base");
+  try {
+    const result = run(directory, ["clean", "--all", "--base", "main", "--json"]);
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(`${result.stderr}${result.stdout}`, /--all and --base cannot be used together/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("clean and prune produce the same dry-run plan", { skip: !hasEngine }, () => {
+  const directory = makeOrphanRepo("clean-alias");
+  try {
+    const prune = run(directory, ["prune", "--base", "main", "--dry-run", "--json"]);
+    const clean = run(directory, ["clean", "--base", "main", "--dry-run", "--json"]);
+    assert.equal(clean.status, prune.status, clean.stderr);
+    assert.equal(clean.status, 1, clean.stderr);
+    assert.deepEqual(JSON.parse(clean.stdout), JSON.parse(prune.stdout));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("why emits proof JSON and explains the symbol in text", { skip: !hasEngine }, () => {
+  const directory = makeOrphanRepo("why");
+  try {
+    const proof = run(directory, ["proof", "lib/orphan.ts#orphan", "--json"]);
+    const why = run(directory, ["why", "lib/orphan.ts#orphan", "--json"]);
+    assert.equal(proof.status, 0, proof.stderr);
+    assert.equal(why.status, 0, why.stderr);
+    assert.deepEqual(JSON.parse(why.stdout), JSON.parse(proof.stdout));
+
+    const human = run(directory, ["why", "lib/orphan.ts#orphan"]);
+    assert.equal(human.status, 0, human.stderr);
+    assert.match(human.stdout, /lib\/orphan\.ts#orphan/);
+    assert.match(human.stdout, /dead at HEAD/);
+    assert.match(human.stdout, /Next: npx getshrike clean --all/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

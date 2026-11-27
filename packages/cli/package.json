@@ -2,7 +2,7 @@
   "name": "getshrike",
   "version": "1.0.1",
   "type": "module",
-  "description": "Verified dead-code cleanup: whole-graph orphan delta, verified deletion batches, and portable receipts.",
+  "description": "The cleanup layer for AI-built TypeScript apps: dead-weight report, verified deletion batches, and portable receipts.",
   "license": "MIT",
   "bin": {
     "shrike": "./bin/shrike.mjs",
@@ -56,10 +56,10 @@
     "build": "node ../../scripts/build-cli.mjs"
   },
   "optionalDependencies": {
-    "getshrike-linux-x64": "workspace:*",
-    "getshrike-linux-arm64": "workspace:*",
-    "getshrike-darwin-x64": "workspace:*",
     "getshrike-darwin-arm64": "workspace:*",
+    "getshrike-darwin-x64": "workspace:*",
+    "getshrike-linux-arm64": "workspace:*",
+    "getshrike-linux-x64": "workspace:*",
     "getshrike-windows-x64": "workspace:*"
   },
   "devDependencies": {
@@ -69,6 +69,10 @@
     "@shrike/testkit": "workspace:*",
     "@shrike/verifier": "workspace:*",
     "@types/node": "^24.0.0",
+    "@types/react": "19.2.2",
+    "ink": "7.1.1",
+    "ink-testing-library": "^4.0.0",
+    "react": "19.2.9",
     "typescript": "^5.9.3"
   }
 }

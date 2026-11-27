@@ -1,9 +1,9 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { booleanFlag, rejectUnknownFlags, stringFlag, type ParsedArgs } from "../args.ts";
-import { loadConfig, engineConfig, type ShrikeConfig } from "../config.ts";
+import { loadConfig, engineConfig, type ShrikeConfig, type VerificationTier } from "../config.ts";
 import { requestEngine } from "../engine.ts";
 import { CliError, ExitCode, RevertFailedError, UsageError } from "../errors.ts";
 import { formatCount, writeHuman, writeJson, writeStderr } from "../output.ts";
@@ -17,7 +17,7 @@ import {
   readReceipt, renderPrBody, renderReceiptComment, writeReceipt,
   type ReceiptRejection,
 } from "@shrike/receipts";
-import { analyzePair, toReceiptBuild, type AnalysisPair } from "../session.ts";
+import { analyze, analyzePair, toReceiptBuild, type AnalysisPair } from "../session.ts";
 import { storePlan } from "../plan-store.ts";
 import { loadOrCaptureBaseline } from "../baseline.ts";
 import {
@@ -26,27 +26,79 @@ import {
 } from "../receipts.ts";
 import { applySymbols, writePatch } from "../apply.ts";
 import { renderPlan } from "../render.ts";
-import type { Plan } from "../cli-types.ts";
+import type { Plan, Snapshot } from "../cli-types.ts";
+
+export interface CleanupPreparation {
+  pair: AnalysisPair;
+  plan: Plan;
+  snapshot: Snapshot;
+  /** Whole files this cleanup may delete, constrained to the current batch. */
+  wholeFiles?: ReadonlySet<string>;
+}
+
+export interface CleanupOptions {
+  command: "prune" | "clean";
+  /** Present only for current-state cleanup; added to the JSON output. */
+  scope?: "current";
+  extraFlags?: string[];
+  prepare(input: {
+    root: string;
+    args: ParsedArgs;
+    config: ShrikeConfig;
+    tier: VerificationTier;
+  }): Promise<CleanupPreparation>;
+}
 
 export async function pruneCommand(root: string, args: ParsedArgs): Promise<number> {
+  return branchCleanupCommand(root, args, "prune");
+}
+
+export async function branchCleanupCommand(
+  root: string,
+  args: ParsedArgs,
+  command: "prune" | "clean",
+): Promise<number> {
+  return runCleanup(root, args, {
+    command,
+    prepare: async ({ root: repository, args: parsed, config, tier }) => {
+      const pair = await analyzePair(repository, parsed, {
+        allowDirty: config.verification.allowDirty,
+        extraFlags: ["pr", "verify", "receipt"],
+      });
+      const plan = await requestEngine<Plan>("plan", {
+        snapshot: pair.head,
+        delta: pair.delta,
+        config: engineConfig(config),
+      });
+      storePlan(repository, pair, plan, tier);
+      return { pair, plan, snapshot: pair.head };
+    },
+  });
+}
+
+export async function runCleanup(
+  root: string,
+  args: ParsedArgs,
+  options: CleanupOptions,
+): Promise<number> {
   rejectUnknownFlags(args, [
     "json", "base", "help", "allow-dirty", "pr", "in-place", "verify", "receipt",
     "dry-run", "no-checks", "build", "require-build-evidence", "run-build",
     "build-command", "no-client-boundary-leaks", "tier",
+    ...(options.extraFlags ?? []),
   ]);
   if (booleanFlag(args, "no-checks")) {
     throw new UsageError("--no-checks is not supported: a verified deletion requires at least one project check");
   }
   const config = await loadConfig(root);
   const allowDirty = booleanFlag(args, "allow-dirty") || config.verification.allowDirty;
-  if (isDirty(root) && !allowDirty) throw new UsageError("prune requires a clean working tree");
+  if (isDirty(root) && !allowDirty) {
+    throw new UsageError(`${options.command} requires a clean working tree`);
+  }
   const tier = parseTier(stringFlag(args, "tier"), config.verification.tier);
-  const pair = await analyzePair(root, args, {
-    allowDirty: config.verification.allowDirty,
-    extraFlags: ["pr", "verify", "receipt"],
-  });
-  const plan = await requestEngine<Plan>("plan", { snapshot: pair.head, delta: pair.delta, config: engineConfig(config) });
-  storePlan(root, pair, plan, tier);
+  const prepared = await options.prepare({ root, args, config, tier });
+  const { pair, plan, snapshot } = prepared;
+  const wholeFiles = prepared.wholeFiles ?? new Set<string>();
   const receiptBuild = toReceiptBuild(pair.build);
   const make = (
     batch: BatchLike,
@@ -57,12 +109,30 @@ export async function pruneCommand(root: string, args: ParsedArgs): Promise<numb
     recovery?: RecoveryReference,
   ) => makeReceipt(root, pair, plan, batch, checks, outcome, patchPath, rejected, recovery, receiptBuild);
   pair.cleanup();
+  const current = options.scope === "current";
+  const branch = `${config.pr.branchPrefix}-${plan.id.replace(/^plan_/, "")}`;
+  const emit = (value: Record<string, unknown>): void => {
+    if (!current) {
+      writeJson(value);
+      return;
+    }
+    const outputReceipts = Array.isArray(value.receipts)
+      ? (value.receipts as string[]).map((path) => relative(root, path)).sort()
+      : [];
+    const worktreePath = typeof value.worktree === "string" ? relative(root, value.worktree) : null;
+    writeJson({ scope: "current", ...value, receipts: outputReceipts, worktree: worktreePath });
+  };
+  const relativeReceipts = (paths: readonly string[]): string[] =>
+    paths.map((path) => relative(root, path)).sort();
   const dryRun = booleanFlag(args, "dry-run");
   if (plan.batches.length === 0) {
     // A dry run is the read-only equivalent of `plan`, so emit the plan
     // itself. A real prune reports its verification outcome alongside it.
-    if (booleanFlag(args, "json")) writeJson(dryRun ? plan : { plan, outcome: "clean" });
-    else if (dryRun) renderPlan(plan);
+    if (booleanFlag(args, "json")) {
+      if (dryRun) writeJson(plan);
+      else if (current) emit({ plan, outcome: "clean", receipts: [], branch, worktree: null });
+      else writeJson({ plan, outcome: "clean" });
+    } else if (dryRun) renderPlan(plan);
     else writeHuman("Shrike: no deletions to verify.");
     return ExitCode.OK;
   }
@@ -71,7 +141,6 @@ export async function pruneCommand(root: string, args: ParsedArgs): Promise<numb
     else renderPlan(plan);
     return ExitCode.FINDINGS;
   }
-  const branch = `${config.pr.branchPrefix}-${plan.id.replace(/^plan_/, "")}`;
   const useWorktree = config.verification.mode === "worktree" && !booleanFlag(args, "in-place");
   if (pair.dirty && useWorktree) {
     throw new UsageError("worktree verification requires a clean tree; use --in-place with --allow-dirty");
@@ -97,6 +166,7 @@ export async function pruneCommand(root: string, args: ParsedArgs): Promise<numb
     const checksEnabled = true;
     let outcome: string = "verified";
     let hadRejection = false;
+    let rejectedBatches = 0;
     const receipts: string[] = [];
 
     const compare = async (): Promise<ComparedCheck[]> => {
@@ -131,9 +201,19 @@ export async function pruneCommand(root: string, args: ParsedArgs): Promise<numb
         );
       }
     };
-    const applyAndCompare = async (symbols: string[]): Promise<{ compared: ComparedCheck[]; blocking: ComparedCheck[]; lines: number }> => {
+    const restoreAndAnalyze = async (): Promise<Snapshot> => {
       restore();
-      const lines = applySymbols(workingRoot, pair.head, symbols);
+      // Batching plans spans against the tree at plan time. Each committed
+      // batch advances HEAD, so a file that contributes symbols to more than
+      // one batch (a barrel, or a file whose declarations are split by
+      // re-export edges) has moved by the next batch. Re-analyze the restored
+      // tree so every edit uses current byte offsets and line numbers.
+      return analyze(workingRoot, config);
+    };
+    const applyAndCompare = async (symbols: string[], batch: BatchLike): Promise<{ compared: ComparedCheck[]; blocking: ComparedCheck[]; lines: number }> => {
+      const currentSnapshot = await restoreAndAnalyze();
+      const batchWholeFiles = batch.files.filter((file) => wholeFiles.has(file));
+      const lines = applySymbols(workingRoot, currentSnapshot, symbols, { wholeFiles: batchWholeFiles });
       const compared = checksEnabled && lines > 0 ? await compare() : [];
       return { compared, blocking: blockingChecks(compared), lines };
     };
@@ -145,7 +225,7 @@ export async function pruneCommand(root: string, args: ParsedArgs): Promise<numb
     try {
       for (const batch of plan.batches) {
         snapshotBatch(batch);
-        const applied = await applyAndCompare(batch.symbols);
+        const applied = await applyAndCompare(batch.symbols, batch);
         activeCompared = applied.compared;
         activePatch = writePatch(root, workingRoot, batch.id);
         if (applied.lines === 0) continue;
@@ -158,19 +238,19 @@ export async function pruneCommand(root: string, args: ParsedArgs): Promise<numb
         }
 
         // The batch regressed. Bisect by independent units before giving up.
-        restore();
-        const bisection = await bisectBatch(workingRoot, pair.head, batch, checks, baseline, checksEnabled);
+        const bisectSnapshot = await restoreAndAnalyze();
+        const bisection = await bisectBatch(workingRoot, bisectSnapshot, batch, checks, baseline, checksEnabled);
         if (bisection.status === "inconclusive") {
           const receipt = make({ ...batch, lines: applied.lines }, bisection.compared.length > 0 ? bisection.compared : applied.compared, "error", activePatch, rejectionsFor(batch.symbols, batch.files, applied.blocking, bisection.reason));
           receipts.push(writeReceipt(root, receipt));
           outcome = "error";
-          if (booleanFlag(args, "json")) writeJson({ plan, outcome, receipts });
+          if (booleanFlag(args, "json")) emit({ plan, outcome, receipts, branch, worktree: worktreeDirectory });
           else writeHuman(`Shrike: batch ${batch.id} could not be bisected (${bisection.reason}); changes reverted.`);
           return ExitCode.COULD_NOT_RUN;
         }
         if (bisection.status === "pass") {
           // The full batch passed on a rerun: the original failure was flaky.
-          const retry = await applyAndCompare(batch.symbols);
+          const retry = await applyAndCompare(batch.symbols, batch);
           if (retry.blocking.length === 0) {
             activeCompared = retry.compared;
             const retryPatch = writePatch(root, workingRoot, batch.id);
@@ -187,6 +267,7 @@ export async function pruneCommand(root: string, args: ParsedArgs): Promise<numb
           const receipt = make({ ...batch, lines: applied.lines }, applied.compared, bisection.status === "interaction-failure" ? "interaction-failure" : "rejected", activePatch, rejectionsFor(batch.symbols, batch.files, applied.blocking, bisection.reason));
           receipts.push(writeReceipt(root, receipt));
           hadRejection = true;
+          rejectedBatches += 1;
           outcome = bisection.status === "interaction-failure" ? "interaction-failure" : "rejected";
           if (!booleanFlag(args, "json")) writeHuman(`Shrike: batch ${batch.id} rejected (${bisection.reason}); changes reverted.`);
           continue;
@@ -194,30 +275,34 @@ export async function pruneCommand(root: string, args: ParsedArgs): Promise<numb
 
         // Re-run the culprit alone so its rejection carries the exact check and signature.
         const culprit = bisection.rejected;
-        const culpritRun = await applyAndCompare(culprit);
+        const culpritBatch = subsetBatch(snapshot, batch, culprit, `${batch.id}-rejected`);
+        const culpritRun = await applyAndCompare(culprit, culpritBatch);
         activeCompared = culpritRun.compared;
         const culpritPatch = writePatch(root, workingRoot, `${batch.id}-rejected`);
         activePatch = culpritPatch;
         restore();
-        const culpritBatch = subsetBatch(pair.head, batch, culprit, `${batch.id}-rejected`);
         const rejectedReceipt = make({ ...culpritBatch, lines: culpritRun.lines }, culpritRun.compared, "rejected", culpritPatch, rejectionsFor(culprit, culpritBatch.files, culpritRun.blocking, bisection.reason));
         receipts.push(writeReceipt(root, rejectedReceipt));
         hadRejection = true;
+        rejectedBatches += 1;
         outcome = "rejected";
         if (!booleanFlag(args, "json")) writeHuman(`Shrike: rejected ${formatCount(culprit.length, "symbol")} from ${batch.id} (${culpritRun.blocking.map((check) => check.name).join(", ")}).`);
 
         const remainder = batch.symbols.filter((symbol) => !culprit.includes(symbol));
         if (remainder.length === 0) continue;
         snapshotBatch(batch);
-        const remainderRun = await applyAndCompare(remainder);
+        const remainderRun = await applyAndCompare(remainder, batch);
         activeCompared = remainderRun.compared;
         if (remainderRun.blocking.length > 0) {
           restore();
           const wholeReceipt = make({ ...batch, lines: remainderRun.lines }, remainderRun.compared, "rejected", activePatch, rejectionsFor(batch.symbols, batch.files, remainderRun.blocking, "remainder failed after bisection"));
           receipts.push(writeReceipt(root, wholeReceipt));
+          hadRejection = true;
+          rejectedBatches += 1;
+          outcome = "rejected";
           continue;
         }
-        const remainderBatch = subsetBatch(pair.head, batch, remainder, `${batch.id}-verified`);
+        const remainderBatch = subsetBatch(snapshot, batch, remainder, `${batch.id}-verified`);
         const remainderPatch = writePatch(root, workingRoot, remainderBatch.id);
         activePatch = remainderPatch;
         commitAll(workingRoot, `shrike: remove ${remainder.length} dead symbols (${batch.id})`);
@@ -243,22 +328,41 @@ export async function pruneCommand(root: string, args: ParsedArgs): Promise<numb
       }
       const message = `revert failed; recovery snapshot: ${recovery.snapshotPath || "unavailable"}`;
       if (booleanFlag(args, "json")) {
-        writeJson({ plan, outcome: "revert-failed", receipts, branch, worktree: worktreeDirectory, recovery, error: message });
+        emit({ plan, outcome: "revert-failed", receipts, branch, worktree: worktreeDirectory, recovery, error: message });
       } else {
         writeStderr(`Shrike: ${message}`);
         if (recovery.snapshotPath) writeStderr(`Restore with: ${recovery.restoreCommand}`);
       }
       return ExitCode.REVERT_FAILED;
     }
-    if (booleanFlag(args, "pr") && !openPullRequest(root, branch, plan, receipts, config)) {
-      if (booleanFlag(args, "json")) writeJson({ plan, outcome, receipts, branch, worktree: worktreeDirectory });
-      return ExitCode.COULD_NOT_RUN;
+    let pullRequest: string | null = null;
+    if (booleanFlag(args, "pr")) {
+      pullRequest = openPullRequest(root, branch, plan, receipts, config);
+      if (!pullRequest) {
+        if (booleanFlag(args, "json")) emit({ plan, outcome, receipts, branch, worktree: worktreeDirectory });
+        return ExitCode.COULD_NOT_RUN;
+      }
     }
-    if (booleanFlag(args, "json")) writeJson({ plan, outcome, receipts, branch, worktree: worktreeDirectory });
-    else {
+    if (booleanFlag(args, "json")) emit({ plan, outcome, receipts, branch, worktree: worktreeDirectory });
+    else if (options.command === "clean") {
       writeHuman(`Shrike: ${formatCount(plan.totals.symbols, "symbol")} removed on ${branch}.`);
       if (worktreeDirectory) writeHuman(`Worktree: ${worktreeDirectory}`);
-      if (!booleanFlag(args, "pr")) writeHuman(`Open a draft PR with: gh pr create --draft --head ${branch}`);
+      if (receipts.length > 0) {
+        writeHuman(`Receipts: ${relativeReceipts(receipts).join(", ")} (${formatCount(receipts.length, "batch", "batches")})`);
+      }
+      if (hadRejection) writeHuman(`Rejected batches: ${rejectedBatches}; changes were reverted.`);
+      writeHuman("Next:");
+      if (receipts.length > 0) {
+        const first = receipts[0];
+        if (first) writeHuman(`  npx getshrike receipt ${first.split("/").at(-1)?.replace(/\.json$/, "") ?? ""}`);
+      }
+      if (pullRequest) writeHuman(`  Pull request: ${pullRequest}`);
+      else writeHuman(`  gh pr create --draft --head ${branch}`);
+    } else {
+      writeHuman(`Shrike: ${formatCount(plan.totals.symbols, "symbol")} removed on ${branch}.`);
+      if (worktreeDirectory) writeHuman(`Worktree: ${worktreeDirectory}`);
+      if (pullRequest) writeHuman(pullRequest);
+      else if (!booleanFlag(args, "pr")) writeHuman(`Open a draft PR with: gh pr create --draft --head ${branch}`);
     }
     return hadRejection ? ExitCode.VERIFICATION_FAILED : ExitCode.OK;
   } finally {
@@ -271,7 +375,7 @@ export function openPullRequest(
   plan: Plan,
   receiptPaths: string[],
   config: ShrikeConfig,
-): boolean {
+): string | null {
   const base = pullRequestBase(config.pr.base ?? plan.base.ref ?? "main", listRemotes(root));
   const receipts = receiptPaths.map((path) => readReceipt(path));
   const batches = receipts.map((receipt) => ({
@@ -308,12 +412,12 @@ export function openPullRequest(
     const fetched = spawnSync("git", ["fetch", "--quiet", "origin", branch], { cwd: root, encoding: "utf8" });
     if (fetched.status !== 0) {
       writeStderr(`Could not fetch origin/${branch}; refusing to force-push. Push manually after review.`);
-      return false;
+      return null;
     }
     const ancestor = spawnSync("git", ["merge-base", "--is-ancestor", "FETCH_HEAD", "HEAD"], { cwd: root, encoding: "utf8" });
     if (ancestor.status !== 0) {
       writeStderr(`Remote branch ${branch} diverged; refusing to force-push. Push manually after review.`);
-      return false;
+      return null;
     }
   }
   const draft = config.pr.draft ? ["--draft"] : [];
@@ -321,7 +425,7 @@ export function openPullRequest(
   if (push.status !== 0) {
     const detail = (push.stderr ?? "").trim();
     writeStderr(`Could not push ${branch}${detail ? `: ${detail}` : ""}; open the PR manually: gh pr create ${draft.join(" ")} --head ${branch} --base ${base}`);
-    return false;
+    return null;
   }
   const gh = spawnSync(
     "gh",
@@ -331,7 +435,7 @@ export function openPullRequest(
   if (gh.status !== 0) {
     const detail = (gh.stderr ?? "").trim() || (gh.error?.message ?? "");
     writeStderr(`gh pr create failed${detail ? `: ${detail}` : ""}; open the PR manually: gh pr create ${draft.join(" ")} --head ${branch} --base ${base}`);
-    return false;
+    return null;
   }
   const url = gh.stdout.trim();
   if (config.pr.labels.length > 0) {
@@ -340,11 +444,9 @@ export function openPullRequest(
       if (result.status !== 0) writeStderr(`Could not add label ${label} to ${url}.`);
     }
   }
-  writeHuman(url);
-  if (!config.pr.commentReceipt) return true;
-  for (const receipt of receipts) {
+  if (!config.pr.commentReceipt) return url;  for (const receipt of receipts) {
     const comment = spawnSync("gh", ["pr", "comment", url, "--body", renderReceiptComment(receipt)], { cwd: root, encoding: "utf8" });
     if (comment.status !== 0) writeStderr(`Could not post receipt ${receipt.id} to the PR.`);
   }
-  return true;
+  return url;
 }

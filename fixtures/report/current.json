@@ -1,0 +1,149 @@
+{
+  "schemaVersion": "1.0",
+  "mode": "current",
+  "base": null,
+  "head": {
+    "commit": "9f2c1ab4d1c2b4f9a7e6d5c4b3a2918070605040",
+    "dirty": false,
+    "graphHash": "blake3:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "summary": {
+    "analyzedFiles": 38,
+    "analyzedLines": 26900,
+    "removableFiles": 4,
+    "removableSymbols": 6,
+    "removableExports": 5,
+    "removableLines": 1284,
+    "deadWeightBasisPoints": 477,
+    "unusedDependencies": 4,
+    "protectedItems": 12,
+    "uncountedRemovableSymbols": 0,
+    "diagnostics": {
+      "total": 7,
+      "actionable": 2,
+      "informational": 5
+    }
+  },
+  "groups": [
+    {
+      "directory": "src/features/billing",
+      "removableLines": 412,
+      "removableSymbols": 3,
+      "removableFiles": 2,
+      "items": [
+        {
+          "id": "symbol:src/features/billing/format.ts#formatInvoice",
+          "kind": "symbol",
+          "classification": "never-used",
+          "path": "src/features/billing/format.ts",
+          "symbol": "src/features/billing/format.ts#formatInvoice",
+          "name": "formatInvoice",
+          "lines": 12,
+          "reason": "no-witness",
+          "confidence": "certain"
+        },
+        {
+          "id": "file:src/features/billing/legacy.ts",
+          "kind": "file",
+          "classification": "never-used",
+          "path": "src/features/billing/legacy.ts",
+          "lines": 400,
+          "reason": "whole-file",
+          "confidence": "certain"
+        }
+      ]
+    },
+    {
+      "directory": "src/lib",
+      "removableLines": 872,
+      "removableSymbols": 3,
+      "removableFiles": 2,
+      "items": [
+        {
+          "id": "symbol:src/lib/currency.ts#formatCents",
+          "kind": "symbol",
+          "classification": "never-used",
+          "path": "src/lib/currency.ts",
+          "symbol": "src/lib/currency.ts#formatCents",
+          "name": "formatCents",
+          "lines": 34,
+          "reason": "no-witness",
+          "confidence": "certain"
+        },
+        {
+          "id": "file:src/lib/old-dashboard.ts",
+          "kind": "file",
+          "classification": "never-used",
+          "path": "src/lib/old-dashboard.ts",
+          "lines": 838,
+          "reason": "whole-file",
+          "confidence": "certain"
+        }
+      ]
+    }
+  ],
+  "protected": [
+    {
+      "path": "packages/ui/src/Button.tsx",
+      "symbol": "packages/ui/src/Button.tsx#Button",
+      "reason": "public-api",
+      "detail": "package.json exports the ui package surface"
+    },
+    {
+      "path": "src/app/page.tsx",
+      "symbol": "src/app/page.tsx#Page",
+      "reason": "entry-role",
+      "detail": "entry for next-app"
+    }
+  ],
+  "dependencies": [
+    {
+      "package": "web",
+      "directory": "apps/web",
+      "name": "left-pad",
+      "kind": "unused",
+      "advisory": true
+    },
+    {
+      "package": "web",
+      "directory": "apps/web",
+      "name": "lodash.merge",
+      "kind": "unlisted",
+      "advisory": true
+    }
+  ],
+  "diagnostics": {
+    "total": 7,
+    "actionable": 2,
+    "informational": 5,
+    "groups": [
+      {
+        "category": "parse",
+        "code": "parse_error",
+        "count": 1,
+        "actionable": true,
+        "files": [
+          "src/broken.ts"
+        ]
+      },
+      {
+        "category": "unresolved-import",
+        "code": "unresolved_import",
+        "count": 1,
+        "actionable": true,
+        "files": [
+          "src/features/billing/InvoiceCard.tsx"
+        ]
+      },
+      {
+        "category": "asset-import",
+        "code": "unresolved_import",
+        "count": 5,
+        "actionable": false,
+        "files": [
+          "src/app/globals.css"
+        ]
+      }
+    ]
+  }
+}

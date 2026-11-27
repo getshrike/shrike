@@ -3,6 +3,8 @@ import { UsageError } from "./errors.ts";
 export interface ParsedArgs {
   positionals: string[];
   values: Map<string, string | boolean>;
+  /** Every occurrence of a value-taking flag, in argv order. */
+  repeated?: Map<string, string[]>;
 }
 
 const DEFAULT_BOOLEANS = new Set([
@@ -34,8 +36,14 @@ export function parseArgs(
 ): ParsedArgs {
   const booleans = new Set(booleanFlags);
   const values = new Map<string, string | boolean>();
+  const repeated = new Map<string, string[]>();
   const positionals: string[] = [];
   let index = 0;
+
+  const record = (key: string, value: string): void => {
+    values.set(key, value);
+    repeated.set(key, [...(repeated.get(key) ?? []), value]);
+  };
 
   while (index < argv.length) {
     const token = argv[index];
@@ -59,7 +67,7 @@ export function parseArgs(
     const equals = withoutPrefix.indexOf("=");
     if (equals >= 0) {
       const key = withoutPrefix.slice(0, equals);
-      values.set(key, withoutPrefix.slice(equals + 1));
+      record(key, withoutPrefix.slice(equals + 1));
       index += 1;
       continue;
     }
@@ -73,7 +81,7 @@ export function parseArgs(
 
     const next = argv[index + 1];
     if (next !== undefined && !next.startsWith("--")) {
-      values.set(key, next);
+      record(key, next);
       index += 2;
     } else {
       values.set(key, true);
@@ -81,7 +89,7 @@ export function parseArgs(
     }
   }
 
-  return { positionals, values };
+  return { positionals, values, repeated };
 }
 
 export function hasFlag(args: ParsedArgs, name: string): boolean {
@@ -91,6 +99,14 @@ export function hasFlag(args: ParsedArgs, name: string): boolean {
 export function stringFlag(args: ParsedArgs, name: string): string | undefined {
   const value = args.values.get(name);
   return typeof value === "string" ? value : undefined;
+}
+
+/** Every value supplied for a repeatable flag, falling back to one value. */
+export function stringFlags(args: ParsedArgs, name: string): string[] {
+  const repeated = args.repeated?.get(name);
+  if (repeated && repeated.length > 0) return [...repeated];
+  const value = stringFlag(args, name);
+  return value === undefined ? [] : [value];
 }
 
 export function booleanFlag(args: ParsedArgs, name: string): boolean {

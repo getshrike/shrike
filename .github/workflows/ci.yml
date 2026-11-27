@@ -3,7 +3,15 @@ name: ci
 on:
   push:
     branches: [main, implementation]
+    # Site-only and consumer-docs-only changes run .github/workflows/site-docs.yml.
+    # Mixed changes still run the full matrix below.
+    paths-ignore:
+      - "apps/site/**"
+      - "apps/docs/**"
   pull_request:
+    paths-ignore:
+      - "apps/site/**"
+      - "apps/docs/**"
 
 permissions:
   contents: read
@@ -68,9 +76,11 @@ jobs:
       - run: node scripts/check-docs.mjs
       - run: node scripts/check-links.mjs
       - run: pnpm run build:ts
+      - run: node scripts/check-skills.mjs
       - name: Verify the committed Action bundle is current
         run: git diff --exit-code packages/action/dist/main.cjs
       - run: node scripts/check-package.mjs
+      - run: node scripts/check.mjs
 
   package:
     runs-on: ubuntu-latest
@@ -141,10 +151,10 @@ jobs:
       - run: node scripts/validate-instances.mjs
       - run: node scripts/check-receipts.mjs
       - run: node scripts/check-corpus.mjs
-      - run: node scripts/verify-fixtures.mjs
       - run: node scripts/run-fixtures.mjs --engine
       - run: node scripts/corpus-runner.mjs
       - run: node scripts/e2e-prune.mjs
+      - run: node scripts/verify-fixtures.mjs
       - name: Determinism
         run: |
           set -euo pipefail

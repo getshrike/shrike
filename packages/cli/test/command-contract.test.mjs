@@ -14,6 +14,7 @@ const CLI_ENGINE_COMMANDS = new Map([
   ["delta", ["delta"]],
   ["plan", ["plan"]],
   ["proof", ["proof"]],
+  ["why", ["proof"]],
   ["evidence", ["join-build", "augment-build"]],
 ]);
 
@@ -22,6 +23,10 @@ const CLI_LOCAL_ALLOWLIST = new Set([
   "init",
   "deps",
   "prune",
+  "clean",
+  "report",
+  "install",
+  "ci",
   "verify",
   "receipt",
   "recover",

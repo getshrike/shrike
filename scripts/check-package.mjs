@@ -23,7 +23,14 @@ const PLATFORM_PACKAGES = [
   "getshrike-windows-x64",
 ];
 const PLATFORM_NAMES = { "win32-x64": "getshrike-windows-x64" };
-const CLI_BUNDLES = new Set(["dist/main.js", "dist/index.js", "dist/config.js"]);
+const CLI_BUNDLES = new Set(["dist/main.js", "dist/index.js", "dist/config.js", "dist/tui.js"]);
+const CLI_SKILLS = [
+  "dist/skills/shrike/SKILL.md",
+  "dist/skills/shrike/references/commands.md",
+  "dist/skills/shrike/references/workflows.md",
+  "dist/skills/shrike/references/safety.md",
+  "dist/skills/shrike/references/setup.md",
+];
 
 const { values } = parseArgs({ options: { platform: { type: "string" } } });
 
@@ -132,7 +139,7 @@ if (values.platform) {
 }
 
 const cli = join(root, "packages", "cli");
-for (const path of ["dist/main.js", "dist/index.js", "dist/config.js", "dist/index.d.ts", "dist/config.d.ts"]) {
+for (const path of ["dist/main.js", "dist/index.js", "dist/config.js", "dist/tui.js", "dist/index.d.ts", "dist/config.d.ts"]) {
   if (!existsSync(join(cli, path))) {
     fail(`packages/cli/${path} is missing; run \`pnpm run build:ts\``);
   }
@@ -147,14 +154,26 @@ try {
     "dist/main.js",
     "dist/index.js",
     "dist/config.js",
+    "dist/tui.js",
     "dist/index.d.ts",
     "dist/config.d.ts",
+    ...CLI_SKILLS,
     "README.md",
     "LICENSE",
     "package.json",
   ];
   const missing = required.filter((path) => !paths.has(path));
   if (missing.length > 0) fail(`tarball is missing ${missing.join(", ")}`);
+
+  const unexpectedSkills = [...paths].filter(
+    (path) => path.startsWith("dist/skills/") && !CLI_SKILLS.includes(path),
+  );
+  if (unexpectedSkills.length > 0) {
+    fail(`unexpected files under dist/skills/: ${unexpectedSkills.join(", ")}`);
+  }
+  for (const path of CLI_SKILLS) {
+    if (tarRead(packed.tarball, path).trim().length === 0) fail(`${path} is empty`);
+  }
 
   if (manifest.name !== "getshrike") fail(`package name is ${manifest.name}, expected getshrike`);
   if (manifest.bin?.shrike !== "./bin/shrike.mjs" || manifest.bin?.getshrike !== "./bin/shrike.mjs") {
@@ -187,6 +206,22 @@ try {
     fail("dist/main.js still imports a private @shrike package");
   }
   if (!main.includes("getshrike-linux-x64")) fail("dist/main.js does not contain the platform package resolver");
+  for (const marker of ['Symbol.for("react.element")', "ink-root", "yoga"]) {
+    if (main.includes(marker)) fail(`dist/main.js contains the TUI-only marker ${JSON.stringify(marker)}`);
+  }
+
+  const tui = tarRead(packed.tarball, "dist/tui.js");
+  if (!tui.includes("ink-root") || !tui.includes('Symbol.for("react.element")')) {
+    fail("dist/tui.js does not look like the bundled Ink entry");
+  }
+  const tuiBytes = Buffer.byteLength(tui, "utf8");
+  if (tuiBytes > 4 * 1024 * 1024) {
+    fail(`dist/tui.js is ${tuiBytes} bytes, above the 4 MB ceiling`);
+  }
+  const mainBytes = Buffer.byteLength(main, "utf8");
+  if (mainBytes > 1024 * 1024) {
+    fail(`dist/main.js is ${mainBytes} bytes, above the 1 MB sanity ceiling`);
+  }
   for (const declaration of ["dist/index.d.ts", "dist/config.d.ts"]) {
     const text = tarRead(packed.tarball, declaration);
     if (/@shrike\//.test(text)) fail(`${declaration} references a private @shrike package`);
@@ -204,8 +239,8 @@ try {
   }
 
   console.log(
-    `OK: getshrike@${manifest.version} tarball (${paths.size} files); launcher, bundles, types, README, ` +
-      `license, and five platform optional dependencies present; no source/tests/fixtures; ` +
+    `OK: getshrike@${manifest.version} tarball (${paths.size} files); launcher, bundles (main + lazy TUI), types, ` +
+      `README, license, and five platform optional dependencies present; no source/tests/fixtures; ` +
       "pnpm publish --dry-run succeeded",
   );
 } finally {
