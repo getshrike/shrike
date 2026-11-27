@@ -16,26 +16,6 @@ pnpm --filter @shrike/site build
 Or run those scripts from this directory with `pnpm dev`, `pnpm typecheck`,
 and so on.
 
-## Deployment
-
-The site is a fully prerendered Astro app, so it deploys as a
-[Workers static assets](https://developers.cloudflare.com/workers/static-assets/)
-Worker with the Cloudflare CLI (`cf`):
-
-```bash
-# Select the account that owns the getshrike.dev zone when CLOUDFLARE_ACCOUNT_ID
-# is set to a different account in your environment.
-CLOUDFLARE_ACCOUNT_ID=<account-id> cf deploy ./dist
-```
-
-`cloudflare.config.ts` names the Worker `getshrike-site` and attaches the
-`getshrike.dev` and `www.getshrike.dev` custom domains. Cloudflare creates the
-DNS records and TLS certificates for those hostnames, so any pre-existing
-A/AAAA/CNAME records for them must be removed first. `cf deploy ./dist` uploads
-the existing `dist/` output without rebuilding; run the build step above first.
-Build output and generated files live in ignored `dist/`, `.astro/`, and
-`.cloudflare/` directories.
-
 ## Structure
 
 ```text

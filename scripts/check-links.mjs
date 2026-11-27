@@ -10,7 +10,7 @@ function walk(directory) {
     // Third-party and generated trees are not part of this repository's docs;
     // their READMEs contain links to files packages omit from publication.
     if (statSync(path).isDirectory()) {
-      if (name === "node_modules" || name === "target" || name === "dist" || name === ".cloudflare") continue;
+      if (name === "node_modules" || name === "target" || name === "dist") continue;
       walk(path);
     }
     else if (name.endsWith(".md")) {
