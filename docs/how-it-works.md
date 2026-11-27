@@ -11,7 +11,7 @@ This is the algorithm and internals guide. For the user-facing catalogue, read
 | A — Inventory | Discover files, hashes, config, workspace layout; sorted and deduplicated |
 | B — Parse | `oxc` parse, then a per-file semantic summary (no AST retained) |
 | C — Resolve | Relative, tsconfig alias, workspace, package export, and barrel resolution |
-| D — Graph | Module + symbol graph, edges with certainty (`certain`/`probable`/`unknown`) |
+| D — Graph | Module + symbol graph, edges with certainty (`certain`/`probable`); unknown edges are recorded separately |
 | E — Entries | Seed liveness from framework, package, test, and config conventions |
 | F — Reachability | Multi-source BFS with witness parent pointers |
 | G — Candidates | Live set, dead set, proof traces |
@@ -189,7 +189,7 @@ The delta JSON carries base/head commits, `newlyDead` items with their
 
 The graph pass computes SCCs with an iterative Tarjan implementation and stores
 them (sorted) in the snapshot for diagnostics and proof. Deletion units are
-individual symbols grouped by file, not SCCs.
+declaration file groups joined by re-export edges, not SCCs.
 
 Cascade closure starts from the delta's newly dead symbols and walks **reverse
 edges**: any candidate symbol that referred to a dead symbol joins the closure,
@@ -205,11 +205,15 @@ saved" is never reported.
 
 ## 7. Batches
 
-The plan groups closure symbols by file, sorts files and symbols, and packs them
-into batches under `maxSymbols` (default 50) and `maxFiles` (default 10). Adding
-the next file would exceed either cap flushes the current batch and starts a new
-one, so a file is never split across batches and batch order is deterministic.
-The delta summary uses the same file-group packing.
+The plan groups selected declarations by file, then attaches every dead named
+re-export to its target declaration, transitively through barrel chains. This
+keeps a declaration with its same-file users and with every dead specifier that
+names it, without merging every target of a large barrel into one batch. Units
+are sorted and packed into batches under `maxSymbols` (default 50) and
+`maxFiles` (default 10); adding the next unit would exceed either cap flushes
+the current batch and starts a new one. A declaration file is never split
+across batches; a barrel file can contribute specifiers to several batches.
+Batch order is deterministic, and the delta summary uses the same unit packing.
 
 `shrike.config.ts` also exposes `batchPolicy.maxLiveGraphPercent` (default 5)
 and `allowOversized` (default false); both are recorded in the plan and receipt
@@ -229,8 +233,14 @@ baseline → apply → check → compare → revert-or-keep
    Valid for one head commit and one check set.
 2. **Apply** — worktree mode by default (`git worktree add --detach`);
    `--in-place` is explicit and refuses a dirty tree without `--allow-dirty`.
-   When every symbol of a file is deleted and its module is not live for side
-   effects, the whole file is removed.
+   Each batch restores the tree and re-analyzes it before editing, so a file
+   that contributes symbols to more than one batch is patched with current
+   spans rather than the plan-time offsets. When every symbol of a file is
+   deleted and its module is not live for side effects, the whole file is
+   removed; deleting the only specifier of a re-export statement removes the
+   statement instead of leaving `export { }`, and an import specifier that
+   names a deleted symbol is removed when its file is retained for side
+   effects.
 3. **Check** — tiers: fast (typecheck, lint) for hooks, standard (+test) for
    local, full (+build) for CI/PR. Commands come from project scripts or
    `shrike.config.ts`; the verifier does not guess when config supplies one.
@@ -287,8 +297,9 @@ If the build shows a module used that the static graph missed, the engine adds
 a `build` edge from the nearest importer and re-runs reachability. Build edges
 can only add liveness, never prove death. Byte impact is reported per route and
 as `sharedBytes` separately; shared chunks are never double counted. The
-fallback matrix (including `--require-build-evidence`, which turns non-full
-statuses into exit 4) is exercised by the build-graph fixtures.
+fallback matrix (including `--require-build-evidence`, which turns statuses
+other than `full` or `partial` into exit 4) is exercised by the build-graph
+fixtures.
 
 ## 11. Determinism and caching
 
@@ -319,8 +330,8 @@ See [testing.md](testing.md) for the determinism gate and cache troubleshooting.
    `app/invoices/page.tsx`, with the lost witness attached.
 4. Cascade: `formatCents`, used only by `formatInvoice`, joins the closure; the
    whole `src/lib/currency.ts` file becomes removable.
-5. Batches: closure symbols are grouped by file and packed into no-overlap
-   batches under the symbol/file caps.
+5. Batches: closure symbols are grouped into re-export units and packed into
+   no-overlap batches under the symbol/file caps.
 6. Verification: batch 1 is applied in a worktree, typecheck/lint/test/build run
    against a baseline, pass → keep + receipt; a regression would bisect, revert
    the culprit, and retry the rest.
@@ -335,6 +346,7 @@ See [testing.md](testing.md) for the determinism gate and cache troubleshooting.
 | Bisection | O(log batch × check cost); checks dominate |
 
 Budgets and the benchmark harness are in [testing.md](testing.md). The key
-invariants to preserve when changing any stage: no file split across batches,
-no entry or public API deletion, no unknown scope pruned, and a complete receipt
+invariants to preserve when changing any stage: no declaration file split
+across batches, no declaration split from its dead re-export specifiers, no
+entry or public API deletion, no unknown scope pruned, and a complete receipt
 or no `verified` outcome.

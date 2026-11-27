@@ -16,8 +16,8 @@
 
 ## Checklist
 
-- [ ] The PR title follows Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`).
-- [ ] I ran the relevant Rust, Node, and fixture checks.
+- [ ] The PR title follows Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `perf:`, `build:`, `ci:`, `chore:`).
+- [ ] I ran the relevant Rust, Node, site/docs, and fixture checks.
 - [ ] I updated the docs where behavior changed.
 - [ ] I kept the change scoped to one concern.
 - [ ] I checked for secrets and generated files.

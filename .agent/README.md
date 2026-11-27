@@ -39,3 +39,14 @@ symlink into their own config directories. Do not duplicate their content into
   `assets/` beside it.
 - When behavior or gates change, update the rule, skill, and `docs/` page in the
   same PR, then run `node scripts/check-docs.mjs`.
+
+## Public skills are separate
+
+`.agent/skills/` contains contributor workflows for working on Shrike itself.
+They are never installed into user repositories or published. Product skills
+that ship to users live in the top-level `skills/` directory, with
+`skills/shrike/` as the canonical source. `pnpm run build:ts` copies that tree
+to `packages/cli/dist/skills/`, and `shrike install` writes it to
+`.agents/skills/shrike/` in a user's project. Edit only the top-level source,
+run `node scripts/check-skills.mjs`, and never add product skills under
+`.agent/skills/`.

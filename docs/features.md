@@ -1,9 +1,16 @@
 # Features
 
-Shrike is a cleanup tool, not a linter. Detection tools stop at "this looks
-unused"; Shrike takes responsibility for the risky part — deleting the code and
-proving the project still builds. This page is the catalogue of what that means
-in practice. See [how-it-works.md](how-it-works.md) for the algorithms.
+Shrike is the cleanup layer for AI-built TypeScript apps. It measures the dead
+weight left behind by agent changes and PRs, then removes what the engine proves
+is orphaned and runs your checks before and after. It is not a linter:
+detection tools stop at "this looks unused"; Shrike takes responsibility for the
+risky part — deleting the code and proving the project still builds. This page
+is the catalogue of what that means in practice. See
+[how-it-works.md](how-it-works.md) for the algorithms.
+
+The headline metric is **dead weight %**: removable source lines divided by
+analyzed non-generated source lines. Dependencies are reported separately and
+are advisory; Shrike never removes a dependency automatically.
 
 ## The five pillars
 
@@ -62,22 +69,29 @@ The tool reports a fact about the graph, not a guess about intent.
 
 All read-only commands support `--json`. Exit codes: `0` clean, `1` findings,
 `2` usage/config, `3` verification failed (changes reverted), `4` could not run
-(fail closed), `5` revert failed (manual recovery required).
+(fail closed), `5` revert failed (manual recovery required). `delta --fail-on
+never` exits `0` even when it reports findings.
 
 | Command | Purpose | Mutates |
 | --- | --- | --- |
+| `shrike report [--base <ref>]` | Dead-weight report, plain or interactive | no |
 | `shrike scan` | Current-state evidence report and candidates | no |
 | `shrike deps` | Unused / unlisted dependency evidence | no |
-| `shrike proof <symbol>` | Witness path or proof trace for a symbol | no |
-| `shrike delta --base <ref>` | Whole-graph PR orphan delta | no |
+| `shrike why <path#Name>` | Human proof for one symbol | no |
+| `shrike proof <path#Name>` | Witness path or proof trace for a symbol | no |
+| `shrike delta --base <ref>` | Whole-graph PR orphan delta; `--fail-on never` exits `0` | no |
 | `shrike plan --base <ref>` | Batches, impact, blast radius | no |
-| `shrike prune --base <ref>` | Apply, verify, commit, open a draft PR | yes (worktree) |
+| `shrike clean [--base <ref>]` | Alias of `prune`; verified branch cleanup | yes (worktree) |
+| `shrike clean --all` | Explicit current-state cleanup | yes (worktree) |
+| `shrike prune --base <ref>` | Apply, verify, commit; `--pr` opens a draft PR | yes (worktree) |
 | `shrike verify --plan <id>` | Re-run verification for a saved plan | worktree |
 | `shrike receipt <id>` | Show a receipt | no |
 | `shrike recover <snapshot>` | Restore files after a failed revert | yes |
 | `shrike evidence --build <path>` | Join a build-evidence export | no |
 | `shrike init` | Scaffold a config | config |
-| `shrike hook install --claude|--cursor|--opencode`, `shrike hook run` | Install / run a bounded post-agent hook | config / cache |
+| `shrike install` | Write the agent skill directory and optional hook | config |
+| `shrike ci install` | Write the GitHub Actions workflow | config |
+| `shrike hook install --claude|--cursor|--opencode`, `shrike hook run`, `shrike hook uninstall` | Install / run / remove a bounded post-agent hook | config / cache |
 | `shrike mcp serve` | Read-only MCP server over stdio | no |
 | `shrike cache clean|verify` | Cache maintenance | cache |
 | `shrike version` | Version and protocol information | no |
@@ -86,6 +100,18 @@ Commands are loaded lazily from `packages/cli/src/main.ts`; adding one means
 adding a case there, not editing a central registry.
 
 ## Integration surfaces
+
+### Agent skill and adapters
+
+`shrike install` writes the canonical `SKILL.md` and its four references under
+`.agents/skills/shrike/`, so an agent can load the short body first and read a
+reference only when it needs exact flags, workflows, safety boundaries, or
+setup detail. Target adapters point at the portable skill instead of duplicating
+it. The installer is idempotent, previewable with `--dry-run`, and requires
+`--force` to replace local edits; a conflict blocks the whole skill directory so
+a new `SKILL.md` never ships beside stale references. `--no-skill` suppresses
+every skill file. The same directory can be installed with
+`npx skills add getshrike/shrike`.
 
 ### Post-agent hooks
 
@@ -109,8 +135,9 @@ wrapper over the CLI.
 ### MCP server
 
 Opt-in (`shrike mcp serve`). Four read-only tools: `shrike_delta`,
-`shrike_plan`, `shrike_proof`, `shrike_receipt`. No tool mutates the repository,
-runs project checks, reads `.env`, or returns more than 256 KB.
+`shrike_plan`, `shrike_proof`, `shrike_receipt`. Only `shrike_plan` writes plan
+artifacts under `.shrike/`; no tool edits project source, runs checks, reads
+`.env`, or returns more than 256 KB.
 
 ### Distribution
 
