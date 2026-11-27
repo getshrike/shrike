@@ -1,0 +1,129 @@
+{
+  "schemaVersion": "1.0",
+  "mode": "branch",
+  "base": {
+    "ref": "origin/main",
+    "commit": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d"
+  },
+  "head": {
+    "commit": "9f2c1ab4d1c2b4f9a7e6d5c4b3a2918070605040",
+    "dirty": false,
+    "graphHash": "blake3:2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "summary": {
+    "analyzedFiles": 40,
+    "analyzedLines": 26900,
+    "removableFiles": 3,
+    "removableSymbols": 3,
+    "removableExports": 2,
+    "removableLines": 241,
+    "deadWeightBasisPoints": 90,
+    "unusedDependencies": 4,
+    "protectedItems": 12,
+    "uncountedRemovableSymbols": 0,
+    "diagnostics": {
+      "total": 7,
+      "actionable": 2,
+      "informational": 5
+    }
+  },
+  "groups": [
+    {
+      "directory": "src/features/billing",
+      "removableLines": 141,
+      "removableSymbols": 2,
+      "removableFiles": 1,
+      "items": [
+        {
+          "id": "symbol:src/features/billing/format.ts#formatInvoice",
+          "kind": "symbol",
+          "classification": "branch-orphan",
+          "path": "src/features/billing/format.ts",
+          "symbol": "src/features/billing/format.ts#formatInvoice",
+          "name": "formatInvoice",
+          "lines": 12,
+          "reason": "no-witness",
+          "confidence": "certain",
+          "trigger": {
+            "file": "src/features/billing/InvoiceCard.tsx",
+            "kind": "removed-import",
+            "change": "removed import of formatInvoice",
+            "certainty": "certain"
+          }
+        },
+        {
+          "id": "symbol:src/features/billing/totals.ts#totals",
+          "kind": "symbol",
+          "classification": "branch-orphan",
+          "path": "src/features/billing/totals.ts",
+          "symbol": "src/features/billing/totals.ts#totals",
+          "name": "totals",
+          "lines": 129,
+          "reason": "no-witness",
+          "confidence": "certain",
+          "trigger": {
+            "file": "src/features/billing/format.ts",
+            "kind": "indirect",
+            "change": "cascade from a branch orphan",
+            "certainty": "certain"
+          }
+        }
+      ]
+    },
+    {
+      "directory": "src/lib",
+      "removableLines": 100,
+      "removableSymbols": 1,
+      "removableFiles": 1,
+      "items": [
+        {
+          "id": "file:src/lib/format.ts",
+          "kind": "file",
+          "classification": "branch-orphan",
+          "path": "src/lib/format.ts",
+          "lines": 100,
+          "reason": "whole-file",
+          "confidence": "certain"
+        }
+      ]
+    }
+  ],
+  "preexisting": {
+    "symbols": 3,
+    "files": 2,
+    "lines": 42
+  },
+  "protected": [
+    {
+      "path": "packages/ui/src/Button.tsx",
+      "symbol": "packages/ui/src/Button.tsx#Button",
+      "reason": "public-api",
+      "detail": "package.json exports the ui package surface"
+    }
+  ],
+  "dependencies": [
+    {
+      "package": "web",
+      "directory": "apps/web",
+      "name": "left-pad",
+      "kind": "unused",
+      "advisory": true
+    }
+  ],
+  "diagnostics": {
+    "total": 7,
+    "actionable": 2,
+    "informational": 5,
+    "groups": [
+      {
+        "category": "parse",
+        "code": "parse_error",
+        "count": 1,
+        "actionable": true,
+        "files": [
+          "src/broken.ts"
+        ]
+      }
+    ]
+  }
+}

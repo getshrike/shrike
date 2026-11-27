@@ -28,6 +28,7 @@ const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
 const schemas = new Map();
 for (const name of [
+  "cleanup-report",
   "config",
   "deletion-plan",
   "delta",
@@ -81,6 +82,10 @@ function fixtureRoots(directory, depth = 0) {
 async function main() {
   // The CLI's own default config is the canonical config instance.
   validate("config", engineConfig(DEFAULT_CONFIG), "DEFAULT_CONFIG");
+  for (const name of ["current", "branch"]) {
+    const report = JSON.parse(readFileSync(join(root, "fixtures", "report", `${name}.json`), "utf8"));
+    validate("cleanup-report", report, `fixtures/report/${name}.json`);
+  }
 
   const relative = (p) => p.slice(root.length + 1);
   const roots = fixtureRoots(join(root, "fixtures"));
@@ -161,13 +166,22 @@ async function main() {
   if (validator("graph-snapshot")(corrupted)) {
     failures.push("negative self-test: invalid graphHash (number) was accepted");
   }
+  // Negative self-test: a report with an unknown mode must be rejected.
+  checked += 1;
+  const badReport = {
+    ...JSON.parse(readFileSync(join(root, "fixtures", "report", "current.json"), "utf8")),
+    mode: "everything",
+  };
+  if (validator("cleanup-report")(badReport)) {
+    failures.push("negative self-test: invalid report mode was accepted");
+  }
 
   if (failures.length) {
     for (const failure of failures.slice(0, 30)) console.error(`FAIL ${failure}`);
     if (failures.length > 30) console.error(`... and ${failures.length - 30} more`);
     process.exit(1);
   }
-  console.log(`OK: ${checked} JSON instances validate against 6 schemas (${roots.length} fixture snapshots)`);
+  console.log(`OK: ${checked} JSON instances validate against ${schemas.size} schemas (${roots.length} fixture snapshots)`);
 }
 
 main().catch((error) => {

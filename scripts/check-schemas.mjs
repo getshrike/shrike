@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 const root = resolve(new URL("..", import.meta.url).pathname);
 const schemaDir = join(root, "schemas");
 const expected = [
+  "cleanup-report.schema.json",
   "config.schema.json",
   "deletion-plan.schema.json",
   "delta.schema.json",

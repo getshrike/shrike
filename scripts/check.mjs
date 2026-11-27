@@ -9,11 +9,13 @@ const steps = [
   ["schemas", ["scripts/check-schemas.mjs"]],
   ["schema-instances", ["scripts/validate-instances.mjs"]],
   ["receipts", ["scripts/check-receipts.mjs"]],
+  ["skills", ["scripts/check-skills.mjs"]],
   ["package", ["scripts/check-package.mjs"]],
   ["corpus", ["scripts/check-corpus.mjs"]],
   ["fixtures", ["scripts/run-fixtures.mjs", "--engine"]],
   ["corpus-engine", ["scripts/corpus-runner.mjs"]],
   ["prune-e2e", ["scripts/e2e-prune.mjs"]],
+  ["clean-all-e2e", ["scripts/e2e-clean-all.mjs"]],
 ];
 let failed = false;
 for (const [name, args] of steps) {

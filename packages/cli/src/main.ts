@@ -3,21 +3,41 @@ import { booleanFlag, parseArgs } from "./args.ts";
 import { repoRoot } from "./config.ts";
 import { CliError, ExitCode, isCliError, UsageError } from "./errors.ts";
 import { writeJson, writeJsonError, writeStderr } from "./output.ts";
-import { printHelp } from "./render.ts";
+import { printCiHelp, printCleanupHelp, printHelp, printInstallHelp } from "./render.ts";
 const BOOLEAN_FLAGS = new Set([
   "json", "help", "force", "pr", "in-place", "allow-dirty", "verify", "receipt",
   "quiet", "dry-run", "claude", "cursor", "opencode", "all", "no-checks",
-  "require-build-evidence",
+  "require-build-evidence", "verbose", "no-tui", "gate", "no-skill", "no-hook",
+  "no-scripts", "scripts",
 ]);
 
 async function main(argv: string[]): Promise<number> {
   const command = argv[0];
+  if (!command) {
+    const { shouldUseTui } = await import("./tui/gate.ts");
+    if (shouldUseTui({
+      stdoutIsTTY: Boolean(process.stdout.isTTY),
+      stdinIsTTY: Boolean(process.stdin.isTTY),
+      env: process.env,
+      columns: process.stdout.columns,
+      rows: process.stdout.rows,
+    })) {
+      const { reportCommand } = await import("./commands/report.ts");
+      return reportCommand(repoRoot(), parseArgs([], BOOLEAN_FLAGS), { interactive: true });
+    }
+  }
   if (!command || command === "--help" || command === "-h" || command === "help") {
     printHelp();
     return ExitCode.OK;
   }
   const args = parseArgs(argv.slice(1), BOOLEAN_FLAGS);
-  if (booleanFlag(args, "help")) { printHelp(); return ExitCode.OK; }
+  if (booleanFlag(args, "help")) {
+    if (command === "clean") printCleanupHelp();
+    else if (command === "install") printInstallHelp();
+    else if (command === "ci") printCiHelp();
+    else printHelp();
+    return ExitCode.OK;
+  }
   const root = repoRoot();
   // Load only the command being run. A scan used to pay for the verifier,
   // receipts, agent, and MCP modules even though it needs none of them.
@@ -50,6 +70,22 @@ async function main(argv: string[]): Promise<number> {
       const { pruneCommand } = await import("./commands/prune.ts");
       return pruneCommand(root, args);
     }
+    case "clean": {
+      const { cleanCommand } = await import("./commands/clean.ts");
+      return cleanCommand(root, args);
+    }
+    case "install": {
+      const { installCommand } = await import("./commands/install.ts");
+      return installCommand(root, args);
+    }
+    case "ci": {
+      const { ciCommand } = await import("./commands/ci.ts");
+      return ciCommand(root, args);
+    }
+    case "report": {
+      const { reportCommand } = await import("./commands/report.ts");
+      return reportCommand(root, args);
+    }
     case "verify": {
       const { verifyCommand } = await import("./commands/verify.ts");
       return verifyCommand(root, args);
@@ -65,6 +101,10 @@ async function main(argv: string[]): Promise<number> {
     case "proof": {
       const { proofCommand } = await import("./commands/basic.ts");
       return proofCommand(root, args);
+    }
+    case "why": {
+      const { whyCommand } = await import("./commands/why.ts");
+      return whyCommand(root, args);
     }
     case "evidence": {
       const { evidenceCommand } = await import("./commands/basic.ts");

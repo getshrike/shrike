@@ -16,6 +16,23 @@ function lineStartsOf(content: string): number[] {
   return starts;
 }
 
+/**
+ * Engine spans are UTF-8 byte offsets, while JavaScript string indices count
+ * UTF-16 code units. Slicing a non-ASCII file with raw byte offsets cuts the
+ * wrong text, so translate a byte offset before using `slice`.
+ */
+function indexAtByteOffset(content: string, offset: number): number {
+  if (!Number.isInteger(offset) || offset <= 0) return 0;
+  let bytes = 0;
+  for (let index = 0; index < content.length; index += 1) {
+    if (bytes >= offset) return index;
+    const codePoint = content.codePointAt(index)!;
+    bytes += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
+    if (codePoint > 0xffff) index += 1;
+  }
+  return content.length;
+}
+
 function lineIndexAt(starts: number[], offset: number): number {
   let low = 0;
   let high = starts.length - 1;
@@ -40,7 +57,14 @@ function reExportEdit(content: string, start: number, end: number): Edit {
   const lineEnd = index + 1 < starts.length ? starts[index + 1]! : content.length;
   const before = content.slice(lineStart, start).trim();
   const after = content.slice(end, lineEnd).trim();
-  const alone = before === "" && (after === "" || after === ",");
+  // The specifier is the only member of a single-line statement:
+  // `export { dead } from "./impl";` or `export type { Dead } from "./impl";`.
+  // Removing only the name would leave an empty `export { }` statement, which
+  // still names the module after its declaration is gone.
+  const onlySpecifier =
+    /^export\s+(?:type\s+)?\{$/.test(before) &&
+    /^\}\s*(?:from\s+["'][^"']+["'])?\s*;?\s*(?:\/\/.*)?$/.test(after);
+  const alone = (before === "" && (after === "" || after === ",")) || onlySpecifier;
   if (alone) return { start: lineStart, end: lineEnd };
   let editStart = start;
   let editEnd = end;
@@ -63,6 +87,123 @@ function reExportEdit(content: string, start: number, end: number): Edit {
     }
   }
   return { start: editStart, end: editEnd };
+}
+
+interface SpecifierRange {
+  start: number;
+  end: number;
+}
+
+interface NamedStatement {
+  start: number;
+  end: number;
+  braceStart: number;
+  braceEnd: number;
+  specifiers: SpecifierRange[];
+}
+
+function parseSpecifierRanges(content: string, start: number, end: number): SpecifierRange[] {
+  const ranges: SpecifierRange[] = [];
+  let partStart = start;
+  for (let index = start; index <= end; index += 1) {
+    if (index !== end && content[index] !== ",") continue;
+    let left = partStart;
+    let right = index;
+    while (left < right && /\s/.test(content[left]!)) left += 1;
+    while (right > left && /\s/.test(content[right - 1]!)) right -= 1;
+    // `{ type Dead }` carries the inline `type` modifier outside the name's
+    // byte span. Removing only the name would leave `type` behind.
+    let beforeName = left;
+    while (beforeName > start && /\s/.test(content[beforeName - 1]!)) beforeName -= 1;
+    let wordStart = beforeName;
+    while (wordStart > start && /[A-Za-z$]/.test(content[wordStart - 1]!)) wordStart -= 1;
+    if (wordStart < beforeName && content.slice(wordStart, beforeName) === "type") {
+      left = wordStart;
+    }
+    if (left < right) ranges.push({ start: left, end: right });
+    partStart = index + 1;
+  }
+  return ranges;
+}
+
+function namedStatements(content: string, pattern: RegExp): NamedStatement[] {
+  const statements: NamedStatement[] = [];
+  while (true) {
+    const match = pattern.exec(content);
+    if (!match) break;
+    const braceStart = match.index + match[0].length - 1;
+    const braceEnd = content.indexOf("}", braceStart + 1);
+    if (braceEnd === -1) continue;
+    let end = braceEnd + 1;
+    while (end < content.length && (content[end] === " " || content[end] === "\t")) end += 1;
+    if (content.startsWith("from", end)) {
+      end += "from".length;
+      while (end < content.length && (content[end] === " " || content[end] === "\t")) end += 1;
+      const quote = content[end];
+      if (quote === '"' || quote === "'") {
+        end += 1;
+        while (end < content.length && content[end] !== quote && content[end] !== "\n") end += 1;
+        if (content[end] === quote) end += 1;
+      }
+    }
+    while (end < content.length && (content[end] === " " || content[end] === "\t")) end += 1;
+    if (content[end] === ";") end += 1;
+    statements.push({
+      start: match.index,
+      end,
+      braceStart,
+      braceEnd,
+      specifiers: parseSpecifierRanges(content, braceStart + 1, braceEnd),
+    });
+    pattern.lastIndex = end;
+  }
+  return statements;
+}
+
+/**
+ * Locate named `export { ... }` statements. Cleanup needs this to remove a
+ * whole statement when every specifier in it is dead; handling one specifier at
+ * a time would leave `export { }` behind.
+ */
+function namedExportStatements(content: string): NamedStatement[] {
+  return namedStatements(content, /\bexport\s+(?:type\s+)?\{/g);
+}
+
+/**
+ * Locate named `import { ... }` statements. When a deleted symbol is only
+ * imported and never referenced, the import specifier must go with it or the
+ * retained file fails typecheck on a missing export. The engine records an
+ * `import` edge per specifier, so the statement can be edited structurally.
+ */
+function namedImportStatements(content: string): NamedStatement[] {
+  return namedStatements(content, /\bimport\b[^;{]*?\{/g);
+}
+
+function statementEdit(content: string, statement: NamedStatement): Edit {
+  const starts = lineStartsOf(content);
+  const firstLine = lineIndexAt(starts, statement.start);
+  const lastLine = lineIndexAt(starts, Math.max(statement.start, statement.end - 1));
+  const lineStart = starts[firstLine]!;
+  const lineEnd = lastLine + 1 < starts.length ? starts[lastLine + 1]! : content.length;
+  const before = content.slice(lineStart, statement.start).trim();
+  const after = content.slice(statement.end, lineEnd).trim();
+  if (before === "" && after === "") return { start: lineStart, end: lineEnd };
+  return { start: statement.start, end: statement.end };
+}
+
+/**
+ * Remove the `{ ... }` clause of an import that also has a default import.
+ * `import impl, { dead } from "./impl"` must keep `impl` while dropping the
+ * now-empty named clause.
+ */
+function namedClauseEdit(content: string, statement: NamedStatement): Edit {
+  const prefix = content.slice(statement.start, statement.braceStart).trim();
+  if (/^import(?:\s+type)?$/.test(prefix)) return statementEdit(content, statement);
+  let start = statement.braceStart;
+  let cursor = start;
+  while (cursor > statement.start && /\s/.test(content[cursor - 1]!)) cursor -= 1;
+  if (cursor > statement.start && content[cursor - 1] === ",") start = cursor - 1;
+  return { start, end: statement.braceEnd + 1 };
 }
 
 function mergeEdits(edits: Edit[]): Edit[] {
@@ -92,14 +233,32 @@ function applyEdits(content: string, edits: Edit[]): string {
   return output;
 }
 
-export function applySymbols(root: string, snapshot: Snapshot, symbols: string[]): number {
+export interface ApplyOptions {
+  /** Repository-relative files to delete whole, typically `snapshot.unusedFiles`. */
+  wholeFiles?: readonly string[];
+}
+
+export function applySymbols(
+  root: string,
+  snapshot: Snapshot,
+  symbols: string[],
+  options: ApplyOptions = {},
+): number {
+  const byKey = new Map(snapshot.symbols.map((symbol) => [symbol.key, symbol]));
+  const wholeFiles = new Set<string>(options.wholeFiles ?? []);
+  for (const key of symbols) {
+    if (!key.endsWith("#__module__")) continue;
+    const symbol = byKey.get(key);
+    if (symbol) wholeFiles.add(symbol.file);
+  }
   const byFile = new Map<string, string[]>();
   for (const key of symbols) {
-    const file = snapshot.symbols.find((candidate) => candidate.key === key)?.file;
-    if (!file) continue;
-    const list = byFile.get(file);
+    if (key.endsWith("#__module__")) continue;
+    const symbol = byKey.get(key);
+    if (!symbol) continue;
+    const list = byFile.get(symbol.file);
     if (list) list.push(key);
-    else byFile.set(file, [key]);
+    else byFile.set(symbol.file, [key]);
   }
   // A file whose every symbol is being deleted is itself dead. Removing the
   // whole file is what prevents dangling imports from a deleted dependency
@@ -111,8 +270,56 @@ export function applySymbols(root: string, snapshot: Snapshot, symbols: string[]
     else symbolsByFile.set(symbol.file, [symbol.key]);
   }
   const live = new Set(snapshot.live ?? []);
+  const fileByPath = new Map((snapshot.files ?? []).map((file) => [file.path, file]));
+  const deletedKeys = new Set(symbols);
+  const localReExports = new Map<string, NonNullable<Snapshot["edges"]>[number][]>();
+  const deletedImports = new Map<string, NonNullable<Snapshot["edges"]>[number][]>();
+  for (const edge of snapshot.edges ?? []) {
+    if (edge.kind === "re-export" && edge.source === edge.target && deletedKeys.has(edge.source)) {
+      const list = localReExports.get(edge.file);
+      if (list) list.push(edge);
+      else localReExports.set(edge.file, [edge]);
+    }
+    if (
+      edge.kind === "import" &&
+      deletedKeys.has(edge.target) &&
+      !edge.target.endsWith("#__module__") &&
+      Number.isInteger(edge.span.start) &&
+      Number.isInteger(edge.span.end) &&
+      edge.span.start >= 0 &&
+      edge.span.end > edge.span.start
+    ) {
+      const list = deletedImports.get(edge.file);
+      if (list) list.push(edge);
+      else deletedImports.set(edge.file, [edge]);
+    }
+  }
   let removed = 0;
-  for (const [file, keys] of [...byFile.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+  for (const file of [...wholeFiles].sort((left, right) => left.localeCompare(right))) {
+    const record = fileByPath.get(file);
+    if (!record) continue;
+    if (record.publicApi || record.generated || record.parseStatus !== "ok") continue;
+    if (live.has(`${file}#__module__`)) continue;
+    let path: string;
+    try {
+      path = resolveInside(root, file);
+    } catch (error) {
+      throw new CliError(
+        ExitCode.COULD_NOT_RUN,
+        "invalid-path",
+        `refusing to edit a path outside the repository: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (!existsSync(path)) continue;
+    const content = readFileSync(path, "utf8");
+    removed += record.lines > 0 ? record.lines : contentLineCount(content);
+    rmSync(path);
+  }
+  const editFiles = [...new Set([...byFile.keys(), ...deletedImports.keys()])]
+    .sort((left, right) => left.localeCompare(right));
+  for (const file of editFiles) {
+    const keys = byFile.get(file) ?? [];
+    if (wholeFiles.has(file)) continue;
     let path: string;
     try {
       path = resolveInside(root, file);
@@ -141,6 +348,70 @@ export function applySymbols(root: string, snapshot: Snapshot, symbols: string[]
     }
     const edits: Edit[] = [];
     const remove = new Set<number>();
+    // Collect every specifier this batch deletes in this file, including local
+    // `export { Name }` edges. If all specifiers of a statement are here, the
+    // whole statement is removed below instead of leaving `export { }`.
+    const deletedSpecifierSpans: SpecifierRange[] = [];
+    for (const key of keys) {
+      const symbol = snapshot.symbols.find(
+        (candidate) => candidate.key === key && candidate.file === file,
+      );
+      if (
+        !symbol ||
+        symbol.kind !== "re-export" ||
+        !Number.isInteger(symbol.span.start) ||
+        !Number.isInteger(symbol.span.end) ||
+        symbol.span.start < 0 ||
+        symbol.span.end <= symbol.span.start
+      ) {
+        continue;
+      }
+      const start = indexAtByteOffset(content, symbol.span.start);
+      const end = indexAtByteOffset(content, symbol.span.end);
+      if (end > start && content.slice(start, end).trim() !== "") {
+        deletedSpecifierSpans.push({ start, end });
+      }
+    }
+    for (const edge of localReExports.get(file) ?? []) {
+      if (
+        !Number.isInteger(edge.span.start) ||
+        !Number.isInteger(edge.span.end) ||
+        edge.span.end <= edge.span.start
+      ) {
+        continue;
+      }
+      const start = indexAtByteOffset(content, edge.span.start);
+      const end = indexAtByteOffset(content, edge.span.end);
+      if (end > start && content.slice(start, end).trim() !== "") {
+        deletedSpecifierSpans.push({ start, end });
+      }
+    }
+    for (const statement of namedExportStatements(content)) {
+      if (statement.specifiers.length === 0) continue;
+      const fullyDeleted = statement.specifiers.every((specifier) =>
+        deletedSpecifierSpans.some(
+          (span) => span.start < specifier.end && specifier.start < span.end,
+        ),
+      );
+      if (fullyDeleted) edits.push(statementEdit(content, statement));
+    }
+    // A local `export { name }` clause names the declaration but is not part of
+    // its span. The engine records a same-file, same-symbol re-export edge for
+    // that specifier; remove it with the declaration or the export is left
+    // naming a missing binding.
+    for (const edge of localReExports.get(file) ?? []) {
+      if (
+        !Number.isInteger(edge.span.start) ||
+        !Number.isInteger(edge.span.end) ||
+        edge.span.end <= edge.span.start
+      ) {
+        continue;
+      }
+      const start = indexAtByteOffset(content, edge.span.start);
+      const end = indexAtByteOffset(content, edge.span.end);
+      if (end <= start || content.slice(start, end).trim() === "") continue;
+      edits.push(reExportEdit(content, start, end));
+    }
     for (const key of keys) {
       const symbol = snapshot.symbols.find((candidate) => candidate.key === key && candidate.file === file);
       if (!symbol) continue;
@@ -149,15 +420,26 @@ export function applySymbols(root: string, snapshot: Snapshot, symbols: string[]
         Number.isInteger(symbol.span.start) &&
         Number.isInteger(symbol.span.end) &&
         symbol.span.start >= 0 &&
-        symbol.span.end > symbol.span.start &&
-        symbol.span.end <= content.length &&
-        content.slice(symbol.span.start, symbol.span.end).trim() !== ""
+        symbol.span.end > symbol.span.start
       ) {
-        edits.push(reExportEdit(content, symbol.span.start, symbol.span.end));
-        continue;
+        const start = indexAtByteOffset(content, symbol.span.start);
+        const end = indexAtByteOffset(content, symbol.span.end);
+        if (end > start && content.slice(start, end).trim() !== "") {
+          edits.push(reExportEdit(content, start, end));
+          continue;
+        }
       }
       const startLine = symbol.span.line;
-      const endLine = Math.min(lines.length, lineAt(content, symbol.span.end));
+      // `span.end` is an exclusive byte offset and can point past the blank
+      // line that follows a declaration. Counting those newlines would delete
+      // the next declaration, so prefer the engine's inclusive `endLine` and
+      // keep the byte-offset fallback for older or synthetic spans.
+      const reportedEnd = symbol.span.endLine;
+      const endLine = typeof reportedEnd === "number"
+        && Number.isInteger(reportedEnd)
+        && reportedEnd >= startLine
+        ? Math.min(lines.length, reportedEnd)
+        : Math.min(lines.length, lineAt(content, indexAtByteOffset(content, symbol.span.end)));
       if (!Number.isInteger(startLine) || startLine < 1 || startLine > lines.length) {
         throw new CliError(ExitCode.COULD_NOT_RUN, "invalid-span", `invalid span for ${key}`);
       }
@@ -179,6 +461,33 @@ export function applySymbols(root: string, snapshot: Snapshot, symbols: string[]
         !remove.has(after)
       ) {
         remove.add(after);
+      }
+    }
+    // A retained file can import a symbol that this batch deletes. The import
+    // is then unused by any live code, but TypeScript still validates that the
+    // named export exists, so remove the specifier or the whole statement.
+    const importSpans: SpecifierRange[] = [];
+    for (const edge of deletedImports.get(file) ?? []) {
+      const start = indexAtByteOffset(content, edge.span.start);
+      const end = indexAtByteOffset(content, edge.span.end);
+      if (end > start && content.slice(start, end).trim() !== "") {
+        importSpans.push({ start, end });
+      }
+    }
+    for (const statement of namedImportStatements(content)) {
+      if (statement.specifiers.length === 0) continue;
+      const deleted = statement.specifiers.filter((specifier) =>
+        importSpans.some(
+          (span) => span.start < specifier.end && specifier.start < span.end,
+        ),
+      );
+      if (deleted.length === 0) continue;
+      if (deleted.length === statement.specifiers.length) {
+        edits.push(namedClauseEdit(content, statement));
+      } else {
+        for (const specifier of deleted) {
+          edits.push(reExportEdit(content, specifier.start, specifier.end));
+        }
       }
     }
     const starts = lineStartsOf(content);

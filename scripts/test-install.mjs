@@ -71,12 +71,12 @@ function pack(directory) {
   return join(destination, tarball);
 }
 
-function runCli(args, env = {}) {
+function runCli(args, env = {}, cwd = temp) {
   return spawnSync(
     process.execPath,
     [join(temp, "node_modules", "getshrike", "bin", "shrike.mjs"), ...args],
     {
-      cwd: temp,
+      cwd,
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
       env: { ...process.env, ...env },
@@ -140,6 +140,91 @@ try {
   if (npx.status !== 0) fail("npx getshrike failed", `${npx.stdout}\n${npx.stderr}`);
   if (JSON.parse(npx.stdout).version !== version) fail("npx getshrike reported the wrong version");
 
+  const mcpRequests = [
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "shrike_receipt", arguments: {} } },
+  ]
+    .map((request) => JSON.stringify(request))
+    .join("\n");
+  const mcp = spawnSync(
+    process.execPath,
+    [join(installed, "bin", "shrike.mjs"), "mcp", "serve"],
+    {
+      cwd: temp,
+      encoding: "utf8",
+      input: `${mcpRequests}\n`,
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  );
+  if (mcp.status !== 0) fail("installed mcp serve failed", `${mcp.stdout}\n${mcp.stderr}`);
+  const mcpResponses = mcp.stdout
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  const receiptCall = mcpResponses.find((response) => response.id === 3);
+  if (receiptCall?.result?.isError !== false) {
+    fail("installed mcp serve could not run a read-only tool", mcp.stdout);
+  }
+  if (!/receipts/.test(receiptCall.result.content?.[0]?.text ?? "")) {
+    fail("installed mcp serve returned no receipt payload", mcp.stdout);
+  }
+
+  const skillFiles = [
+    ".agents/skills/shrike/SKILL.md",
+    ".agents/skills/shrike/references/commands.md",
+    ".agents/skills/shrike/references/safety.md",
+    ".agents/skills/shrike/references/setup.md",
+    ".agents/skills/shrike/references/workflows.md",
+  ];
+  const dryInstall = runCli(["install", "--dry-run", "--json"]);
+  if (dryInstall.status !== 0) {
+    fail("shrike install --dry-run failed", `${dryInstall.stdout}\n${dryInstall.stderr}`);
+  }
+  const dry = JSON.parse(dryInstall.stdout);
+  const dryPaths = dry.actions.map((action) => action.path).filter((path) => path.startsWith(".agents/skills/shrike/"));
+  if (JSON.stringify(dryPaths) !== JSON.stringify(skillFiles)) {
+    fail(`dry run did not list all five skill files: ${dryPaths.join(", ")}`);
+  }
+  if (dry.actions.some((action) => action.action !== "created")) {
+    fail(`fresh install dry run did not report created: ${dryInstall.stdout.trim()}`);
+  }
+  if (/\/home\/|\/Users\/|\\Users\\|[A-Za-z]:\\/.test(dryInstall.stdout)) {
+    fail("install output contains an absolute host path", dryInstall.stdout);
+  }
+  if (existsSync(join(temp, ".agents"))) fail("install --dry-run wrote the skill directory");
+
+  const installedSkill = runCli(["install", "--json"]);
+  if (installedSkill.status !== 0) {
+    fail("shrike install failed", `${installedSkill.stdout}\n${installedSkill.stderr}`);
+  }
+  const installedResult = JSON.parse(installedSkill.stdout);
+  const installedPaths = installedResult.actions.map((action) => action.path).filter((path) => path.startsWith(".agents/skills/shrike/"));
+  if (JSON.stringify(installedPaths) !== JSON.stringify(skillFiles)) {
+    fail(`install did not write all five skill files: ${installedPaths.join(", ")}`);
+  }
+  for (const path of skillFiles) {
+    if (!existsSync(join(temp, path))) fail(`installed skill file is missing: ${path}`);
+  }
+  const skillText = readFileSync(join(temp, skillFiles[0]), "utf8");
+  if (!skillText.startsWith("---\nname: shrike\n")) fail("installed SKILL.md has invalid frontmatter");
+  if (!skillText.includes("license: MIT")) fail("installed SKILL.md is missing a license");
+  if (/npx shrike/.test(skillText)) fail("installed SKILL.md contains the forbidden zero-install form");
+  for (const reference of skillFiles.slice(1)) {
+    const relative = reference.replace(".agents/skills/shrike/", "");
+    if (!skillText.includes(`(${relative})`)) fail(`installed SKILL.md does not link ${relative}`);
+    const text = readFileSync(join(temp, reference), "utf8");
+    if (!text.endsWith("\n")) fail(`installed reference does not end with a newline: ${reference}`);
+    if (/npx shrike/.test(text)) fail(`installed reference contains the forbidden zero-install form: ${reference}`);
+  }
+
+  const repeat = runCli(["install", "--dry-run", "--json"]);
+  if (repeat.status !== 0) fail("repeated install dry run failed", repeat.stderr);
+  if (JSON.parse(repeat.stdout).actions.some((action) => action.action !== "unchanged")) {
+    fail("repeated install is not idempotent", repeat.stdout);
+  }
+
   const scan = runCli(["scan", "--json"]);
   if (scan.status !== 0 && scan.status !== 1) {
     fail("scan with the installed engine failed", `${scan.stdout}\n${scan.stderr}`);
@@ -148,6 +233,42 @@ try {
     JSON.parse(scan.stdout);
   } catch {
     fail("scan did not return JSON", scan.stdout);
+  }
+
+  // Deterministic eval fixture: report and delta must run from a clean project
+  // that has no Shrike config installed by the CLI. This covers the fixture the
+  // manual skill evals use without depending on an agent.
+  const evalFixture = join(temp, "eval-fixture");
+  const setupFixture = spawnSync(
+    process.execPath,
+    [join(root, "evals", "skills", "shrike", "fixtures", "cleanup-app", "setup.mjs"), evalFixture],
+    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  );
+  if (setupFixture.status !== 0) {
+    fail("eval fixture setup failed", `${setupFixture.stdout}\n${setupFixture.stderr}`);
+  }
+  const fixtureReport = runCli(["report", "--json"], {}, evalFixture);
+  if (fixtureReport.status !== 0 && fixtureReport.status !== 1) {
+    fail("report on the eval fixture failed", `${fixtureReport.stdout}\n${fixtureReport.stderr}`);
+  }
+  let fixtureData;
+  try {
+    fixtureData = JSON.parse(fixtureReport.stdout);
+  } catch {
+    fail("report on the eval fixture did not return JSON", fixtureReport.stdout);
+  }
+  if (!Number.isInteger(fixtureData.summary?.analyzedFiles) || fixtureData.summary.analyzedFiles < 5) {
+    fail("report on the eval fixture analyzed too few files", fixtureReport.stdout);
+  }
+  const fixtureDelta = runCli(["delta", "--base", "main", "--json"], {}, evalFixture);
+  if (fixtureDelta.status !== 0 && fixtureDelta.status !== 1) {
+    fail("delta on the eval fixture failed", `${fixtureDelta.stdout}\n${fixtureDelta.stderr}`);
+  }
+  const deltaData = JSON.parse(fixtureDelta.stdout);
+  if (
+    !deltaData.newlyDead?.some((item) => item.symbol === "src/format.ts#formatInvoice")
+  ) {
+    fail("eval fixture delta did not report the branch-orphaned symbol", fixtureDelta.stdout);
   }
 
   const sidecar = join(temp, "node_modules", packageName, "bin", `${engineName}.sha256`);

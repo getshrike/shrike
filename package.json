@@ -34,7 +34,8 @@
     "corpus": "node scripts/corpus-runner.mjs",
     "fixtures:delta": "node scripts/delta-fixtures.mjs",
     "fixtures:verify": "node scripts/verify-fixtures.mjs",
-    "bench": "node benchmarks/harness.mjs"
+    "bench": "node benchmarks/harness.mjs",
+    "bench:report": "node benchmarks/report-build.mjs"
   },
   "devDependencies": {
     "ajv": "^8.20.0",
