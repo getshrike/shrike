@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "getshrike-site",
+  "compatibility_date": "2026-11-27",
+  "assets": {
+    "directory": "./dist"
+  },
+  "routes": [
+    { "pattern": "getshrike.dev", "custom_domain": true },
+    { "pattern": "www.getshrike.dev", "custom_domain": true }
+  ]
+}

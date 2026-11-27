@@ -8,6 +8,7 @@ packages/platform/*/README.md
 packages/platform/*/LICENSE
 *.tsbuildinfo
 .shrike/
+.wrangler/
 .next/
 coverage/
 .DS_Store
