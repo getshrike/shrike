@@ -24,7 +24,7 @@ Builds from the GitHub repository on every push to `main`:
 
 ```text
 build command:      pnpm install --frozen-lockfile && pnpm --filter @shrike/site build
-deploy command:     pnpm --filter @shrike/site deploy
+deploy command:     pnpm --filter @shrike/site run deploy
 root directory:     /
 build output:       apps/site/dist
 ```
@@ -37,7 +37,7 @@ certificates for those hostnames, so pre-existing A/AAAA/CNAME records for
 them must be removed first.
 
 To deploy a local build manually, run the build command above and then
-`pnpm --filter @shrike/site deploy`. Build output and generated files live in
+`pnpm --filter @shrike/site run deploy`. Build output and generated files live in
 ignored `dist/`, `.astro/`, and `.wrangler/` directories.
 
 ## Structure
