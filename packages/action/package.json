@@ -1,6 +1,6 @@
 {
   "name": "@shrike/action",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "GitHub Action for the Shrike orphan delta and verified cleanup.",
