@@ -1,0 +1,15 @@
+{
+  "name": "cleanup-eval-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "node check.mjs",
+    "lint": "node check.mjs",
+    "test": "node check.mjs",
+    "build": "node check.mjs"
+  },
+  "dependencies": {
+    "left-pad": "^1.3.0",
+    "next": "^16.0.0"
+  }
+}
