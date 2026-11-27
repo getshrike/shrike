@@ -18,28 +18,27 @@ and so on.
 
 ## Deployment
 
-The site is a fully prerendered Astro app. Production deploys are built from
-the GitHub repository by the `getshrike-site` Cloudflare Pages project, which
-watches `main` and runs:
+The site is a fully prerendered Astro app deployed as a Workers static assets
+Worker named `getshrike-site`. Production deploys run in Cloudflare Workers
+Builds from the GitHub repository on every push to `main`:
 
 ```text
 build command:      pnpm install --frozen-lockfile && pnpm --filter @shrike/site build
+deploy command:     pnpm --filter @shrike/site deploy
 root directory:     /
 build output:       apps/site/dist
 ```
 
 Cloudflare fetches the committed source, builds it, and publishes the output;
-there is no local upload in the normal path. The custom domains
-`getshrike.dev` and `www.getshrike.dev` are attached to the project, so their
-DNS records and TLS certificates are managed by Cloudflare and pre-existing
-A/AAAA/CNAME records for those hostnames must be removed first.
+there is no local upload in the normal path. `wrangler.jsonc` defines the
+Worker name, static asset directory, and the `getshrike.dev` and
+`www.getshrike.dev` custom domains. Cloudflare creates the DNS records and TLS
+certificates for those hostnames, so pre-existing A/AAAA/CNAME records for
+them must be removed first.
 
-`cloudflare.config.ts` retains the Worker name and domain declaration for
-local `cf` deploys. To deploy a local build explicitly, run the build step
-above and then `cf deploy ./dist` from this directory, selecting the account
-that owns the zone when `CLOUDFLARE_ACCOUNT_ID` points elsewhere. Build output
-and generated files live in ignored `dist/`, `.astro/`, and `.cloudflare/`
-directories.
+To deploy a local build manually, run the build command above and then
+`pnpm --filter @shrike/site deploy`. Build output and generated files live in
+ignored `dist/`, `.astro/`, and `.wrangler/` directories.
 
 ## Structure
 
