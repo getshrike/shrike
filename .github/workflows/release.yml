@@ -285,6 +285,17 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
+          # npm can take several minutes to expose a freshly published version
+          # in the public packument. Wait for that before installing so the
+          # smoke test measures the published package, not propagation delay.
+          for attempt in $(seq 1 30); do
+            if npm view "getshrike@$VERSION" version >/dev/null 2>&1; then break; fi
+            if [ "$attempt" = "30" ]; then
+              echo "getshrike@$VERSION did not reach the registry within 10 minutes" >&2
+              exit 1
+            fi
+            sleep 20
+          done
           for attempt in 1 2 3 4 5; do
             if npm install -g "getshrike@$VERSION" --ignore-scripts --no-audit --no-fund; then break; fi
             if [ "$attempt" = "5" ]; then exit 1; fi
