@@ -4,7 +4,11 @@ All notable changes to Shrike are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] — 2026-11-27
+
+The agent-first cleanup release: dead-weight reporting, verified `clean` and
+current-state cleanup, an installable agent skill, CI installation, and a public
+site with consumer docs.
 
 ### Added
 
@@ -163,5 +167,6 @@ gates and release steps are recorded in [`docs/release.md`](docs/release.md).
 - The Windows arm64 target and a standalone single-binary distribution are
   post-1.0; `win32-x64` is the only Windows platform package.
 
+[1.1.0]: https://github.com/getshrike/shrike/releases/tag/v1.1.0
 [1.0.1]: https://github.com/getshrike/shrike/releases/tag/v1.0.1
 [1.0.0]: https://github.com/getshrike/shrike/releases/tag/v1.0.0

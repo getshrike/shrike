@@ -1,6 +1,6 @@
 {
   "name": "@shrike/receipts",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Content-addressed verification receipts for Shrike.",

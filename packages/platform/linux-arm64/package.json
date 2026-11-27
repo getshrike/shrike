@@ -1,6 +1,6 @@
 {
   "name": "getshrike-linux-arm64",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Native Shrike engine for Linux arm64.",
   "license": "MIT",
   "os": [
