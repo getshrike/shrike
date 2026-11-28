@@ -15,6 +15,8 @@ const ogImage = new URL("/brand/og-card.png", site).href;
 const logo = new URL("/brand/icon-512.png", site).href;
 const github = "https://github.com/getshrike/shrike";
 const npm = "https://www.npmjs.com/package/getshrike";
+const docs = "https://docs.getshrike.dev";
+const profiles = [github, npm, docs];
 
 const structuredData = {
   "@context": "https://schema.org",
@@ -25,7 +27,7 @@ const structuredData = {
       name: "Shrike",
       url: `${site.origin}/`,
       logo,
-      sameAs: [github],
+      sameAs: profiles,
     },
     {
       "@type": "WebSite",
@@ -44,7 +46,7 @@ const structuredData = {
       downloadUrl: npm,
       applicationCategory: "DeveloperApplication",
       operatingSystem: "macOS, Linux, Windows",
-      softwareVersion: "1.0.1",
+      softwareVersion: "1.1.0",
       isAccessibleForFree: true,
       license: "https://opensource.org/licenses/MIT",
       offers: {
@@ -52,7 +54,7 @@ const structuredData = {
         price: "0",
         priceCurrency: "USD",
       },
-      sameAs: [github],
+      sameAs: profiles,
     },
   ],
 };
@@ -95,7 +97,7 @@ const structuredData = {
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="Shrike — find what a PR orphaned, delete it with proof"
+      content="Shrike — delete dead code with proof"
     />
 
     <meta name="twitter:card" content="summary_large_image" />
@@ -104,7 +106,7 @@ const structuredData = {
     <meta name="twitter:image" content={ogImage} />
     <meta
       name="twitter:image:alt"
-      content="Shrike — find what a PR orphaned, delete it with proof"
+      content="Shrike — delete dead code with proof"
     />
 
     <meta name="generator" content={Astro.generator} />

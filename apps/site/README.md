@@ -52,6 +52,17 @@ To deploy a local build manually, run the build command above and then
 `pnpm --filter @shrike/site run deploy`. Build output and generated files live in
 ignored `dist/`, `.astro/`, and `.wrangler/` directories.
 
+### Canonical host and HTTPS
+
+`getshrike.dev` is the canonical origin. The Cloudflare zone keeps both
+`getshrike.dev` and `www.getshrike.dev` attached to the Worker, and a Single
+Redirect rule in the `http_request_dynamic_redirect` phase sends every
+`www.getshrike.dev` request to the same path and query on
+`https://getshrike.dev` with a 301. The zone also enables Always Use HTTPS and
+HSTS (`max-age=31536000; includeSubDomains`), so `http://` requests redirect
+before they reach the Worker and browsers pin HTTPS for the apex and
+subdomains.
+
 ## Structure
 
 ```text

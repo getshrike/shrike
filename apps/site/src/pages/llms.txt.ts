@@ -5,11 +5,12 @@ export const GET: APIRoute = ({ site }) => {
 
   const body = `# Shrike
 
-> Shrike is an open-source CLI that finds the code a pull request orphaned, deletes it in verified batches, and leaves a receipt. It runs locally on your TypeScript repository and never commits until your checks pass.
+> Shrike is an open-source CLI that finds dead code left by pull requests and AI agents, deletes it in verified batches, and leaves a receipt. It runs locally on your TypeScript repository and never commits until your checks pass.
 
 ## Product
 
 - [Shrike landing page](${new URL("/", base).href}): what Shrike measures, finds, cleans, proves, and protects.
+- [How to delete dead code safely](${new URL("/#dead-code", base).href}): why dead code accumulates, what Shrike protects, and how verified cleanup works.
 - [npm package](https://www.npmjs.com/package/getshrike): install with \`npm install -D getshrike\`.
 - [Documentation](https://github.com/getshrike/shrike#documentation): command reference and guides.
 - [GitHub repository](https://github.com/getshrike/shrike): source, issues, and release notes.

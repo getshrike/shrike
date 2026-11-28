@@ -22,11 +22,32 @@ const features = [
 ];
 
 const resources = [
+  { label: "Dead code guide", href: "#dead-code" },
   { label: "Docs", href: `${github}#documentation` },
   { label: "Quick start", href: `${github}#quick-start` },
   { label: "Benchmarks", href: `${github}#performance` },
   { label: "Changelog", href: `${github}/blob/main/CHANGELOG.md` },
   { label: "GitHub", href: github },
+];
+
+const shareUrl = "https://getshrike.dev/";
+const shareTitle = "Shrike: delete dead code with proof";
+const shareText =
+  "Shrike finds the dead code your PRs and agents leave behind, deletes it in verified batches, and leaves a receipt.";
+
+const shares = [
+  {
+    label: "Share on X",
+    href: `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`,
+  },
+  {
+    label: "Share on LinkedIn",
+    href: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`,
+  },
+  {
+    label: "Share on Hacker News",
+    href: `https://news.ycombinator.com/submitlink?u=${encodeURIComponent(shareUrl)}&t=${encodeURIComponent(shareTitle)}`,
+  },
 ];
 ---
 
@@ -71,7 +92,7 @@ const resources = [
       </div>
     </div>
 
-    <div class="grid grid-cols-1 gap-8 sm:grid-cols-2 sm:gap-4">
+    <div class="grid grid-cols-1 gap-8 sm:grid-cols-3 sm:gap-4">
       <div class="flex flex-col gap-3">
         <h3 class="site-footer-heading">Features</h3>
         <div class="flex flex-col gap-1">
@@ -92,6 +113,24 @@ const resources = [
             resources.map((resource) => (
               <a class="site-footer-link" href={resource.href}>
                 {resource.label}
+              </a>
+            ))
+          }
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-3">
+        <h3 class="site-footer-heading">Share</h3>
+        <div class="flex flex-col gap-1">
+          {
+            shares.map((share) => (
+              <a
+                class="site-footer-link"
+                href={share.href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {share.label}
               </a>
             ))
           }
