@@ -29,6 +29,7 @@ const features = [
     subtitle: "One number. No files change.",
     body: "One command measures the dead weight. Shrike only reads your project.",
     command: "npx getshrike report",
+    alt: "Shrike report terminal showing 4.8% dead weight and 1,284 removable lines",
     theme: "dark",
   },
   {
@@ -39,6 +40,7 @@ const features = [
     subtitle: "Only newly dead code",
     body: "Shrike compares the merge base with your PR head. It finds code that no longer has a path from any entry, including code outside the diff.",
     command: "npx getshrike delta --base origin/main",
+    alt: "Shrike delta terminal listing newly dead symbols and a cascade",
     theme: "dark",
   },
   {
@@ -49,6 +51,7 @@ const features = [
     subtitle: "No new failures ship",
     body: "Shrike applies each batch in a worktree and compares your checks against a baseline. If a batch introduces a new failure, Shrike bisects it, reverts the culprit, and retries the rest.",
     command: "npx getshrike clean --base origin/main",
+    alt: "Shrike clean terminal showing verified batches and a rejected batch",
     theme: "dark",
   },
   {
@@ -59,6 +62,7 @@ const features = [
     subtitle: "Why it stayed or went",
     body: "Ask why any symbol is live or dead. After a cleanup, the receipt shows what changed and what was checked.",
     command: "npx getshrike why src/lib/currency.ts#formatInvoice",
+    alt: "Shrike why terminal showing proof that a symbol is dead and a verified receipt",
     theme: "dark",
   },
   {
@@ -69,6 +73,7 @@ const features = [
     subtitle: "Routes, tests, public API",
     body: "Shrike never deletes entries, tests, public API, generated or unparsed files, or code reached through a reference it cannot resolve. Build evidence can keep code the graph cannot see.",
     command: "npx getshrike evidence --build .next",
+    alt: "Shrike evidence terminal showing build coverage and route verdicts",
     theme: "dark",
   },
 ];
@@ -188,7 +193,11 @@ const features = [
                 data-feature-reveal
                 style={`--reveal-delay: ${120 + index * 20}ms`}
               >
-                <FeatureTerminal id={feature.id} initial={feature.command} />
+                <FeatureTerminal
+                  id={feature.id}
+                  initial={feature.command}
+                  alt={feature.alt}
+                />
               </div>
             </section>
           ))

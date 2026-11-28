@@ -6,12 +6,12 @@ import terminalBackdrop from "../assets/images/terminal-backdrop.jpg";
 <section
   class="relative w-full overflow-hidden bg-[#FCFCFC] pt-10 pb-16 sm:pt-12 sm:pb-20 lg:pt-14 lg:pb-24"
 >
-  <img
-    src="/patterns/hero-pattern-bg-1.svg"
-    alt=""
+  <div
+    class="pointer-events-none absolute inset-0 bg-cover bg-center opacity-50"
+    style="background-image: url('/patterns/hero-pattern-bg-1.svg')"
     aria-hidden="true"
-    class="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-50"
-  />
+  >
+  </div>
 
   <div
     class="hero-blur-reveal hero-blur-reveal--active relative z-10 mx-auto max-w-[1400px] px-6 sm:px-8 lg:px-12"
@@ -24,31 +24,28 @@ import terminalBackdrop from "../assets/images/terminal-backdrop.jpg";
           <span class="block">
             <span
               class="hero-blur-reveal-word text-[#252525]"
-              style="--word-index:0">Your&nbsp;</span
+              style="--word-index:0">Delete&nbsp;</span
             ><span
               class="hero-blur-reveal-word text-[#252525]"
-              style="--word-index:1">agent&nbsp;</span
+              style="--word-index:1">dead&nbsp;</span
             ><span
               class="hero-blur-reveal-word text-[#252525]"
-              style="--word-index:2">left&nbsp;</span
-            ><span
-              class="hero-blur-reveal-word text-[#252525]"
-              style="--word-index:3">dead&nbsp;</span
-            ><span
-              class="hero-blur-reveal-word text-[#252525]"
-              style="--word-index:4">code.</span
+              style="--word-index:2">code</span
             >
-          </span>
+          </span>{" "}
           <span class="block">
             <span
-              class="hero-blur-reveal-word text-[#252525]"
-              style="--word-index:5">Shrike&nbsp;</span
+              class="hero-blur-reveal-word text-[#787C85]"
+              style="--word-index:3">your&nbsp;</span
             ><span
               class="hero-blur-reveal-word text-[#787C85]"
-              style="--word-index:6">removes&nbsp;</span
+              style="--word-index:4">agent&nbsp;</span
             ><span
               class="hero-blur-reveal-word text-[#787C85]"
-              style="--word-index:7">it.</span
+              style="--word-index:5">left&nbsp;</span
+            ><span
+              class="hero-blur-reveal-word text-[#787C85]"
+              style="--word-index:6">behind.</span
             >
           </span>
         </h1>
@@ -58,9 +55,9 @@ import terminalBackdrop from "../assets/images/terminal-backdrop.jpg";
         class="hero-blur-reveal-block mt-5 max-w-2xl text-[15px] leading-relaxed text-[#252525] sm:mt-6 sm:text-[17px]"
         style="--block-delay:460ms"
       >
-        Shrike is an open-source CLI that finds what a PR orphaned, even in
-        files the PR never touched. It deletes that code in verified batches
-        and leaves a receipt. Nothing is committed until your checks pass.
+        Shrike is an open-source CLI that finds dead code left by your PRs and
+        AI agents, deletes it in verified batches, and leaves a receipt.
+        Nothing is committed until your checks pass.
       </p>
 
       <div
@@ -164,7 +161,7 @@ import terminalBackdrop from "../assets/images/terminal-backdrop.jpg";
       >
         <Picture
           src={terminalBackdrop}
-          alt=""
+          alt="Shrike report in a terminal showing dead weight and removable lines"
           formats={["webp"]}
           widths={[480, 720, 960, 1300]}
           sizes="(min-width: 1536px) 1304px, (min-width: 1024px) calc(100vw - 96px), (min-width: 640px) calc(100vw - 64px), 480px"

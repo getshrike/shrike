@@ -5,9 +5,10 @@ import terminalBackdrop from "../assets/images/terminal-backdrop.jpg";
 interface Props {
   id: string;
   initial: string;
+  alt: string;
 }
 
-const { id, initial } = Astro.props;
+const { id, initial, alt } = Astro.props;
 ---
 
 <div
@@ -15,7 +16,7 @@ const { id, initial } = Astro.props;
 >
   <Picture
     src={terminalBackdrop}
-    alt=""
+    alt={alt}
     aria-hidden="true"
     formats={["webp"]}
     widths={[480, 720, 960, 1300]}

@@ -1,0 +1,275 @@
+---
+const steps = [
+  {
+    title: "Baseline",
+    body: "Record your checks on the current HEAD, including exit codes and failure signatures.",
+  },
+  {
+    title: "Plan",
+    body: "Split candidates into independent batches that never share a declaration.",
+  },
+  {
+    title: "Apply",
+    body: "Patch a worktree by default, never the base branch.",
+  },
+  {
+    title: "Check",
+    body: "Run the same checks after the edit and compare the result with the baseline, not with zero.",
+  },
+  {
+    title: "Keep or revert",
+    body: "A new failure blocks the batch. Shrike bisects it, reverts the culprit, retries the rest, and writes a receipt.",
+  },
+];
+
+const faqs = [
+  {
+    question: "Is Shrike a linter or an unused-export checker?",
+    answer:
+      "No. Linters and unused-export tools find candidates, usually one file at a time. Shrike builds a repository graph, proves that a symbol has no path from any entry, deletes it in verified batches, and re-runs your checks. It is the cleanup step after detection.",
+  },
+  {
+    question: "What happens if a deletion breaks a check?",
+    answer:
+      "The batch is rejected. Shrike compares the new failure with the baseline, bisects the batch to isolate the culprit, reverts that edit, and retries the rest. A batch that breaks a check is never committed.",
+  },
+  {
+    question: "Does my code leave my machine?",
+    answer:
+      "No. The CLI and the Rust engine run locally. The analyzer never spawns a process or opens a socket; checks run only when you ask for a verified cleanup. Only the commands you run write to .shrike/.",
+  },
+  {
+    question: "Which projects does it support?",
+    answer:
+      "TypeScript and JavaScript apps, including Next.js App Router and Pages Router, React, Vite, webpack, and monorepos. Framework entry conventions are protected, so pages, layouts, routes, and server actions are not mistaken for dead code.",
+  },
+  {
+    question: "Can I try it without changing files?",
+    answer:
+      "Yes. report, delta, plan, and why are read-only. clean --dry-run previews a cleanup. By default, clean edits a worktree and commits only batches that pass.",
+  },
+  {
+    question: "How is this different from deleting an unused export by hand?",
+    answer:
+      "Hand deletion is local: you remove the export and stop. Shrike follows the cascade to the helper that only that export used, removes both, and checks the project after each batch. The receipt records what changed and what was checked.",
+  },
+];
+
+const faqSchema = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqs.map((faq) => ({
+    "@type": "Question",
+    name: faq.question,
+    acceptedAnswer: {
+      "@type": "Answer",
+      text: faq.answer,
+    },
+  })),
+};
+---
+
+<section
+  id="dead-code"
+  class="w-full scroll-mt-24 bg-[#FCFCFC] py-20 sm:py-24 lg:py-28"
+  aria-labelledby="dead-code-heading"
+  data-header-surface="light"
+>
+  <div class="mx-auto w-full max-w-[1400px] px-6 sm:px-8 lg:px-12">
+    <div class="grid gap-10 lg:grid-cols-[180px_1fr] lg:gap-8">
+      <div class="hidden lg:block">
+        <p
+          class="sticky top-[96px] font-mono text-[10px] tracking-[0.18em] text-[#787C85]"
+        >
+          DEAD CODE
+        </p>
+      </div>
+
+      <div
+        class="min-w-0 border-t border-neutral-200 pt-10 lg:border-t-0 lg:border-l lg:border-neutral-200 lg:pt-0 lg:pl-8"
+      >
+        <p
+          class="font-mono text-[10px] tracking-[0.18em] text-[#787C85] lg:hidden"
+        >
+          DEAD CODE
+        </p>
+
+        <h2
+          id="dead-code-heading"
+          class="mt-4 max-w-[760px] text-[28px] leading-[1.15] tracking-[-0.03em] text-[#252525] sm:text-[34px] lg:text-[40px]"
+        >
+          How to delete dead code safely
+        </h2>
+
+        <div
+          class="mt-6 max-w-[680px] space-y-4 text-[16px] leading-[1.65] text-[#52525B] sm:text-[17px]"
+        >
+          <p>
+            AI agents and fast pull requests add code much faster than anyone
+            removes it. A deleted caller leaves its helper behind. A replaced
+            data path leaves the old hook behind. A removed route leaves its
+            components behind. Tests and lint stay green because the leftover
+            code is unreachable, not wrong, and the next change builds on top
+            of it.
+          </p>
+          <p>
+            The safest way to delete dead code with proof is to show that it
+            is unreachable, remove it in small batches, and check the project
+            after each one.
+          </p>
+        </div>
+
+        <div
+          class="mt-12 grid gap-4 border-t border-neutral-200 pt-10 md:grid-cols-[200px_1fr] md:gap-8"
+        >
+          <h3
+            class="text-[20px] leading-[1.3] tracking-[-0.02em] text-[#252525]"
+          >
+            Why a per-file check misses it
+          </h3>
+          <p class="max-w-[640px] text-[16px] leading-[1.65] text-[#52525B]">
+            Grep and per-file lint rules cannot see the whole graph. A helper
+            used only by another dead helper still looks alive to a file-local
+            check. Shrike starts at your entry points and follows every import,
+            call, JSX use, and route. Code that no path reaches is dead,
+            including code in files the pull request never touched.
+          </p>
+        </div>
+
+        <div
+          class="mt-10 grid gap-4 border-t border-neutral-200 pt-10 md:grid-cols-[200px_1fr] md:gap-8"
+        >
+          <h3
+            class="text-[20px] leading-[1.3] tracking-[-0.02em] text-[#252525]"
+          >
+            What dead weight measures
+          </h3>
+          <p class="max-w-[640px] text-[16px] leading-[1.65] text-[#52525B]">
+            Shrike reports dead weight as removable source lines divided by
+            analyzed non-generated source lines. The number is deterministic:
+            the same tree produces the same report, and a branch report
+            separates newly dead code from code that was already dead before
+            the branch. Dependencies are counted separately and are advisory.
+          </p>
+        </div>
+
+        <div
+          class="mt-10 grid gap-4 border-t border-neutral-200 pt-10 md:grid-cols-[200px_1fr] md:gap-8"
+        >
+          <h3
+            class="text-[20px] leading-[1.3] tracking-[-0.02em] text-[#252525]"
+          >
+            What Shrike deletes, and what it protects
+          </h3>
+          <p class="max-w-[640px] text-[16px] leading-[1.65] text-[#52525B]">
+            A symbol is a candidate only when no path from any entry reaches
+            it. Even then, Shrike fails closed. It never deletes entry points
+            or framework conventions, tests, public API and package exports,
+            generated or unparsed files, or code reached through a reference it
+            cannot resolve. Build evidence can keep a module that the static
+            graph cannot see. Blocked items are reported with a reason, and
+            Shrike never removes a dependency automatically.
+          </p>
+        </div>
+
+        <div
+          class="mt-10 grid gap-4 border-t border-neutral-200 pt-10 md:grid-cols-[200px_1fr] md:gap-8"
+        >
+          <h3
+            class="text-[20px] leading-[1.3] tracking-[-0.02em] text-[#252525]"
+          >
+            How a verified cleanup works
+          </h3>
+          <div class="max-w-[640px]">
+            <p class="text-[16px] leading-[1.65] text-[#52525B]">
+              Every batch goes through the same loop.
+            </p>
+            <ol class="mt-5 space-y-4">
+              {
+                steps.map((step, index) => (
+                  <li class="grid grid-cols-[28px_1fr] gap-3">
+                    <span class="pt-0.5 font-mono text-[12px] text-[#787C85]">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <p class="text-[16px] leading-[1.65] text-[#52525B]">
+                      <strong class="font-medium text-[#252525]">
+                        {step.title}.
+                      </strong>{" "}
+                      {step.body}
+                    </p>
+                  </li>
+                ))
+              }
+            </ol>
+            <p class="mt-5 text-[16px] leading-[1.65] text-[#52525B]">
+              Verified means your checks passed after the removal relative to
+              the baseline. It does not mean the tests are complete or that
+              external consumers cannot import the code. The receipt is
+              portable proof of what changed and what was checked.
+            </p>
+          </div>
+        </div>
+
+        <div
+          class="mt-10 grid gap-4 border-t border-neutral-200 pt-10 md:grid-cols-[200px_1fr] md:gap-8"
+        >
+          <h3
+            class="text-[20px] leading-[1.3] tracking-[-0.02em] text-[#252525]"
+          >
+            When to run a cleanup
+          </h3>
+          <p class="max-w-[640px] text-[16px] leading-[1.65] text-[#52525B]">
+            Run report on a schedule to see how much weight has accumulated.
+            Run delta on every pull request to catch code that the change
+            orphaned, even when the diff never touches the file. Run clean when
+            the plan looks right: it applies the batches in a worktree,
+            verifies each one against your checks, and writes a receipt you can
+            re-check later.
+          </p>
+        </div>
+
+        <div class="mt-12 border-t border-neutral-200 pt-10">
+          <h3
+            class="text-[20px] leading-[1.3] tracking-[-0.02em] text-[#252525]"
+          >
+            Questions before you delete code
+          </h3>
+          <div
+            class="mt-6 divide-y divide-neutral-200 border-y border-neutral-200"
+          >
+            {
+              faqs.map((faq) => (
+                <details class="faq-item group py-5">
+                  <summary class="flex cursor-pointer list-none items-start justify-between gap-6 text-[17px] leading-[1.45] font-medium text-[#252525] [&::-webkit-details-marker]:hidden">
+                    {faq.question}
+                    <span
+                      class="faq-icon mt-0.5 shrink-0 font-mono text-[18px] leading-none text-[#787C85] transition-transform duration-200"
+                      aria-hidden="true"
+                    >
+                      +
+                    </span>
+                  </summary>
+                  <p class="mt-3 max-w-[640px] text-[16px] leading-[1.65] text-[#52525B]">
+                    {faq.answer}
+                  </p>
+                </details>
+              ))
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script
+    type="application/ld+json"
+    is:inline
+    set:html={JSON.stringify(faqSchema)}
+  />
+</section>
+
+<style>
+  .faq-item[open] .faq-icon {
+    transform: rotate(45deg);
+  }
+</style>

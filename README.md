@@ -19,6 +19,7 @@
 </p>
 
 <p align="center">
+  <a href="https://getshrike.dev">Website</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#commands">Commands</a> ·
